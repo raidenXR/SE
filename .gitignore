@@ -1,0 +1,24 @@
+bin/
+obj/
+
+original_source/
+runtimes/
+fonts/
+vertices/
+
+*.txt
+*.gnu
+*.png
+*.html
+*.so
+*.dll
+*.dy
+
+# Zig.output
+zig-out/
+.zig-cache/
+
+# FSharp.Formatting
+.fsdocs/
+output/
+tmp/
