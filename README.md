@@ -9,3 +9,13 @@ Then by leverage some simplistic ECS (Entity-Component-System) design and creati
 for manipulating geometries and other info in those .gltf files, it will run these systems-based   
 simulations and rendering the results with SDL3 Zig renderer. 
 
+
+Use the **scripts/gltf_formater.fsx** to format `.glft` files into more readable layout.   
+Look into **tests/...fsx** files, for examples of the project.     
+It contains also some simple cylinder `.gltf` object for helping with development of   
+
+- src/gltfLoader.fs
+- src/binLoader.fs   
+
+   
+

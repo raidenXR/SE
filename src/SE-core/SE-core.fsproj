@@ -7,6 +7,7 @@
 
   <ItemGroup>
     <Compile Include="src/gltfLoader.fs" />
+    <Compile Include="src/binLoader.fs" />
     <Compile Include="src/Core.fs" />
   </ItemGroup>
 
