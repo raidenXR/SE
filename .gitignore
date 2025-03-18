@@ -5,6 +5,7 @@ original_source/
 runtimes/
 fonts/
 vertices/
+Content/
 
 *.txt
 *.gnu
@@ -13,6 +14,7 @@ vertices/
 *.so
 *.dll
 *.dy
+*.a
 
 # Zig.output
 zig-out/

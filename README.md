@@ -17,5 +17,12 @@ It contains also some simple cylinder `.gltf` object for helping with developmen
 - src/gltfLoader.fs
 - src/binLoader.fs   
 
+
+:TODO
+
+- Fix the renderer as .so (dynamic lib) to be called from F#
+- develop it further, with more complex geometries (i.e WPF3d Book examples)
+    set up the vertices/indices from F# pass these as args to SDL3 renderer.
+- fix the (.gltf / .bin) deserializer. To support camera and animation.  
    
 

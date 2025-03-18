@@ -1,49 +1,67 @@
 const std = @import("std");
 const c = @import("c.zig");
+const common = @import("common.zig");
+// const ClearScrean = @import("ClearScreen.zig");
+// const BasicTriangle = @import("BasicTriangle.zig");
+// const BasicVertexBuffer = @import("BasicVertexBuffer.zig");
+// const BlitCube = @import("BlitCube.zig");
+
+
+const samples_names = [_][]const u8 {
+    "ClearScreen",
+    "BasicTriangle",
+    "BasicVertexBuffer",
+};
+
+const examples = [_]*const common.Example{
+    &@import("ClearScreen.zig").ClearScreen_Example,
+    &@import("BasicTriangle.zig").BasicTriangle_Example,
+    &@import("BasicVertexBuffer.zig").BasicVertexBuffer_Example,
+    &@import("BlitCube.zig").BlitCube_Example,
+};
+
+const idx = 3;
 
 
 pub fn main () !void
 {
-    var wnd: ?*c.SDL_Window = null;
-    defer c.SDL_DestroyWindow (wnd);
-    var renderer: ?*c.SDL_Renderer = null;
-    defer c.SDL_DestroyRenderer (renderer);
-    
-    _ = c.SDL_SetAppMetadata ("Example clear", "1.0", "com.example");
+    var context: common.Context = undefined;
+    var quit = false;
+    var last_time: f32 = 0.0;
 
-    if (!c.SDL_Init (c.SDL_INIT_VIDEO))
-    {
-        // c.SDL_Log ("couldn't initialize SDL: {s}\n", .{c.SDL_GetError()});
-        // return c.SDL_APP_FAILURE;
-        @panic ("SDL_init failed");
-    }
-    defer c.SDL_Quit();
-
-    if (!c.SDL_CreateWindowAndRenderer ("examples", 640, 480, 0, &wnd, &renderer))
-    {
-        // c.SDL_Log ("couldn't create window/renderer: {s}\n", .{c.SDL_GetError()});
-        // return c.SDL_APP_FAILURE;
-        @panic ("SDL_create_window and renderer failed");
+    if (!c.SDL_Init(c.SDL_INIT_VIDEO | c.SDL_INIT_GAMEPAD)) {
+        // common.failwith("no example named: {s}\n", .{examplename});
     }
 
+    common.initializeAssetLoader();
 
-    var running = true;
+    const ticks = c.SDL_GetTicks();
+    var newtime: f32 = @floatFromInt(ticks);
+    newtime /= 1000.0;
+    context.delta_time = newtime - last_time;
+    last_time = newtime;
     
-    while (running)
-    {
-        var event: c.SDL_Event = undefined;
-        while (c.SDL_PollEvent (&event))
+    _ = examples[idx].init(&context);
+
+    while (!quit) {
+        var evt: c.SDL_Event = undefined;
+        while (c.SDL_PollEvent(&evt)) 
         {
-            if (event.type == c.SDL_EVENT_QUIT) running = false;
+            if (evt.type == c.SDL_EVENT_QUIT) {
+                quit = true;
+            }
+            if (quit) {
+                // c.SDL_zero(&context);
+                examples[idx].quit(&context);
+                break;
+            }
+            
+            if (!examples[idx].update(&context)) {
+                @panic("update failed");
+            }    
+            if (!examples[idx].draw(&context)) {
+                @panic("draw failed");
+            }         
         }
-
-        const now: f64 = @floatFromInt(c.SDL_GetTicks() / 1000);
-        const r: f32 = @floatCast(0.5 + 0.5 * c.SDL_sin(now));
-        const g: f32 = @floatCast(0.5 + 0.5 * c.SDL_sin(now + c.SDL_PI_D * 2.0 / 3.0));
-        const b: f32 = @floatCast(0.5 + 0.5 * c.SDL_sin(now + c.SDL_PI_D * 4 / 3.0));
-
-        _ = c.SDL_SetRenderDrawColorFloat (renderer, r, g, b, c.SDL_ALPHA_OPAQUE_FLOAT);            
-        _ = c.SDL_RenderClear (renderer);
-        _ = c.SDL_RenderPresent (renderer);
     }
 }

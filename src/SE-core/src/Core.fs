@@ -5,19 +5,23 @@ open System.Collections.Generic
 
 type Entity = uint32
         
-/// Container for caching Entityt ids set and iterating over
+/// Container for caching Entity ids set and iterating over
 /// Acts as a Filter, for running over those filters systems etc
 type Types = list<Type>
 
-/// Container for caching Entityt ids set and iterating over
-/// Acts as a Filter, for running over those filters systems etc
-type Query = list<Type>
+type EntityStorage = {
+    mutable ids: array<Entity>
+    mutable count: int
+    mutable rebuild: bool
+}
 
 type IComponents =
     abstract Count: int
+    abstract Capacity: int
     abstract Entities: ArraySegment<Entity>
     abstract Remove: Entity -> unit
     abstract Contains: Entity -> bool
+    abstract Sort: unit -> unit
     abstract PrintEntities: unit -> unit
     
 type Phase =
@@ -43,12 +47,12 @@ type Trigger =
 
 /// A system is a query combined with a callback. 
 /// Systems can be either ran manually or ran as part of an ECS-managed main loop (see Pipeline)
-type System = Types * (seq<Entity> -> unit)
+type System = Types * (ArraySegment<Entity> -> unit)
 
 /// Observers are similar to systems, in that they are queries that are combined with a callback. 
 /// The difference between systems and observers is that systems are executed periodically for all matching entities, 
 /// whereas observers are executed whenever a matching event occurs.
-type Observer = Types * (seq<Entity> -> unit)
+type Observer = Types * (ArraySegment<Entity> -> unit)
 
 
 /// Contairer class for storing components and entity ids
@@ -102,6 +106,19 @@ type Components<'T>() =
         capacity <- capacity * 2
         Array.Resize(&ids, capacity)
         Array.Resize(&ids, capacity)
+
+    let sort () =
+        for i = 0 to count - 2 do
+            for j = i + 1 to count - 1 do                
+                let a = ids[i]
+                let b = ids[j]
+                let c = items[i]
+                let d = items[j]
+                if a > b then
+                    ids[i] <- b
+                    ids[j] <- a
+                    items[i] <- d
+                    items[j] <- c 
 
     /// apply binary search for the lookup
     /// caches latest indices
@@ -160,12 +177,6 @@ type Components<'T>() =
         items[count] <- value
         count <- count + 1
 
-    // let offset (dx:int) =
-    //     if dx < 0 then
-    //         for i = count - 1 to dx do 
-    //             ids[i + 1] <- ids[i]
-    //             items[i + 1] <- items[i]        
-
     let backward n = 
         for i = n to count - 2 do
             ids[i] <- ids[i + 1]
@@ -188,11 +199,13 @@ type Components<'T>() =
 
     interface IComponents with
         member this.Count with get() = count
+        member this.Capacity with get() = capacity
         member this.Entities with get() = ArraySegment<Entity>(ids, 0, count)
         member this.Remove (id:Entity) = remove id
         member this.Contains (id:Entity) = 
             let mutable i = 0
             contains id &i
+        member this.Sort () = sort ()
         member this.PrintEntities () = printEntities ()
 
     member this.Insert (id:Entity) =
@@ -237,6 +250,8 @@ type Components<'T>() =
     member this.Contains (id:Entity) =
         let mutable i = -1
         contains id &i
+
+    member this.Sort () = sort ()
     
     member this.Item
         with get(id:Entity) =
@@ -248,7 +263,7 @@ type Components<'T>() =
                 | false -> 
                     let s = $"0x{id:X6}"
                     Console.ForegroundColor <- ConsoleColor.Red
-                    printfn $"Component<{typeof<'T>}> Does not contain this Entity: {s}"
+                    printfn $"Component<{typeof<'T>.Name}> Does not contain this Entity: {s}"
                     printEntities ()
                     Console.ForegroundColor <- ConsoleColor.White
                     failwith ""
@@ -267,7 +282,7 @@ type Components<'T>() =
                 | false -> 
                     let s = $"0x{id:X6}"
                     Console.ForegroundColor <- ConsoleColor.Red
-                    printfn $"Component<{typeof<'T>}> Does not contain this Entity: {s}"
+                    printfn $"Component<{typeof<'T>.Name}> Does not contain this Entity: {s}"
                     printEntities ()
                     Console.ForegroundColor <- ConsoleColor.White
                     failwith ""
@@ -289,6 +304,8 @@ type Components<'T>() =
 module Components =
     let mutable components_table = new Dictionary<Type,IComponents>()
 
+    /// check is storage for 'T is available and return instance.
+    /// If storage is not available, create a new storage for type 'T
     let get<'T> () =
         if not (components_table.ContainsKey(typedefof<'T>)) then
             let pool = Components<'T>()
@@ -296,19 +313,107 @@ module Components =
             pool
         else
             components_table[typedefof<'T>] :?> Components<'T>
-   
 
-module Queries =
-    let queries = new Dictionary<Types,Set<Entity>>()
+    /// returns the enties Slice for the type t' of Components 
+    let entities (t':Type) =
+        if components_table.ContainsKey t' then components_table[t'].Entities else failwith $"Components does not contain {t'.Name}"
 
-    let create (types:Types) = 
-        if not (queries.ContainsKey types) then
-            let c0 = Components.components_table[types[0]]
-            let mutable s = set (c0.Entities)
-            for t in types do
-                let c = Components.components_table[t]
-                s <- Set.intersect s (set c.Entities)             
-            queries.Add (types,s)            
+
+module Queries =            
+    let queries = new Dictionary<Types,EntityStorage>()
+    let entities = System.Buffers.ArrayPool<Entity>.Create()    
+
+    let private max_len (types:Types) =
+        let mutable n = 0
+        for t in types do 
+            let c = Components.components_table[t]
+            n <- max n c.Count
+        n
+
+    let private sort (ent_storage:EntityStorage) =
+        let ids = ent_storage.ids
+        let n = ent_storage.count
+        for i = 0 to n - 2 do
+            for j = i + 1 to n - 1 do
+                let a = ids[i]
+                let b = ids[j]
+                if a > b then
+                    ids[j] <- a
+                    ids[i] <- b
+
+    let private resize (ent_storage:EntityStorage) =
+        Array.Resize(&ent_storage.ids, ent_storage.ids.Length * 2)
+
+    let private copyTo (slice:ArraySegment<Entity>) (buffer:array<Entity>) =
+        for i = 0 to slice.Count - 1 do
+            buffer[i] <- slice[i]
+
+    let intersect (a:ArraySegment<Entity>) (b:ArraySegment<Entity>) (buffer:array<Entity>) =
+        if a[a.Count - 1] < b[0] || b[b.Count - 1] < a[0] then 
+            ArraySegment<Entity>()
+        else
+            let mutable i = 0
+            let mutable j = 0
+            let mutable n = 0
+            while i < a.Count && j < b.Count do
+                if a[i] = b[j] then
+                    buffer[n] <- a[i] 
+                    i <- i + 1
+                    j <- j + 1
+                    n <- n + 1
+                elif a[i] < b[j] then
+                    i <- i + 1
+                elif b[j] < a[i] then
+                    j <- j + 1
+            ArraySegment<Entity>(buffer, 0, n)
+
+
+    let build (types:Types) = 
+        if types.Length > 1 then
+            // printfn $"Query.build is running for key: {types}"
+            match queries.ContainsKey types with
+            | true -> 
+                let len = max_len types
+                let q = queries[types]
+                if q.ids.Length < len then resize q
+                let buffer = q.ids
+                let temp = entities.Rent len
+                let mutable b = intersect (Components.entities types[0]) (Components.entities types[1]) buffer
+                let mutable n = b.Count
+                for i = 2 to types.Length - 1 do
+                    let s = intersect (Components.entities types[i]) (b) temp
+                    copyTo s buffer 
+                    n <- s.Count
+                    // printfn "[%d] segment.count: %d" i s.Count
+                entities.Return(temp,true)
+                queries[types].count <- n
+                queries[types].rebuild <- false
+            | false -> 
+                let len = max_len types
+                let buffer = entities.Rent len
+                let temp = entities.Rent len
+                let mutable b = intersect (Components.entities types[0]) (Components.entities types[1]) buffer
+                let mutable n = b.Count
+                for i = 2 to types.Length - 1 do
+                    let s = intersect (Components.entities types[i]) (b) temp
+                    copyTo s buffer         
+                    n <- s.Count
+                    // printfn "[%d] segment.count: %d" i s.Count
+                entities.Return(temp,true)
+                queries.Add (types,{ids = buffer; count = n; rebuild = false})            
+
+    /// returns the entities Slice matching the types key
+    let rec get (types:Types) =
+        match types.Length with
+        | 0 -> ArraySegment<Entity>()
+        | 1 -> Components.entities types[0]
+        | _ when queries.ContainsKey types ->
+            let q = queries[types] 
+            if q.rebuild then build types
+            ArraySegment(q.ids, 0, q.count)         
+        | _ ->
+            build types
+            get types
 
     /// check whether all the components contain this id
     let contains (types:Types) (id:Entity) =
@@ -318,6 +423,7 @@ module Queries =
             r <- r && c.Contains id
         r
 
+    
     /// checks all the mapped queries and adds the id to those queries that contain the id for 
     /// the rest of the types 
     let add (t':Type) (id:Entity) =
@@ -325,13 +431,8 @@ module Queries =
         for kvp in queries do
             let types = kvp.Key
             let ids = kvp.Value
-            let c0 = Components.components_table[types[0]]
-            let mutable s = set (c0.Entities)
             if List.contains t' types then
-                for t in types do
-                    let c = Components.components_table[t]
-                    s <- Set.intersect s (set c.Entities)             
-                queries[types] <- s
+                queries[types].rebuild <- true
 
     /// checks all mapped queries and removes the id from those queries that hava the type t'
     let remove (t':Type) (id:Entity) =
@@ -341,7 +442,9 @@ module Queries =
             let ids = kvp.Value
             for t in types do
                 r <- r || t = t'
-            if r then queries[types] <- Set.remove id ids
+            if r then 
+                queries[types].rebuild <- true
+            
             
 
 /// Systems manager              
@@ -355,9 +458,10 @@ module System =
     let pre_store   = ResizeArray<System>()
     let on_store    = ResizeArray<System>()
 
+    let mutable private running = true
 
-    let create (phase:Phase) (types:Types) (fn:seq<Entity> -> unit) =
-        Queries.create types
+    let create (phase:Phase) (types:Types) (fn:ArraySegment<Entity> -> unit) =
+        Queries.build types
         match phase with
         | OnLoad -> on_load.Add (types,fn)
         | PostLoad -> post_load.Add (types,fn)
@@ -370,15 +474,23 @@ module System =
         | Free -> ()
 
 
+    let quit () =
+        running <- false
+
+
     let progress () =
-        for (types,fn) in on_load do fn (Queries.queries[types])
-        for (types,fn) in post_load do fn (Queries.queries[types])  
-        for (types,fn) in pre_update do fn (Queries.queries[types])  
-        for (types,fn) in on_update do fn (Queries.queries[types])  
-        for (types,fn) in on_validate do fn (Queries.queries[types])  
-        for (types,fn) in post_update do fn (Queries.queries[types])  
-        for (types,fn) in pre_store do fn (Queries.queries[types])  
-        for (types,fn) in on_store do fn (Queries.queries[types])  
+        for (types,fn) in on_load do fn (Queries.get types)
+        for (types,fn) in post_load do fn (Queries.get types)  
+        while running do
+            for (types,fn) in pre_update do fn (Queries.get types)  
+            for (types,fn) in on_update do fn (Queries.get types)  
+            for (types,fn) in on_validate do fn (Queries.get types)  
+            for (types,fn) in post_update do fn (Queries.get types)  
+            // for debugging and testing keep it like that to prevent eternal loop
+            // keep it a single loop
+            quit ()
+        for (types,fn) in pre_store do fn (Queries.get types)  
+        for (types,fn) in on_store do fn (Queries.get types)  
 
 
 /// Observers are similar to systems, in that they are queries that are combined with a callback. 
@@ -392,24 +504,27 @@ module Observers =
     let on_sort    = ResizeArray<Observer>()
     let on_iterate = ResizeArray<Observer>()
     
-    let create (trigger:Trigger) (types:Types) (fn:seq<Entity> -> unit) =
-        Queries.create types
+    /// The observers are created post-load
+    let create (trigger:Trigger) (types:Types) (fn:ArraySegment<Entity> -> unit) =
+        // System.create PostLoad types (fun _ -> 
+        Queries.build types
         match trigger with
         | OnAdd -> on_add.Add (types,fn)
         | OnSet -> on_set.Add (types,fn)
         | OnUpdate -> on_update.Add (types,fn)
         | OnRemove -> on_remove.Add (types,fn)
         | OnSort -> on_sort.Add (types,fn)
-        | OnIterate -> on_iterate.Add (types,fn)
+        | OnIterate -> on_iterate.Add (types,fn)        
+        // )
 
     let triggerOnAdd<'T> () =
-        for (types,fn) in on_add do fn (Queries.queries[types])            
+        for (types,fn) in on_add do fn (Queries.get types)            
 
     let triggerOnSet<'T> () =
-        for (types,fn) in on_set do fn (Queries.queries[types])            
+        for (types,fn) in on_set do fn (Queries.get types)            
 
     let triggerOnRemove<'T> () =
-        for (types,fn) in on_remove do fn (Queries.queries[types])            
+        for (types,fn) in on_remove do fn (Queries.get types)            
         
 
 
@@ -458,6 +573,15 @@ module Entity =
             Observers.triggerOnRemove<'T>()
         id
 
+    let printComponents (id:Entity) =
+        printf $"0x{id:X6} components: ["
+        for kvp in Components.components_table do
+            let t = kvp.Key
+            let c = kvp.Value
+            if c.Contains id then printf $"{t.Name}, "
+        printfn "]"
+        id
+
     let sprintf (id:Entity) =
         $"0x{id:X6}, "
 
@@ -466,6 +590,7 @@ module Entity =
         
     let printf (id:Entity) =
         Console.Write("0x{0:X6}, ", id)
+
         
         
 

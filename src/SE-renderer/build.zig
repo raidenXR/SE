@@ -73,14 +73,21 @@ pub fn build(b: *std.Build) void {
     // step when running `zig build`).
     b.installArtifact(exe);
 
+    const module = b.addModule("foo", .{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     // This is where the interesting part begins.
     // As you can see we are re-defining the same executable but 
     // we're binding it to a dedicated build step.
     const exe_check = b.addExecutable(.{
         .name = "foo",
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = module,
+        // .root_source_file = b.path("src/main.zig"),
+        // .target = target,
+        // .optimize = optimize,
     });
 
     // Any other code to define dependencies would probably be here.
