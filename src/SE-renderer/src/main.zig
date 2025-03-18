@@ -20,7 +20,7 @@ const examples = [_]*const common.Example{
     &@import("BlitCube.zig").BlitCube_Example,
 };
 
-const idx = 3;
+const idx = 2;
 
 
 pub fn main () !void

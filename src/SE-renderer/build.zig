@@ -23,9 +23,10 @@ pub fn build(b: *std.Build) void {
         // only contains e.g. external object files, you can make this `null`.
         // In this case the main source file is merely a path, however, in more
         // complicated build scripts, this could be a generated file.
-        .root_source_file = b.path("src/root.zig"),
+        .root_source_file = b.path("src/rendererFS.zig"),
         .target = target,
         .optimize = optimize,
+        .link_libc = true,
     });
 
     // We will also create a module for our other entry point, 'main.zig'.
@@ -51,7 +52,7 @@ pub fn build(b: *std.Build) void {
     // This creates a `std.Build.Step.Compile`, which is the build step responsible
     // for actually invoking the compiler.
     const lib = b.addLibrary(.{
-        .linkage = .static,
+        .linkage = .dynamic,
         .name = "SE-renderer",
         .root_module = lib_mod,
     });

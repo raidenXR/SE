@@ -2,9 +2,24 @@ const c = @import("c.zig");
 const common = @import("common.zig");
 const Context = common.Context;
 
-var pipeline: ?*c.SDL_GPUGraphicsPipeline = undefined;
-var vertex_buffer: ?*c.SDL_GPUBuffer = undefined;
+var pipeline: ?*c.SDL_GPUGraphicsPipeline = null;
+var vertex_buffer: ?*c.SDL_GPUBuffer = null;
 
+
+fn setVertexBuffer (buffer:c.SDL_GPUBuffer, comptime a:type, comptime b:type) void
+{
+    _ = buffer; // autofix
+    _ = a; // autofix
+    _ = b; // autofix
+    // for ()
+}
+
+fn createGraphicsPipelineInfo () c.SDL_GPUGraphicsPipelineCreateInfo 
+{
+
+}
+
+// load shaders and asign values to pipeline & vertex_buffer
 pub fn init (context:*Context) bool 
 {
     const result = common.commonInit(context, 0);
@@ -23,13 +38,16 @@ pub fn init (context:*Context) bool
         @panic("failed to create fragment shader");
     }
 
-
+    defer c.SDL_ReleaseGPUShader(context.device, vertex_shader);
+    defer c.SDL_ReleaseGPUShader(context.device, fragment_shader);
+    
+    
     // create the pipeline 
     const pipeline_create_info = c.SDL_GPUGraphicsPipelineCreateInfo{
         .target_info = .{
             .num_color_targets = 1,
             .color_target_descriptions = &[_]c.SDL_GPUColorTargetDescription{
-                c.SDL_GPUColorTargetDescription{.format = c.SDL_GetGPUSwapchainTextureFormat(context.device, context.window)},
+                .{.format = c.SDL_GetGPUSwapchainTextureFormat(context.device, context.window)},
             },
         },
         // this is set up to match the vertex shader layout
@@ -40,7 +58,7 @@ pub fn init (context:*Context) bool
                     .slot = 0,
                     .input_rate = c.SDL_GPU_VERTEXINPUTRATE_VERTEX,
                     .instance_step_rate = 0,
-                    .pitch = @sizeOf(common.PositionColorVertex),                
+                    .pitch = @sizeOf(common.PositionColorVertex), // 12 + 4                
                 },                
             },
             .num_vertex_attributes = 2,
@@ -69,8 +87,7 @@ pub fn init (context:*Context) bool
         @panic("failed to create pipeline"); 
     }
 
-    c.SDL_ReleaseGPUShader(context.device, vertex_shader);
-    c.SDL_ReleaseGPUShader(context.device, fragment_shader);
+
 
     // create vertex buffer
     vertex_buffer = c.SDL_CreateGPUBuffer(
@@ -82,44 +99,49 @@ pub fn init (context:*Context) bool
     );
 
     // to get data into the vertex buffer, we have to use a transfer buffer
-    const transfer_buffer = c.SDL_CreateGPUTransferBuffer(
-        context.device,
-        &c.SDL_GPUTransferBufferCreateInfo{
-            .usage = c.SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
-            .size = @sizeOf(common.PositionColorVertex) * 3,
-        }
-    );
+    const transfer_buffer_create_info = c.SDL_GPUTransferBufferCreateInfo{
+        .usage = c.SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
+        .size = 3 * 16
+    };
+    const transfer_buffer = c.SDL_CreateGPUTransferBuffer(context.device, &transfer_buffer_create_info);
     
-    var transfer_data: [*]common.PositionColorVertex = @ptrCast(@alignCast(c.SDL_MapGPUTransferBuffer(
-        context.device,
-        transfer_buffer,
-        false,
-    )));
+    // map gpu transfer buffer
+    // copy the memory with defined (from descriptions layout)
+    // *anyopaque --> *void
+    const transfer_data_ptr = c.SDL_MapGPUTransferBuffer(context.device, transfer_buffer, false);
+    var transfer_data: [*]common.PositionColorVertex = @ptrCast(@alignCast(transfer_data_ptr));
+    defer c.SDL_UnmapGPUTransferBuffer(context.device, transfer_buffer);
+    
+    // var transfer_data: [*]u8 = @ptrCast(@alignOf(c.SDL_MapGPUTransferBuffer(device, transfer_buffer, false)));
+    // for (positions, colors, 0..) |*position, *color, i| {
+    //     @memcopy(transfer_data, position);
+    //     transfer_data += @sizeOf(f32) * 3; // 12
+    //     @memcopy(transfer_data, color);
+    //     transfer_data += @sizeOf(u8) * 4 // 4
+    // }
+    
 
     transfer_data[0] = common.PositionColorVertex.init(-1, -1, 0, 255, 0, 0, 255);
     transfer_data[1] = common.PositionColorVertex.init(1, -1, 0, 0, 255, 0, 255);
     transfer_data[2] = common.PositionColorVertex.init(0, 1, 0, 0, 0, 255, 255);
+    
 
-    c.SDL_UnmapGPUTransferBuffer(context.device, transfer_buffer);
 
     // upload the transfer data to the vertex buffer
     const upload_cmdbuf = c.SDL_AcquireGPUCommandBuffer(context.device);
     const copy_pass = c.SDL_BeginGPUCopyPass(upload_cmdbuf);
 
-    c.SDL_UploadToGPUBuffer(
-        copy_pass, 
-        &c.SDL_GPUTransferBufferLocation{
-            .transfer_buffer = transfer_buffer,
-            .offset = 0,
-        },
-        &c.SDL_GPUBufferRegion{
-            .buffer = vertex_buffer,
-            .offset = 0,
-            .size = @sizeOf(common.PositionColorVertex) * 3,
-        },
-        false,
-    );
-
+	const transfer_buffer_location = c.SDL_GPUTransferBufferLocation{
+	    .transfer_buffer = transfer_buffer,
+	    .offset = 0,
+	};
+	const buffer_region = c.SDL_GPUBufferRegion{
+	    .buffer = vertex_buffer,
+	    .offset = 0,
+	    .size = 16 * 3,
+	};
+	
+    c.SDL_UploadToGPUBuffer(copy_pass, &transfer_buffer_location, &buffer_region, false);
     c.SDL_EndGPUCopyPass(copy_pass);
     _ = c.SDL_SubmitGPUCommandBuffer(upload_cmdbuf);
     c.SDL_ReleaseGPUTransferBuffer(context.device, transfer_buffer);
