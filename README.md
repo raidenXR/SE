@@ -20,9 +20,37 @@ It contains also some simple cylinder `.gltf` object for helping with developmen
 
 :TODO
 
-- Fix the renderer as .so (dynamic lib) to be called from F#
-- develop it further, with more complex geometries (i.e WPF3d Book examples)
-    set up the vertices/indices from F# pass these as args to SDL3 renderer.
-- fix the (.gltf / .bin) deserializer. To support camera and animation.  
-   
+- develop further the SDL3 zig-lib to have a a more complete and useful API to can actually   
+render 'real geometries' with it.
+- fix (or total overhaul) the [zig2dotnet](https://github.com/raidenXR/zig2dotnet) for better - more robust parsing of Zig files and F#/C# bindings generation.   
+
+
+#### Instructions
+
+To build `src/SE-renderer`  Zig compiler (0.14 stable) is required.   
+**Make sure that SDL3-devel in available on your machine too**. 
+Also it references the dotnet package from [SrcCollection-repo](https://github.com/raidenXR/SrcCollection), so make sure to clone it, and fix the url to match the relative path on your machine, in `src/SE-renderer/build.zig.zon`.  
+```
+    .dependencies = .{
+        .dotnet = .{
+            .url = "../../../../zig/SrcCollection-utilities/",
+            .hash = "dotnet-0.1.0-Xe2rzg9lAQDt8mbQbYrX79liDpq_trtw-ftDLsUzDKW8",
+        },
+    },
+```  
+
+When `zig-out/lib/libSE-renderer.so` gets compiled, copy that to the directory `SE-core/tests/natives`  
+alongside the `libSDL3.so` (or SDL3.dll if your are on windows).  
+
+To build `src/SE-core`, just  
+```
+cd src/SE-core
+dotnet build
+cd tests
+dotnet fsi ecs_test.fsx  # to run the example for the ECS part
+dotnet fsi renderer_test.fsx  # to run the example for the SDL3 renderer zig lib
+```
+And then 
+
+**P.S.** great thanks to [SDL3_examples](https://github.com/TheSpydog/SDL_gpu_examples/tree/main) for providing all these valuable examples, and the whole SDL3 GPU API team!!!
 

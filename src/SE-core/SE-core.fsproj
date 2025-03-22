@@ -9,6 +9,7 @@
     <Compile Include="src/gltfLoader.fs" />
     <Compile Include="src/binLoader.fs" />
     <Compile Include="src/Core.fs" />
+    <Compile Include="src/rendererFS.fs" />
   </ItemGroup>
 
 </Project>

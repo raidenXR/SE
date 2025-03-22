@@ -105,11 +105,15 @@ pub fn commonQuit (context:*Context) void
 }
 
 // var basepath: [*c]const u8 = undefined;
-var basepath: []const u8 = undefined;
+var basepath_buffer: [256]u8 = undefined;
+var basepath: []u8 = &basepath_buffer;
 
 pub fn initializeAssetLoader () void
 {
-    basepath = std.mem.span(c.SDL_GetBasePath());
+    // basepath = std.mem.span(c.SDL_GetBasePath());
+    basepath = std.fs.cwd().realpath(".", &basepath_buffer) catch @panic("basepath_buffer overflown");
+    basepath.len += 1;
+    basepath[basepath.len - 1] = '/';
     std.debug.print("basepath: {s}\n", .{basepath});
 }
 

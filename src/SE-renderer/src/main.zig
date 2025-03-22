@@ -11,6 +11,7 @@ const samples_names = [_][]const u8 {
     "ClearScreen",
     "BasicTriangle",
     "BasicVertexBuffer",
+    "Cubemap",
 };
 
 const examples = [_]*const common.Example{
@@ -18,6 +19,7 @@ const examples = [_]*const common.Example{
     &@import("BasicTriangle.zig").BasicTriangle_Example,
     &@import("BasicVertexBuffer.zig").BasicVertexBuffer_Example,
     &@import("BlitCube.zig").BlitCube_Example,
+    &@import("Cubemap.zig").Cubmap_Example,    
 };
 
 const idx = 2;

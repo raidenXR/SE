@@ -1,15 +1,30 @@
+const std = @import("std");
 const c = @import("c.zig");
 const common = @import("common.zig");
 const dotnet = @import("dotnet");
 const numerics = dotnet.numerics;
+
 const Context = common.Context;
 
 var pipeline: ?*c.SDL_GPUGraphicsPipeline = null;
 var vertex_buffer: ?*c.SDL_GPUBuffer = null;
 var index_buffer: ?*c.SDL_GPUBuffer = null;
-var source_texture: ?*c.SDL_GPUTexture = null;
-var destination_texture: ?*c.SDL_GPUTexture = null;
+var texture: ?*c.SDL_GPUTexture = null;
 var sampler: ?*c.SDL_GPUSampler = null;
+
+inline fn color (r:f32, g:f32, b:f32, a:f32) c.SDL_FColor
+{
+    return c.SDL_FColor{.r = r, .g = g, .b = b, .a = a};
+}
+
+const clear_colors = [_]c.SDL_FColor{
+    color(1,0,0,1),
+    color(0,1,0,1),
+    color(0,0,1,1),
+    color(1,1,0,1),
+    color(1,0,1,1),
+    color(0,1,1,1),
+};
 
 var cam_pos = numerics.Vector3{0,0,4};
 
@@ -20,23 +35,15 @@ pub fn init (context:*Context) bool
         return result;
     }
 
-    // create the shaders
-    const vertex_shader = common.loadShader(context.device, "Skybox.vert", 0,1,0,0);
-    if (vertex_shader == null) {
-        @panic("failed to create vertex shader");
-    }
-
-    const fragment_shader = common.loadShader(context.device, "Skybox.frag", 1, 0, 0,0);
-    if (fragment_shader == null) {
-        @panic("failed to create fragment shader");
-    }
-
-    var pipeline_create_info = c.SDL_GPUGraphicsPipelineCreateInfo{
+    const vertex_shader = common.loadShader(context.device, "Skybox.vert", 0,1,0,0) orelse @panic("failed to create vertex shader");
+    const fragment_shader = common.loadShader(context.device, "Skybox.frag", 1,0,0,0) orelse @panic("failed to create fragment shader");
+    
+    const pipeline_create_info = c.SDL_GPUGraphicsPipelineCreateInfo{
         .target_info = .{
             .num_color_targets = 1,
             .color_target_descriptions = &[_]c.SDL_GPUColorTargetDescription{
                 .{.format = c.SDL_GetGPUSwapchainTextureFormat(context.device, context.window)},
-            }
+            },            
         },
         .vertex_input_state = c.SDL_GPUVertexInputState{
             .num_vertex_buffers = 1,
@@ -46,7 +53,7 @@ pub fn init (context:*Context) bool
                     .input_rate = c.SDL_GPU_VERTEXINPUTRATE_VERTEX,
                     .instance_step_rate = 0,
                     .pitch = @sizeOf(common.PositionVertex),
-                },                    
+                },
             },
             .num_vertex_attributes = 1,
             .vertex_attributes = &[_]c.SDL_GPUVertexAttribute{
@@ -55,12 +62,12 @@ pub fn init (context:*Context) bool
                     .format = c.SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
                     .location = 0,
                     .offset = 0,
-                },
-            },                
+                }
+            }
         },
         .primitive_type = c.SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,
         .vertex_shader = vertex_shader,
-        .fragment_shader = fragment_shader,
+        .fragment_shader = fragment_shader,     
     };
 
     pipeline = c.SDL_CreateGPUGraphicsPipeline(context.device, &pipeline_create_info);
@@ -84,24 +91,14 @@ pub fn init (context:*Context) bool
         }
     );
 
-    source_texture = c.SDL_CreateGPUTexture(context.device, &c.SDL_GPUTextureCreateInfo{
-        .format = c.SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+    texture = c.SDL_CreateGPUTexture(context.device, &c.SDL_GPUTextureCreateInfo{
         .type = c.SDL_GPU_TEXTURETYPE_CUBE,
-        .width = 32,
-        .height = 32,
+        .format = c.SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+        .width = 64,
+        .height = 64,
         .layer_count_or_depth = 6,
         .num_levels = 1,
-        .usage = c.SDL_GPU_TEXTUREUSAGE_SAMPLER | c.SDL_GPU_TEXTUREUSAGE_COLOR_TARGET
-    });
-
-    destination_texture = c.SDL_CreateGPUTexture(context.device, &c.SDL_GPUTextureCreateInfo{
-        .format = c.SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
-        .type = c.SDL_GPU_TEXTURETYPE_CUBE,
-        .width = 32,
-        .height = 32,
-        .layer_count_or_depth = 6,
-        .num_levels = 1,
-        .usage = c.SDL_GPU_TEXTUREUSAGE_SAMPLER | c.SDL_GPU_TEXTUREUSAGE_COLOR_TARGET        
+        .usage = c.SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
     });
 
     sampler = c.SDL_CreateGPUSampler(context.device, &c.SDL_GPUSamplerCreateInfo{
@@ -113,19 +110,19 @@ pub fn init (context:*Context) bool
         .address_mode_w = c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
     });
 
-    // set up buffer data
+    // set up buffer data 
     const buffer_transfer_buffer = c.SDL_CreateGPUTransferBuffer(
         context.device,
         &c.SDL_GPUTransferBufferCreateInfo{
             .usage = c.SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
-            .size = (@sizeOf(common.PositionVertex) * 24) + (@sizeOf(u16) * 36)
+            .size = @sizeOf(common.PositionVertex) * 24 + @sizeOf(u16) * 36,
         }
     );
 
-    var buffer_transfer_data: [*]common.PositionVertex = @ptrCast(@alignCast(c.SDL_MapGPUTransferBuffer(
+    const buffer_transfer_data: [*]common.PositionVertex = @ptrCast(@alignCast(c.SDL_MapGPUTransferBuffer(
         context.device,
         buffer_transfer_buffer,
-        false
+        false,
     )));
 
     buffer_transfer_data[0] = common.PositionVertex.init(-10, -10, -10);
@@ -172,41 +169,8 @@ pub fn init (context:*Context) bool
 
     c.SDL_UnmapGPUTransferBuffer(context.device, buffer_transfer_buffer);
 
-    // set up texture data
-    const bytes_per_image = 32 * 32 * 4;
-    const texture_transfer_buffer = c.SDL_CreateGPUTransferBuffer(
-        context.device,
-        &c.SDL_GPUTransferBufferCreateInfo{
-            .usage = c.SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
-            .size = bytes_per_image * 6,
-        }
-    );
 
-    const texture_transfer_data: [*]u8 = @ptrCast(@alignCast(c.SDL_MapGPUTransferBuffer(
-        context.device,
-        texture_transfer_buffer,
-        false
-    )));
-
-    const image_names = [_][]const u8 {
-        "cube0.bmp", "cube1.bmp", "cube2.bmp",
-        "cube3.bmp", "cube4.bmp", "cube5.bmp",
-    };
-
-    for (image_names, 0..) |image, I| {
-        const i: u32 = @intCast(I);
-        const image_data_ = common.loadImage(image, 4);
-        if (image_data_) |image_data| {
-             _ = c.SDL_memcpy(texture_transfer_data + (bytes_per_image * i), image_data.pixels, bytes_per_image);
-            c.SDL_DestroySurface(image_data);            
-        }
-        else {
-            @panic("could not load image data");            
-        }
-    }
-    c.SDL_UnmapGPUTransferBuffer(context.device, texture_transfer_buffer);
-
-    // unload the transfer data to the GPU buffers
+    // upload the transfer data to the GPU buffers
     const cmdbuf = c.SDL_AcquireGPUCommandBuffer(context.device);
     const copy_pass = c.SDL_BeginGPUCopyPass(cmdbuf);
 
@@ -221,7 +185,7 @@ pub fn init (context:*Context) bool
             .offset = 0,
             .size = @sizeOf(common.PositionVertex) * 24,
         },
-        false
+        false,
     );
 
     c.SDL_UploadToGPUBuffer(
@@ -235,109 +199,81 @@ pub fn init (context:*Context) bool
             .offset = 0,
             .size = @sizeOf(u16) * 36,
         },
-        false
+        false,
     );
 
-    for (0..6) |I| {
-        const i: u32 = @intCast(I);
-        c.SDL_UploadToGPUTexture(
-            copy_pass,
-            &c.SDL_GPUTextureTransferInfo{
-                .transfer_buffer = texture_transfer_buffer,
-                .offset = bytes_per_image * i,
-            },
-            &c.SDL_GPUTextureRegion{
-                .texture = source_texture,
-                .layer = i,
-                .w = 32,
-                .h = 32,
-                .d = 1,
-            },
-            false
-        );
-    }
-
     c.SDL_EndGPUCopyPass(copy_pass);
+    c.SDL_ReleaseGPUTransferBuffer(context.device, buffer_transfer_buffer);
 
-    // blit to destination texture
-    // this serves no real purpose other that demostrating cube-cube blits are possible
     for (0..6) |I| {
         const i: u32 = @intCast(I);
-        c.SDL_BlitGPUTexture(
+        const render_pass = c.SDL_BeginGPURenderPass(
             cmdbuf,
-            &c.SDL_GPUBlitInfo{
-                .source = .{
-                    .texture = source_texture, 
-                    .layer_or_depth_plane = i,
-                    .w = 32,
-                    .h = 32,
-                },
-                .destination = .{
-                    .texture = destination_texture,
-                    .layer_or_depth_plane = i,
-                    .w = 32,
-                    .h = 32,
-                },
-                .load_op = c.SDL_GPU_LOADOP_DONT_CARE,
-                .filter = c.SDL_GPU_FILTER_LINEAR,
-            }
+            &c.SDL_GPUColorTargetInfo{
+                .texture = texture,
+                .layer_or_depth_plane = i,
+                .clear_color = clear_colors[i],
+                .load_op = c.SDL_GPU_LOADOP_CLEAR,
+                .store_op = c.SDL_GPU_STOREOP_STORE,
+            },
+            1,
+            null,
         );
+        c.SDL_EndGPURenderPass(render_pass);
     }
-
-    c.SDL_ReleaseGPUTransferBuffer(context.device, buffer_transfer_buffer);
-    c.SDL_ReleaseGPUTransferBuffer(context.device, texture_transfer_buffer);
-
     _ = c.SDL_SubmitGPUCommandBuffer(cmdbuf);
 
     return true;
 }
 
-pub fn update (context:*Context) bool
+pub fn update (context:*Context) bool 
 {
     if (context.left_pressed or context.right_pressed) {
         cam_pos[2] *= -1;
     }
-
     return true;
 }
 
 pub fn draw (context:*Context) bool
 {
-    const cmdbuf = c.SDL_AcquireGPUCommandBuffer(context.device);
-    if (cmdbuf == null) {
-        common.failwith("acquireGPUCommandBuffer failed {s}\n", .{c.SDL_GetError()});
-    }
+    const cmdbuf = c.SDL_AcquireGPUCommandBuffer(context.device) orelse @panic("AcquireCommandBuffer failed");
 
-    var swapchain_texture:?*c.SDL_GPUTexture = null;
+    var swapchain_texture: ?*c.SDL_GPUTexture = null;
     if (!c.SDL_WaitAndAcquireGPUSwapchainTexture(cmdbuf, context.window, &swapchain_texture, null, null)) {
-        common.failwith("waitandAcquireGPUSwapchainTexture failed: {s}\n", .{c.SDL_GetError()});
+        return false;
     }
 
     if (swapchain_texture != null) {
-        const proj = numerics.mat4x4.createPerspectiveFieldOfView(75.0 * c.SDL_PI_F / 180.0, 640.0 / 480.0, 0.01, 100);
-
-        const view = numerics.mat4x4.createLookAt(cam_pos, numerics.Vector3{0,0,0}, numerics.Vector3{0,1,0});
-
+        const proj = numerics.mat4x4.createPerspectiveFieldOfView(
+            75.0 * c.SDL_PI_F / 180.0,
+            640.0 / 480.0,
+            0.01,
+            100.0,
+        );
+        const view = numerics.mat4x4.createLookAt(
+            cam_pos,
+            numerics.Vector3{0,0,0},
+            numerics.Vector3{0,1,0},
+        );
         const viewproj = numerics.mat4x4.multiply(view, proj);
 
         const color_target_info = c.SDL_GPUColorTargetInfo{
             .texture = swapchain_texture,
-            .clear_color = c.SDL_FColor{.r = 0.0, .g = 0.0, .b = 0.0, .a = 1.0},
-            .load_op = c.SDL_GPU_LOADOP_CLEAR,
+            .clear_color = color(0,0,0,1),
+            .load_op = c.SDL_GPU_LOADOP_LOAD,
             .store_op = c.SDL_GPU_STOREOP_STORE,
         };
 
         const render_pass = c.SDL_BeginGPURenderPass(cmdbuf, &color_target_info, 1, null);
-
         c.SDL_BindGPUGraphicsPipeline(render_pass, pipeline);
-        c.SDL_BindGPUVertexBuffers(render_pass, 0, &c.SDL_GPUBufferBinding{.buffer = vertex_buffer, .offset = 0}, 1);
-        c.SDL_BindGPUIndexBuffer(render_pass, &c.SDL_GPUBufferBinding{.buffer = index_buffer, .offset = 0}, c.SDL_GPU_INDEXELEMENTSIZE_16BIT);
-        c.SDL_PushGPUVertexUniformData(cmdbuf, 0, @ptrCast(&viewproj), viewproj.len);
-        c.SDL_DrawGPUIndexedPrimitives(render_pass, 36, 1, 0, 0,0);
-
-        c.SDL_EndGPURenderPass(render_pass);        
+        c.SDL_BindGPUVertexBuffers(render_pass, 0, &.{.buffer = vertex_buffer, .offset = 0}, 1);
+        c.SDL_BindGPUIndexBuffer(render_pass, &.{.buffer = index_buffer, .offset = 0}, c.SDL_GPU_INDEXELEMENTSIZE_16BIT);
+        c.SDL_BindGPUFragmentSamplers(render_pass, 0, &.{.texture = texture, .sampler = sampler}, 1);
+        c.SDL_PushGPUVertexUniformData(cmdbuf, 0, &viewproj, viewproj.len);
+        c.SDL_DrawGPUIndexedPrimitives(render_pass, 36, 1, 0, 0, 0);
+        c.SDL_EndGPURenderPass(render_pass);
     }
-    
+
     _ = c.SDL_SubmitGPUCommandBuffer(cmdbuf);
 
     return true;
@@ -348,19 +284,19 @@ pub fn quit (context:*Context) void
     c.SDL_ReleaseGPUGraphicsPipeline(context.device, pipeline);
     c.SDL_ReleaseGPUBuffer(context.device, vertex_buffer);
     c.SDL_ReleaseGPUBuffer(context.device, index_buffer);
-    c.SDL_ReleaseGPUTexture(context.device, source_texture);
-    c.SDL_ReleaseGPUTexture(context.device, destination_texture);
+    c.SDL_ReleaseGPUTexture(context.device, texture);
     c.SDL_ReleaseGPUSampler(context.device, sampler);
 
     cam_pos[2] = c.SDL_fabsf(cam_pos[2]);
-
     common.commonQuit(context);
 }
 
-pub const BlitCube_Example = common.Example{
-    .name = "BlitCube",
+pub const Cubmap_Example = common.Example{
+    .name = "Cubemap",
     .init = init,
     .update = update,
     .draw = draw,
     .quit = quit,
 };
+
+

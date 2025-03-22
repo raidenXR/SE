@@ -4,7 +4,7 @@ module LibSErenderer
     open System.Diagnostics
         
     [<Literal>]
-    let libname = "SE-renderer"
+    let libname = "./native/libSE-renderer.so"
 
     [<Struct; StructLayout(LayoutKind.Sequential)>]
     type Position = {
@@ -17,16 +17,31 @@ module LibSErenderer
     type Color = {
         V: uint
     }
+    
+    [<Struct; StructLayout(LayoutKind.Sequential)>]
+    type Context = {
+        device: nativeint
+        window: nativeint
+        pipeline: nativeint
+        vertex_buffer: nativeint
+        index_buffer: nativeint
+        is_initialized: bool
+        is_disposed: bool
+        running: bool
+    }
 
     [<DllImport(libname)>]
-    extern void init(uint vertex_size, uint vertex_buffer_len, Position[] pos, Color[] colors);
+    extern Context init(string name);
+    
+    [<DllImport(libname)>]
+    extern void createVertexBuffer(Context* s, Position[] pos, Color[] colors, uint32 vertex_len, uint32 vertex_buffer_len);    
 
     [<DllImport(libname)>]
-    extern void update();
+    extern void update(Context* s, uint32 vertex_len);
 
     [<DllImport(libname)>]
-    extern void draw(uint vertex_len);
+    extern void draw(Context* s, uint32 vertex_len);
 
     [<DllImport(libname)>]
-    extern void quit();
+    extern void quit(Context* s);
 

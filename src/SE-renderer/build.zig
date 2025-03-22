@@ -15,6 +15,12 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
+    const package = b.dependency("dotnet", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const module = package.module("dotnet");
+
     // This creates a "module", which represents a collection of source files alongside
     // some compilation options, such as optimization mode and linked system libraries.
     // Every executable or library we compile will be based on one or more modules.
@@ -28,6 +34,9 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .link_libc = true,
     });
+    lib_mod.addImport("SE-renderer_lib", lib_mod);
+    lib_mod.addImport("dotnet", module);
+    lib_mod.linkSystemLibrary("SDL3", .{});
 
     // We will also create a module for our other entry point, 'main.zig'.
     const exe_mod = b.createModule(.{
@@ -45,7 +54,7 @@ pub fn build(b: *std.Build) void {
     // This is what allows Zig source code to use `@import("foo")` where 'foo' is not a
     // file path. In this case, we set up `exe_mod` to import `lib_mod`.
     exe_mod.addImport("SE-renderer_lib", lib_mod);
-
+    exe_mod.addImport("dotnet", module);
     exe_mod.linkSystemLibrary("SDL3", .{});
 
     // Now, we will create a static library based on the module we created above.
@@ -73,12 +82,6 @@ pub fn build(b: *std.Build) void {
     // standard location when the user invokes the "install" step (the default
     // step when running `zig build`).
     b.installArtifact(exe);
-
-    const module = b.addModule("foo", .{
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
 
     // This is where the interesting part begins.
     // As you can see we are re-defining the same executable but 
