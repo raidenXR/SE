@@ -16,12 +16,8 @@ let triangle_positions = [|
 |]
 
 let color r g b a =
-    let mutable c = 0u;
-    c <- c ||| (r <<< 24)
-    c <- c ||| (g <<< 16)
-    c <- c ||| (b <<< 8)
-    c <- c ||| (a)
-    uint c
+    uint <| (r <<< 24) ||| (g <<< 16) ||| (b <<< 8) ||| (a)
+    
 
 let triangle_colors = [|
     {V = (color 255u 0u 0u 255u)}

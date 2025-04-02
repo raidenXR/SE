@@ -50,10 +50,11 @@ let create_velocity_entities () =
         |> ignore
     printfn "create_velocity_entitities function run."
     
+#time
 System.create OnLoad [] (fun _ -> create_temperature_entities ())
 System.create OnLoad [] (fun _ -> create_position_entities ())
 System.create OnLoad [] (fun _ -> create_velocity_entities ())
-
+#time
 
 let entity1 = 
     Entity.create()

@@ -65,6 +65,91 @@ const Mesh = extern struct
     len: u32,
 };
 
+const Bounds = struct
+{
+    xmin: f32,
+    xmax: f32,
+    ymin: f32,
+    ymax: f32,
+    zmin: f32,
+    zmax: f32,
+};
+
+const MeshGeometry3DCreateInfo = struct 
+{
+    bounds: Bounds,
+    normals: []numerics.Vector3,
+    positions: []numerics.Vector3,
+    triangle_indices: []u16,
+    texture_coordinates: []numerics.Vector3,
+    len: usize,        
+};
+
+const MeshGeometry3D = struct
+{
+    vertices: ?*c.SDL_GPUBUffer,
+    indices: ?*c.SDL_GPUBuffer,
+    textures: ?c.SDL_GPUTexture,
+    sampler: ?*c.SDL_GPUSampler,    
+    vertex_shader: ?*c.SDL_GPUShader,
+    fragment_shader: ?*c.SDL_GPUShader,
+
+    pub fn init (device:?*c.SDL_GPUDevice, mesh_geometry:MeshGeometry3D) MeshGeometry3D
+    {
+        _ = mesh_geometry; // autofix
+        _ = device; // autofix
+        const vertices = c.SDL_CreateGPUBuffer();
+        const indices = c.SDL_CreateGPUBuffer();
+        const texture = c.SDL_CreateTexture();
+        const sampler = c.SDL_CreateGPUSampler();
+
+        return .{
+            .vertices = vertices,
+            .indices = indices,
+            .textures = texture,
+            .sampler = sampler,
+        };    
+    }
+
+    pub fn deinit (s:MeshGeometry3D) void
+    {
+        c.SDL_ReleaseGPUShader(s.vertex_shader);
+        c.SDL_ReleaseGPUShader(s.fragment_shader);
+        c.SDL_ReleaseGPUBuffer(s.vertices);
+        c.SDL_ReleaseGPUBuffer(s.indices);
+        c.SDL_ReleaseGPUTexture(s.textures);
+        c.SDL_ReleaseGPUSampler(s.sampler);
+    }
+
+    pub fn draw (s:MeshGeometry3D, cmdbuf: ?*c.SDL_GPURenderPass) void
+    {
+        _ = s; // autofix
+        _ = cmdbuf; // autofix
+        
+    }
+};
+
+
+/// the equivalent of main, running the loop
+pub fn run (context:*Context) void 
+{
+    while (context.running) {
+        var evt: c.SDL_Event = undefined;
+        while (c.SDL_PollEvent(&evt)) 
+        {
+            if (evt.type == c.SDL_EVENT_QUIT) {
+                context.running = false;
+            }
+            if (!context.running) {
+                quit(context);
+                break;
+            }            
+            draw(context, 24); 
+        }
+    }    
+    
+}
+
 export fn init (name:[*c]const u8) Context
 {
     var s = Context{

@@ -4,6 +4,8 @@ open System
 open System.Collections.Generic
 
 type Entity = uint32
+
+type Entities = ArraySegment<Entity>
         
 /// Container for caching Entity ids set and iterating over
 /// Acts as a Filter, for running over those filters systems etc
@@ -18,7 +20,7 @@ type EntityStorage = {
 type IComponents =
     abstract Count: int
     abstract Capacity: int
-    abstract Entities: ArraySegment<Entity>
+    abstract Entities: Entities
     abstract Remove: Entity -> unit
     abstract Contains: Entity -> bool
     abstract Sort: unit -> unit
@@ -47,12 +49,12 @@ type Trigger =
 
 /// A system is a query combined with a callback. 
 /// Systems can be either ran manually or ran as part of an ECS-managed main loop (see Pipeline)
-type System = Types * (ArraySegment<Entity> -> unit)
+type System = Types * (Entities -> unit)
 
 /// Observers are similar to systems, in that they are queries that are combined with a callback. 
 /// The difference between systems and observers is that systems are executed periodically for all matching entities, 
 /// whereas observers are executed whenever a matching event occurs.
-type Observer = Types * (ArraySegment<Entity> -> unit)
+type Observer = Types * (Entities -> unit)
 
 
 /// Contairer class for storing components and entity ids
@@ -75,7 +77,7 @@ type Components<'T>() =
     let last () = ids[count - 1]
 
     let printEntities () =
-        for id in ArraySegment<Entity>(ids, 0, count) do
+        for id in Entities(ids, 0, count) do
             printf $"0x{id:X6}, "
         printfn ""
 
@@ -200,7 +202,7 @@ type Components<'T>() =
     interface IComponents with
         member this.Count with get() = count
         member this.Capacity with get() = capacity
-        member this.Entities with get() = ArraySegment<Entity>(ids, 0, count)
+        member this.Entities with get() = Entities(ids, 0, count)
         member this.Remove (id:Entity) = remove id
         member this.Contains (id:Entity) = 
             let mutable i = 0
@@ -294,7 +296,7 @@ type Components<'T>() =
                     items[i] <- value
                     
 
-    member this.Entities with get() = ArraySegment<Entity>(ids, 0, count)
+    member this.Entities with get() = Entities(ids, 0, count)
 
     member this.Clear() = count <- 0
 
@@ -344,13 +346,13 @@ module Queries =
     let private resize (ent_storage:EntityStorage) =
         Array.Resize(&ent_storage.ids, ent_storage.ids.Length * 2)
 
-    let private copyTo (slice:ArraySegment<Entity>) (buffer:array<Entity>) =
+    let private copyTo (slice:Entities) (buffer:array<Entity>) =
         for i = 0 to slice.Count - 1 do
             buffer[i] <- slice[i]
 
-    let intersect (a:ArraySegment<Entity>) (b:ArraySegment<Entity>) (buffer:array<Entity>) =
+    let intersect (a:Entities) (b:Entities) (buffer:array<Entity>) =
         if a[a.Count - 1] < b[0] || b[b.Count - 1] < a[0] then 
-            ArraySegment<Entity>()
+            Entities()
         else
             let mutable i = 0
             let mutable j = 0
@@ -365,7 +367,7 @@ module Queries =
                     i <- i + 1
                 elif b[j] < a[i] then
                     j <- j + 1
-            ArraySegment<Entity>(buffer, 0, n)
+            Entities(buffer, 0, n)
 
 
     let build (types:Types) = 
@@ -405,7 +407,7 @@ module Queries =
     /// returns the entities Slice matching the types key
     let rec get (types:Types) =
         match types.Length with
-        | 0 -> ArraySegment<Entity>()
+        | 0 -> Entities()
         | 1 -> Components.entities types[0]
         | _ when queries.ContainsKey types ->
             let q = queries[types] 
@@ -460,7 +462,7 @@ module System =
 
     let mutable private running = true
 
-    let create (phase:Phase) (types:Types) (fn:ArraySegment<Entity> -> unit) =
+    let create (phase:Phase) (types:Types) (fn:Entities -> unit) =
         Queries.build types
         match phase with
         | OnLoad -> on_load.Add (types,fn)
@@ -505,7 +507,7 @@ module Observers =
     let on_iterate = ResizeArray<Observer>()
     
     /// The observers are created post-load
-    let create (trigger:Trigger) (types:Types) (fn:ArraySegment<Entity> -> unit) =
+    let create (trigger:Trigger) (types:Types) (fn:Entities -> unit) =
         // System.create PostLoad types (fun _ -> 
         Queries.build types
         match trigger with
