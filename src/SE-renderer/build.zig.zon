@@ -37,7 +37,7 @@
     // internet connectivity.
     .dependencies = .{
         .dotnet = .{
-            .url = "../../../../zig/SrcCollection-utilities/",
+            .url = "../../../../zig/zdotnet/",
             .hash = "dotnet-0.1.0-Xe2rzg9lAQDt8mbQbYrX79liDpq_trtw-ftDLsUzDKW8",
         },
     },

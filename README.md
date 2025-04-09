@@ -29,11 +29,11 @@ render 'real geometries' with it.
 
 To build `src/SE-renderer`  Zig compiler (0.14 stable) is required.   
 **Make sure that SDL3-devel in available on your machine too**. 
-Also it references the dotnet package from [SrcCollection-repo](https://github.com/raidenXR/SrcCollection), so make sure to clone it, and fix the url to match the relative path on your machine, in `src/SE-renderer/build.zig.zon`.  
+Also it references the dotnet package from [zdotnet-repo](https://github.com/raidenXR/zdotnet), so make sure to clone it, and fix the url to match the relative path on your machine, in `src/SE-renderer/build.zig.zon`.  
 ```
     .dependencies = .{
         .dotnet = .{
-            .url = "../../../../zig/SrcCollection-utilities/",
+            .url = "../../../../zig/zdotnet/",
             .hash = "dotnet-0.1.0-Xe2rzg9lAQDt8mbQbYrX79liDpq_trtw-ftDLsUzDKW8",
         },
     },
