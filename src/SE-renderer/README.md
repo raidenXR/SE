@@ -1,25 +1,30 @@
-To compile shaders with dxc (directX compiler) use the following command for vertex shaders   
+#### DirectXCompiler
+
+Download dxc from github releases [https://github.com/microsoft/DirectXShaderCompiler/releases](URL)  
+
+
+#### Shader Compilation
+
+For offline compilation of shaders with dxc (directX compiler) use the following commands.   
 
 ```
-dxc -T vs_6_4 -E main RawTriangle.vert.hlsl -Fo RawTriangle.vert.dxil
+dxc -T vs_6_4 -E VS color.hlsl -Fo color.vertex.dxil   # for vertex shader
+dxc -T ps_6_4 -E PS color.hlsl -Fo color.frag.dxil     # for pixel shader
 ```
 
-and for fragment shaders
+To compile to SPIR-V binary format use **-spirv**  .
 
 ```
-dxc -T ps_6_4 -E main RawTriangle.frag.hlsl -Fo RawTriangle.frag.dxil
+dxc -spirv -T vs_6_4 -E VS color.hlsl -Fo color.vertex.spv   # for vertex shader
+dxc -spirv -T ps_6_4 -E VS color.hlsl -Fo color.frag.spv     # for pixel shader
 ```
 
-```
-dxc -spirv -T ps_6_4 -E main RawTriangle.frag.hlsl -Fo RawTriangle.frag.spv
-```
-
-TODO: Compile SDL_Shadercross and include that in the project to compile .hlsl shaders on runtime.  
-
+Shader source code, along with the compiled `.spv` binaries are stored in `shaders/` directory.   
    
    
 
-**P.S** Bindings for F# and C# contained in bindings folder.   
+**P.S** ~~Bindings for F# and C# contained in bindings folder.~~   
+Ignore the bindings for the time being. These are from an older commit...   
 The bindings are generated with [zig2dotnet_v2](https://github.com/raidenXR/zig2dotnet)  
 Generate bindings with 
 

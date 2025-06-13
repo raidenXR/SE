@@ -29,14 +29,16 @@ pub fn build(b: *std.Build) void {
         // only contains e.g. external object files, you can make this `null`.
         // In this case the main source file is merely a path, however, in more
         // complicated build scripts, this could be a generated file.
-        .root_source_file = b.path("src/rendererFS.zig"),
+        .root_source_file = b.path("src/GeometryGenerator.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
     });
+    // lib_mod.addLibraryPath(.{.cwd_relative = "deps"});
     lib_mod.addImport("SE-renderer_lib", lib_mod);
     lib_mod.addImport("dotnet", module);
     lib_mod.linkSystemLibrary("SDL3", .{});
+    // lib_mod.linkLibrary("SDL3_shadercross", .{});
 
     // We will also create a module for our other entry point, 'main.zig'.
     const exe_mod = b.createModule(.{
@@ -53,9 +55,11 @@ pub fn build(b: *std.Build) void {
     // Modules can depend on one another using the `std.Build.Module.addImport` function.
     // This is what allows Zig source code to use `@import("foo")` where 'foo' is not a
     // file path. In this case, we set up `exe_mod` to import `lib_mod`.
+    // exe_mod.addLibraryPath(.{.cwd_relative = "deps"});
     exe_mod.addImport("SE-renderer_lib", lib_mod);
     exe_mod.addImport("dotnet", module);
     exe_mod.linkSystemLibrary("SDL3", .{});
+    // exe_mod.linkLibrary("deps/SDL3_shadercross", .{});
 
     // Now, we will create a static library based on the module we created above.
     // This creates a `std.Build.Step.Compile`, which is the build step responsible

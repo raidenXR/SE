@@ -6,6 +6,7 @@ runtimes/
 fonts/
 vertices/
 Content/
+textures/
 
 *.txt
 *.gnu
