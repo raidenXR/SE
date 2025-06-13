@@ -60,6 +60,18 @@ pub fn getBasepath () struct{[256:0]u8, usize}
     return .{bpath_buffer, bpath_slice.len};
 }
 
+fn getFullpath (filename:[]const u8) struct{[*c]const u8, [1024:0]u8}
+{
+    var basepath_slice, const bpath_len = getBasepath();
+    const basepath = basepath_slice[0..bpath_len];
+
+    var fullpath_buffer: [1024:0]u8   = undefined;
+    fullpath_buffer[1021] = '\x00';
+    const fullpath = std.fmt.bufPrintZ(&fullpath_buffer, "{s}{s}", .{basepath, filename}) catch @panic ("buffprintZ failed");
+    
+    return .{fullpath.ptr, fullpath_buffer};
+}
+
 test "test getBasepath" {
     const b, const l = getBasepath();
     std.debug.print("getbasepath: -{s}-\n", .{b[0..l]});
@@ -90,15 +102,11 @@ pub fn loadShader (
         }       
     };
 
-    var basepath_slice, const bpath_len = getBasepath();
-    const basepath = basepath_slice[0..bpath_len];
-
-    var fullpath_buffer: [1024]u8   = undefined;
-    const fullpath = std.fmt.bufPrintZ(&fullpath_buffer, "{s}{s}", .{basepath, shader_file_path}) catch @panic ("buffprintZ failed");
+    const fullpath, _ = getFullpath(shader_file_path);
     const format   = c.SDL_GPU_SHADERFORMAT_SPIRV;   
 
     var code_size: usize = undefined;
-    const code = c.SDL_LoadFile(fullpath.ptr, &code_size);
+    const code = c.SDL_LoadFile(fullpath, &code_size);
     defer c.SDL_free(code);
     errdefer c.SDL_free(code);
     
@@ -129,11 +137,19 @@ pub fn loadShader (
 }
 
 
+pub fn loadImage (image_filepath:[]const u8) ?*c.SDL_Surface
+{
+    const fullpath, _ = getFullpath(image_filepath);   
+        
+    const result = c.SDL_LoadBMP(fullpath);
+    // var pixel_format = c.SDL_PIXELFORMAT_ARGB8888;
+
+    return result;
+}
+
 /// creates the Shaders & Pipeline
 pub fn createPipeline (ctx:Context, vs:?*c.SDL_GPUShader, ps:?*c.SDL_GPUShader, gs:?*c.SDL_GPUShader, cs:?*c.SDL_GPUShader) ?*c.SDL_GPUGraphicsPipeline
 {
-    _ = gs; // autofix
-    _ = cs; // autofix
     const device = ctx.device;
     const window = ctx.window;
     // const vertex_shader = loadShader( device, vertex_shader_name, 0, 1, 0, 0);
@@ -200,8 +216,10 @@ pub fn createPipeline (ctx:Context, vs:?*c.SDL_GPUShader, ps:?*c.SDL_GPUShader, 
         .fragment_shader = ps,
     };
 
-    // c.SDL_ReleaseGPUShader( device, vs );
-    // c.SDL_ReleaseGPUShader( device, ps );
+    if (vs != null) c.SDL_ReleaseGPUShader( device, vs );
+    if (ps != null) c.SDL_ReleaseGPUShader( device, ps );
+    if (cs != null) c.SDL_ReleaseGPUShader( device, cs );
+    if (gs != null) c.SDL_ReleaseGPUShader( device, gs );
 
     return c.SDL_CreateGPUGraphicsPipeline(device, &pipeline_info);
 }
@@ -216,7 +234,7 @@ pub fn getSize (comptime T: type, slice: []T) u32
 
 
 /// Create & Upload Scene Index and Vertex Buffers
-pub fn createAndUploadBuffers (device: ?*c.SDL_GPUDevice, mesh_geometry:*GeometryGenerator.MeshGeometry) void
+pub fn createMeshGeometryBuffers (device: ?*c.SDL_GPUDevice, mesh_geometry:*GeometryGenerator.MeshGeometry, copy_pass:?*c.SDL_GPUCopyPass) void
 {
     const vertices = mesh_geometry.vertex_buffer_cpu.items;
     const indices  = mesh_geometry.index_buffer_cpu.items;
@@ -269,8 +287,8 @@ pub fn createAndUploadBuffers (device: ?*c.SDL_GPUDevice, mesh_geometry:*Geometr
     c.SDL_UnmapGPUTransferBuffer( device, buffer_transfer_buffer);
     
     // upload the transfer data to the GPU buffers
-    const upload_cmd_buffer = c.SDL_AcquireGPUCommandBuffer( device );
-    const copy_pass = c.SDL_BeginGPUCopyPass( upload_cmd_buffer );
+    // const upload_cmd_buffer = c.SDL_AcquireGPUCommandBuffer( device );
+    // const copy_pass = c.SDL_BeginGPUCopyPass( upload_cmd_buffer );
 
     c.SDL_UploadToGPUBuffer(
         copy_pass,
@@ -300,14 +318,128 @@ pub fn createAndUploadBuffers (device: ?*c.SDL_GPUDevice, mesh_geometry:*Geometr
         false
     );
 
-    c.SDL_EndGPUCopyPass( copy_pass );
-    _ = c.SDL_SubmitGPUCommandBuffer( upload_cmd_buffer );
-    c.SDL_ReleaseGPUTransferBuffer( device, buffer_transfer_buffer );
+
+    // c.SDL_EndGPUCopyPass( copy_pass );
+    // _ = c.SDL_SubmitGPUCommandBuffer( upload_cmd_buffer );
 
     mesh_geometry.vertex_buffer_gpu = vertex_buffer;
     mesh_geometry.index_buffer_gpu = index_buffer;
+    mesh_geometry.transfer_buffer = buffer_transfer_buffer;
     mesh_geometry.total_indices_len += indices_size;
 }
+
+
+pub fn uploadTexture (device: ?*c.SDL_GPUDevice, texture:?*c.SDL_GPUTexture, surface:?*c.SDL_Surface, copy_pass:?*c.SDL_GPUCopyPass) void
+{
+    const w: u32 = @intCast(surface.?.w);
+    const h: u32 = @intCast(surface.?.h);
+    const s: u32 = (w * h * 4);
+    
+    const texture_transfer_buffer = c.SDL_CreateGPUTransferBuffer(
+        device,
+        &c.SDL_GPUTransferBufferCreateInfo{
+            .usage = c.SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
+            .size = s,            
+        }
+    );
+
+    const texture_transfer_data  = c.SDL_MapGPUTransferBuffer(device, texture_transfer_buffer, false);
+    var texture_tranfer_ptr: [*]u8 = @ptrCast(@alignCast(texture_transfer_data));
+
+    const pixels: [*]u8 = @ptrCast(@alignCast(surface.?.pixels)); 
+    @memcpy(texture_tranfer_ptr[0..s], pixels[0..s]);
+    c.SDL_UnmapGPUTransferBuffer( device, texture_transfer_buffer );
+    
+    c.SDL_UploadToGPUTexture(
+        copy_pass,
+        &c.SDL_GPUTextureTransferInfo{
+            .transfer_buffer = texture_transfer_buffer,
+            .offset = 0,
+        },
+        &c.SDL_GPUTextureRegion{
+            .texture = texture,
+            .w = w,
+            .h = h,
+            .d = 1,
+        },
+        false
+    );
+
+    c.SDL_ReleaseGPUTransferBuffer( device, texture_transfer_buffer );
+}
+
+
+pub fn createSamplers (device:?*c.SDL_GPUDevice) [6]?*c.SDL_GPUSampler
+{
+    var samplers: [6]?*c.SDL_GPUSampler = undefined;
+
+    // PointClamp
+    samplers[0] = c.SDL_CreateGPUSampler(device, &c.SDL_GPUSamplerCreateInfo{
+        .min_filter  = c.SDL_GPU_FILTER_NEAREST,
+        .mag_filter  = c.SDL_GPU_FILTER_NEAREST,
+        .mipmap_mode = c.SDL_GPU_SAMPLERMIPMAPMODE_NEAREST,
+        .address_mode_u = c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+        .address_mode_v = c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+        .address_mode_w = c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+    });
+
+    // PointWrap
+    samplers[1] = c.SDL_CreateGPUSampler(device, &c.SDL_GPUSamplerCreateInfo{
+		.min_filter  = c.SDL_GPU_FILTER_NEAREST,
+		.mag_filter  = c.SDL_GPU_FILTER_NEAREST,
+		.mipmap_mode = c.SDL_GPU_SAMPLERMIPMAPMODE_NEAREST,
+		.address_mode_u = c.SDL_GPU_SAMPLERADDRESSMODE_REPEAT,
+		.address_mode_v = c.SDL_GPU_SAMPLERADDRESSMODE_REPEAT,
+		.address_mode_w = c.SDL_GPU_SAMPLERADDRESSMODE_REPEAT,    
+    });
+
+    // LinearClamp
+    samplers[2] = c.SDL_CreateGPUSampler(device, &c.SDL_GPUSamplerCreateInfo{
+		.min_filter  = c.SDL_GPU_FILTER_LINEAR,
+		.mag_filter  = c.SDL_GPU_FILTER_LINEAR,
+		.mipmap_mode = c.SDL_GPU_SAMPLERMIPMAPMODE_LINEAR,
+		.address_mode_u = c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+		.address_mode_v = c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+		.address_mode_w = c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,    
+    });
+
+    // LinearWrap
+    samplers[3] = c.SDL_CreateGPUSampler(device, &c.SDL_GPUSamplerCreateInfo{
+        .min_filter  = c.SDL_GPU_FILTER_LINEAR,
+		.mag_filter  = c.SDL_GPU_FILTER_LINEAR,
+		.mipmap_mode = c.SDL_GPU_SAMPLERMIPMAPMODE_LINEAR,
+		.address_mode_u = c.SDL_GPU_SAMPLERADDRESSMODE_REPEAT,
+		.address_mode_v = c.SDL_GPU_SAMPLERADDRESSMODE_REPEAT,
+		.address_mode_w = c.SDL_GPU_SAMPLERADDRESSMODE_REPEAT,
+    });
+    
+    // AnisotropicClamp
+    samplers[4] = c.SDL_CreateGPUSampler(device, &c.SDL_GPUSamplerCreateInfo{
+        .min_filter  = c.SDL_GPU_FILTER_LINEAR,
+		.mag_filter  = c.SDL_GPU_FILTER_LINEAR,
+		.mipmap_mode = c.SDL_GPU_SAMPLERMIPMAPMODE_LINEAR,
+		.address_mode_u = c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+		.address_mode_v = c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+		.address_mode_w = c.SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+		.enable_anisotropy = true,
+		.max_anisotropy = 4
+    });
+    
+    // AnisotropicWrap
+    samplers[5] = c.SDL_CreateGPUSampler(device, &c.SDL_GPUSamplerCreateInfo{
+        .min_filter  = c.SDL_GPU_FILTER_LINEAR,
+		.mag_filter  = c.SDL_GPU_FILTER_LINEAR,
+		.mipmap_mode = c.SDL_GPU_SAMPLERMIPMAPMODE_LINEAR,
+		.address_mode_u = c.SDL_GPU_SAMPLERADDRESSMODE_REPEAT,
+		.address_mode_v = c.SDL_GPU_SAMPLERADDRESSMODE_REPEAT,
+		.address_mode_w = c.SDL_GPU_SAMPLERADDRESSMODE_REPEAT,
+		.enable_anisotropy = true,
+		.max_anisotropy = 4
+    });
+    
+    return samplers;
+}
+
 
 pub fn draw (device: ?*c.SDL_GPUDevice, window: ?*c.SDL_Window, mesh_geometry: GeometryGenerator.MeshGeometry, background_color: [4]f32) void
 {

@@ -9,6 +9,20 @@ const Utils = @import("utilities.zig");
 
 const print = std.debug.print;
 
+const sampler_names = [_][]const u8 {
+    "PointClamp",
+    "PointWrap",
+    "LinearClamp",
+    "LinearWrap",
+    "AnisotropicClamp",
+    "AnisotropicWrap",
+};
+
+var sampler_idx: usize = 0;
+var samplers: [6]?*c.SDL_GPUSampler = undefined;
+
+var texture: ?*c.SDL_GPUTexture = undefined;
+
 var is_running = true;
 
 var world = mat4x4.identity;
@@ -47,21 +61,42 @@ fn draw () void
 
 pub fn main () !void
 {
-    proj = mat4x4.createPerspectiveFieldOfView(0.25 * std.math.pi, aspect_ratio, 1, 1000);
+    const ctx= try Utils.init("renderer window", 1240, 720, 0);
+    defer Utils.quit(ctx);
 
+    // create the shaders 
+    const vs = Utils.loadShader(ctx.device, "shaders/texture_quad_vs.spv", "VS", 0, 1, 0, 0);
+    const ps = Utils.loadShader(ctx.device, "shaders/texture_quad_ps.spv", "PS", 0, 1, 0, 0);
+    
+    // load the image
+    const image_data = Utils.loadImage("textures/texture1.bmp");
+    defer c.SDL_DestroySurface(image_data);
+
+    // create the pipeline
+    const pipeline = Utils.createPipeline( ctx, vs, ps, null, null );
+
+    samplers = Utils.createSamplers(ctx.device);
+
+    texture = c.SDL_CreateGPUTexture(ctx.device, &c.SDL_GPUTextureCreateInfo{
+        .type = c.SDL_GPU_TEXTURETYPE_2D,
+        .format = c.SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+        .width = @intCast(image_data.?.w),
+        .height = @intCast(image_data.?.h),
+        .layer_count_or_depth = 1,
+        .num_levels = 1,
+        .usage = c.SDL_GPU_TEXTUREUSAGE_SAMPLER,
+    });
+    defer c.SDL_ReleaseGPUTexture( ctx.device, texture );
+
+    
+
+    proj = mat4x4.createPerspectiveFieldOfView(0.25 * std.math.pi, aspect_ratio, 1, 1000);
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
     var camera = Camera.default;    
 
-    const ctx= try Utils.init("renderer window", 1240, 720, 0);
-    defer Utils.quit(ctx);
 
-    const vs = Utils.loadShader(ctx.device, "shaders/color_vs.spv", "VS", 0, 1, 0, 0);
-    defer c.SDL_ReleaseGPUShader(ctx.device, vs);
-    const ps = Utils.loadShader(ctx.device, "shaders/color_ps.spv", "PS", 0, 1, 0, 0);
-    defer c.SDL_ReleaseGPUShader(ctx.device, ps);
-    const pipeline = Utils.createPipeline( ctx, vs, ps, null, null);
 
     var box = try GeometryGenerator.createBox( allocator, 100, 100, 100, 4);
     defer box.deinit( allocator );
@@ -81,8 +116,14 @@ pub fn main () !void
     geo.vertex_buffer_byte_size += Utils.getSize(GeometryGenerator.Vertex, box.vertices.items);
     geo.total_indices_len += @intCast(box.indices.items.len);
 
+    const upload_cmd_buffer = c.SDL_AcquireGPUCommandBuffer( ctx.device );
+    const copy_pass = c.SDL_BeginGPUCopyPass( upload_cmd_buffer );
 
-    Utils.createAndUploadBuffers( ctx.device, &geo );   
+    Utils.createMeshGeometryBuffers( ctx.device, &geo, copy_pass );   
+    Utils.uploadTexture( ctx.device, texture, image_data, copy_pass );
+
+    c.SDL_EndGPUCopyPass( copy_pass );
+    _ = c.SDL_SubmitGPUCommandBuffer( upload_cmd_buffer );
 
 
     while (is_running)
@@ -140,10 +181,11 @@ pub fn main () !void
 
             const renderpass = c.SDL_BeginGPURenderPass( cmdbuf, &color_target_info, 1, null );
 
+            c.SDL_BindGPUGraphicsPipeline( renderpass, geo.pipeline );
             c.SDL_BindGPUVertexBuffers( renderpass, 0, &c.SDL_GPUBufferBinding{.buffer = geo.vertex_buffer_gpu, .offset = 0}, 1);
             c.SDL_BindGPUIndexBuffer( renderpass, &c.SDL_GPUBufferBinding{.buffer = geo.index_buffer_gpu, .offset = 0}, c.SDL_GPU_INDEXELEMENTSIZE_32BIT);
-            c.SDL_PushGPUVertexUniformData( cmdbuf, 0, &world_view_proj, @sizeOf([16]f32) );
-            c.SDL_BindGPUGraphicsPipeline( renderpass, geo.pipeline );
+            // c.SDL_PushGPUVertexUniformData( cmdbuf, 0, &world_view_proj, @sizeOf([16]f32) );
+            c.SDL_BindGPUFragmentSamplers( renderpass, 0, &c.SDL_GPUTextureSamplerBinding{.texture = texture, .sampler = samplers[0]}, 1);
             c.SDL_DrawGPUIndexedPrimitives( renderpass, geo.total_indices_len, 1, 0, 0, 0);
             c.SDL_EndGPURenderPass( renderpass );
         }

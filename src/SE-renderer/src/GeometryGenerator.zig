@@ -55,11 +55,9 @@ pub const MeshGeometry = struct
 
     vertex_buffer_gpu: ?*c.SDL_GPUBuffer = null,
     index_buffer_gpu:  ?*c.SDL_GPUBuffer = null,
+    transfer_buffer:   ?*c.SDL_GPUTransferBuffer = null,
 
     pipeline: ?*c.SDL_GPUGraphicsPipeline = null,
-
-    vertex_buffer_uploader: ?*c.SDL_GPUTransferBuffer = null,
-    index_buffer_uploader:  ?*c.SDL_GPUTransferBuffer = null,
 
     // data about the buffers
     total_indices_len:  u32 = 0,
@@ -80,6 +78,7 @@ pub const MeshGeometry = struct
         c.SDL_ReleaseGPUGraphicsPipeline(device, m.pipeline);
         c.SDL_ReleaseGPUBuffer(device, m.vertex_buffer_gpu);
         c.SDL_ReleaseGPUBuffer(device, m.index_buffer_gpu);
+        c.SDL_ReleaseGPUTransferBuffer( device, m.transfer_buffer );
     }
 };
 

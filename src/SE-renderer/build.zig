@@ -92,7 +92,7 @@ pub fn build(b: *std.Build) void {
     // we're binding it to a dedicated build step.
     const exe_check = b.addExecutable(.{
         .name = "foo",
-        .root_module = module,
+        .root_module = lib_mod,
         // .root_source_file = b.path("src/main.zig"),
         // .target = target,
         // .optimize = optimize,
