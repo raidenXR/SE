@@ -7,13 +7,14 @@ const vec3 = numerics.vec3;
 const vec2 = numerics.vec2;
 const c = @import("c.zig");
 
+const print = std.debug.print;
 
 pub const Vertex = struct
 {
-    position:  [3]f32,
-    normal:    [3]f32,
-    tangent_u: [3]f32,
-    tex_c:     [2]f32,
+    position:  Vector3,
+    normal:    Vector3,
+    tangent_u: Vector3,
+    tex_c:     Vector2,
 };
 
 inline fn vertex (w: f32, h: f32, d: f32, n0: f32, n1: f32, n2: f32, t0: f32, t1: f32, t2: f32, tx0: f32, tx1: f32) Vertex
@@ -267,7 +268,7 @@ test "test loading-model" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
-    var car_model = try loadModel(allocator, "car.txt");
+    var car_model = try loadModel(allocator, "textures/car.txt");
     defer car_model.deinit(allocator);
 
     std.debug.print("testing loading model\n", .{});
@@ -287,16 +288,94 @@ test "test loading-model" {
     }
 }
 
+fn addNormals (mesh_data:*MeshData) void
+{
+    const vertices = mesh_data.vertices.items;
+    const indices  = mesh_data.indices.items;
+    const num_triangles = indices.len / 3;
+
+    if (mesh_data.indices.items.len % 3 != 0) print ("indices len: {}, vertices len: {}\n", .{mesh_data.indices.items.len, mesh_data.vertices.items.len});
+    
+    for (0..num_triangles) |i|
+    {
+        const _i0 = indices[i * 3 + 0];
+        const _i1 = indices[i * 3 + 1];
+        const _i2 = indices[i * 3 + 2];
+
+        const v0 = vertices[_i0];
+        const v1 = vertices[_i1];
+        const v2 = vertices[_i2];
+
+        const e0 = v1.position - v0.position;
+        const e1 = v2.position - v0.position;
+
+        const face_normal = vec3.cross(e0, e1);
+
+        vertices[_i0].normal += face_normal;
+        vertices[_i1].normal += face_normal;
+        vertices[_i2].normal += face_normal;
+    }
+
+    for (0..vertices.len) |i|
+    {
+        vertices[i].normal = vec3.normalize(vertices[i].normal);
+    }
+}
+
+pub fn createSimpleBox (allocator:std.mem.Allocator) !MeshData
+{
+    var mesh_data = MeshData{};
+
+    const v = [8]Vertex{
+        vertex(-1, -1, -1, 0, 0, 0, 0, 0, 0, 0, 0),
+        vertex(-1, 1, -1, 0, 0, 0, 0, 0, 0, 0, 0),
+        vertex(1, 1, -1, 0, 0, 0, 0, 0, 0, 0, 0),
+        vertex(1, -1, -1, 0, 0, 0, 0, 0, 0, 0, 0),
+        vertex(-1, -1, 1, 0, 0, 0, 0, 0, 0, 0, 0),
+        vertex(-1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0),
+        vertex(1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0),
+        vertex(1, -1, 1, 0, 0, 0, 0, 0, 0, 0, 0),
+    };    
+
+    const i = [36]u32{
+        0, 1, 2,
+        0, 2, 3,
+        4, 6, 5,
+        4, 7, 6,
+        4, 5, 1,
+        4, 1, 0,
+        3, 2, 6,
+        3, 6, 7,
+        1, 5, 6,
+        1, 6, 2,
+        4, 0, 3,
+        4, 3, 7,
+    };
+
+    try mesh_data.vertices.appendSlice(allocator, &v);
+    try mesh_data.indices.appendSlice(allocator, &i);
+
+    return mesh_data;
+}
+
 pub fn createBox (allocator: std.mem.Allocator, w: f32, h: f32, d: f32, numSubdivisions: u32) !MeshData
 {
-    var mesh_data = try MeshData.init(allocator, 24, 36);
+    _ = w; // autofix
+    _ = h; // autofix
+    _ = d; // autofix
+    _ = numSubdivisions; // autofix
+    // var mesh_data = try MeshData.init(allocator, 24, 36);
+    var mesh_data = MeshData{};
 
     var v: [24]Vertex = undefined;
     var i: [36]u32 = undefined;
 
-    const w2 = 0.5 * w;
-    const h2 = 0.5 * h;
-    const d2 = 0.5 * d;
+    // const w2 = 0.5 * w;
+    // const h2 = 0.5 * h;
+    // const d2 = 0.5 * d;
+    const w2 = 1;
+    const h2 = 1;
+    const d2 = 1;
 
     // Fill in the front face vertex data.
     v[0] = vertex(-w2, -h2, -d2, 0.0, 0.0, -1.0, 1.0, 0.0, 0.0, 0.0, 1.0);
@@ -334,7 +413,8 @@ pub fn createBox (allocator: std.mem.Allocator, w: f32, h: f32, d: f32, numSubdi
     v[22] = vertex(w2, h2, d2, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0);
     v[23] = vertex(w2, -h2, d2, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
 
-    mesh_data.vertices.appendSliceAssumeCapacity(&v);
+    // mesh_data.vertices.appendSliceAssumeCapacity(&v);
+    try mesh_data.vertices.appendSlice(allocator, &v);
 
     // Fill in the front face index data
     i[0] = 0;
@@ -384,14 +464,17 @@ pub fn createBox (allocator: std.mem.Allocator, w: f32, h: f32, d: f32, numSubdi
     i[34] = 22;
     i[35] = 23;
 
-    mesh_data.indices.appendSliceAssumeCapacity(&i);
+    // mesh_data.indices.appendSliceAssumeCapacity(&i);
+    try mesh_data.indices.appendSlice(allocator, &i);
+
+    addNormals( &mesh_data );
 
     // put a cap on the number of subdivisions.
-    const num_subdivisions = @min(numSubdivisions, 6);
-    for (0..num_subdivisions) |_|
-    {
-        try subdivide(allocator, &mesh_data);
-    }
+    // const num_subdivisions = @min(numSubdivisions, 6);
+    // for (0..num_subdivisions) |_|
+    // {
+    //     try subdivide(allocator, &mesh_data);
+    // }
 
     // std.debug.print("box: vertices_len = {d}, indices_len = {d}\n", .{mesh_data.vertices.items.len, mesh_data.indices.items.len});
     return mesh_data;
@@ -401,27 +484,30 @@ test "test box" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
-    var model = try createBox(allocator, 100, 100, 40, 3);
+    var model = try createSimpleBox(allocator);
     defer model.deinit(allocator);
 
+    addNormals(&model);
+
     std.debug.print("testing box\n", .{});
+    std.debug.print("box vertices: \n", .{});
 
-    for (model.vertices.items) |_| {}
-    // std.debug.print ("{any}\n", .{v});
-
-    const indices = model.indices.items;
-    _ = indices; // autofix
-    for (0..model.indices.items.len / 3) |_|
+    for (model.vertices.items) |v|
     {
-        // std.debug.print("{} {} {}\n", .{indices[i * 3 + 0], indices[i * 3 + 1], indices[i + 3 + 2]});
-
+        print("{any}\n", .{v});
+    }
+    
+    const indices = model.indices.items;
+    for (0..indices.len / 3) |i|
+    {
+        print("{} {} {}\n", .{indices[i * 3 + 0], indices[i * 3 + 1], indices[i + 3 + 2]});
     }
 }
 
 pub fn createSphere (allocator: std.mem.Allocator, r: f32, slice_count: u32, stack_count: u32) !MeshData
 {
-    var mesh_data = try MeshData.init(allocator, stack_count * slice_count, stack_count * slice_count);
-
+    // var mesh_data = try MeshData.init(allocator, stack_count * (slice_count + 1), stack_count * (slice_count + 1));
+    var mesh_data = MeshData{};
     //
     // Compute the vertices stating at the top pole and moving down the stacks.
     //
@@ -438,12 +524,12 @@ pub fn createSphere (allocator: std.mem.Allocator, r: f32, slice_count: u32, sta
     const theta_step = 2.0 * std.math.pi / @as(f32, @floatFromInt(slice_count));
 
     // Compute vertices for each stack ring (do not count the poles as rings).
-    for (1..stack_count - 1) |i|
+    for (1..stack_count) |i|
     {
         const phi: f32 = @as(f32, @floatFromInt(i)) * phi_step;
 
         // vertices of ring
-        for (0..slice_count) |j|
+        for (0..slice_count + 1) |j|
         {
             const theta: f32 = @as(f32, @floatFromInt(j)) * theta_step;
             var v: Vertex = undefined;
@@ -462,11 +548,11 @@ pub fn createSphere (allocator: std.mem.Allocator, r: f32, slice_count: u32, sta
             v.normal = vec3.normalize(v.position);
             v.tex_c = .{ theta / std.math.pi, phi / std.math.pi };
 
-            mesh_data.vertices.appendAssumeCapacity(v);
+            try mesh_data.vertices.append( allocator, v );
         }
     }
 
-    mesh_data.vertices.appendAssumeCapacity(bot_vertex);
+    try mesh_data.vertices.append( allocator, bot_vertex );
 
     //
     // Compute indices for top stack.  The top stack was written first to the vertex buffer
@@ -476,9 +562,9 @@ pub fn createSphere (allocator: std.mem.Allocator, r: f32, slice_count: u32, sta
     for (1..slice_count + 1) |I|
     {
         const i: u32 = @intCast(I);
-        mesh_data.indices.appendAssumeCapacity(0);
-        mesh_data.indices.appendAssumeCapacity(i + 1);
-        mesh_data.indices.appendAssumeCapacity(i);
+        try mesh_data.indices.append( allocator, 0 );
+        try mesh_data.indices.append( allocator, i + 1 );
+        try mesh_data.indices.append( allocator, i );
     }
 
     //
@@ -629,7 +715,7 @@ fn midpoint (v0: Vertex, v1: Vertex) Vertex
 
 pub fn createGeosphere (allocator: std.mem.Allocator, radius: f32, numSubdivisions: u32) !MeshData
 {
-    var mesh_data = try MeshData.init(allocator, 12, 60);
+    var mesh_data = MeshData{};
 
     // put a cap on the number of subdivisions
     const num_subdivisions = @min(numSubdivisions, 6);
@@ -649,31 +735,15 @@ pub fn createGeosphere (allocator: std.mem.Allocator, radius: f32, numSubdivisio
     };
 
     const k = [60]u32{
-        1, 4, 0,
-        4, 9, 0,
-        4, 5, 9,
-        8, 5, 4,
-        1, 8, 4,
-        1, 10, 8,
-        10, 3, 8,
-        8, 3, 5,
-        3, 2, 5,
-        3, 7, 2,
-        3, 10, 7,
-        10, 6, 7,
-        6, 11, 7,
-        6, 0, 11,
-        6, 1, 0,
-        10, 1, 6,
-        11, 0, 9,
-        2, 11, 9,
-        5, 2, 9,
-        11, 2, 7,
+        1,4,0,  4,9,0,  4,5,9,  8,5,4,  1,8,4,
+        1,10,8,  10,3,8, 8,3,5,  3,2,5,  3,7,2,
+        3,10,7,  10,6,7,  6,11,7,   6,0,11,  6,1,0,
+        10,1,6,  11,0,9,  2,11,9,  5,2,9,  11,2,7,
     };
 
-    mesh_data.indices.appendSliceAssumeCapacity(&k);
+    try mesh_data.vertices.resize( allocator, 12 );
+    try mesh_data.indices.appendSlice( allocator, &k );
 
-    try mesh_data.vertices.resize(allocator, 12);
     for (0..12) |i|
         mesh_data.vertices.items[i].position = pos[i];
 
@@ -714,7 +784,7 @@ pub fn createGeosphere (allocator: std.mem.Allocator, radius: f32, numSubdivisio
         const T: Vector3 = mesh_data.vertices.items[i].tangent_u;
         vertices[i].tangent_u = vec3.normalize(T);
     }
-
+   
     return mesh_data;
 }
 
@@ -767,9 +837,9 @@ pub fn createCylinder (allocator: std.mem.Allocator, bottom_radius: f32, top_rad
             const dr = bottom_radius - top_radius;
             const bitangent = [3]f32{ dr * _c, -h, dr * s };
 
-            const T: Vector3 = _vertex.tangent_u;
-            const B: Vector3 = bitangent;
-            const N: Vector3 = vec3.normalize(vec3.cross(T, B));
+            const T = _vertex.tangent_u;
+            const B = bitangent;
+            const N = vec3.normalize(vec3.cross(T, B));
             _vertex.normal = N;
 
             try mesh_data.vertices.append(allocator, _vertex);
@@ -973,6 +1043,8 @@ pub fn createGrid (allocator: std.mem.Allocator, w: f32, d: f32, m: u32, n: u32)
         }
     }
 
+    addNormals( &mesh_data );
+
     return mesh_data;
 }
 
@@ -1019,6 +1091,8 @@ pub fn createQuad (allocator: std.mem.Allocator, x: f32, y: f32, w: f32, h: f32,
     mesh_data.indices.items[3] = 0;
     mesh_data.indices.items[4] = 2;
     mesh_data.indices.items[5] = 3;
+
+    addNormals( &mesh_data );
 
     return mesh_data;
 }

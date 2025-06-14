@@ -29,6 +29,7 @@ var world = mat4x4.identity;
 var view  = mat4x4.identity;
 var proj  = mat4x4.identity;
 var world_view_proj = mat4x4.identity;
+var cam_pos = numerics.Vector3{2, 1, 4};
 
 var theta: f32 = 1.5 * std.math.pi;
 var phi:   f32 = std.math.pi / 4.0;
@@ -61,12 +62,12 @@ fn draw () void
 
 pub fn main () !void
 {
-    const ctx= try Utils.init("renderer window", 1240, 720, 0);
+    const ctx = try Utils.init("renderer window", 1240, 720, 0);
     defer Utils.quit(ctx);
 
     // create the shaders 
-    const vs = Utils.loadShader(ctx.device, "shaders/texture_quad_vs.spv", "VS", 0, 1, 0, 0);
-    const ps = Utils.loadShader(ctx.device, "shaders/texture_quad_ps.spv", "PS", 0, 1, 0, 0);
+    const vs = Utils.loadShader(ctx.device, "compiled/color_vs.spv", "VS", 0, 1, 0, 0);
+    const ps = Utils.loadShader(ctx.device, "compiled/color_ps.spv", "PS", 0, 1, 0, 0);
     
     // load the image
     const image_data = Utils.loadImage("textures/texture1.bmp");
@@ -98,8 +99,9 @@ pub fn main () !void
 
 
 
-    var box = try GeometryGenerator.createBox( allocator, 100, 100, 100, 4);
+    var box = try GeometryGenerator.createSimpleBox( allocator );
     defer box.deinit( allocator );
+    print("box indices len: {}\n", .{box.indices.items.len});
 
     var geo = GeometryGenerator.MeshGeometry{
         .name = "box_example",
@@ -115,6 +117,7 @@ pub fn main () !void
 
     geo.vertex_buffer_byte_size += Utils.getSize(GeometryGenerator.Vertex, box.vertices.items);
     geo.total_indices_len += @intCast(box.indices.items.len);
+    print("MeshGeometry: {}, {}\n", .{geo.vertex_buffer_byte_size, geo.total_indices_len});
 
     const upload_cmd_buffer = c.SDL_AcquireGPUCommandBuffer( ctx.device );
     const copy_pass = c.SDL_BeginGPUCopyPass( upload_cmd_buffer );
@@ -170,11 +173,22 @@ pub fn main () !void
 
         if (swapchain_texture != null)
         {
-            // var camera = Camera{};
+            const m_proj = mat4x4.createPerspectiveFieldOfView(
+                75.0 * c.SDL_PI_F / 180.0,
+                1240.0 / 720.0,
+                0.01,
+                100.0,
+            );
+            const m_view = mat4x4.createLookAt(
+                cam_pos,
+                .{0, 0, 0},
+                .{0, 1, 0},
+            );
+            const m_view_proj = mat4x4.multiply(m_view, m_proj);
 
             var color_target_info = c.SDL_GPUColorTargetInfo{
                 .texture = swapchain_texture,
-                .clear_color = c.SDL_FColor{.r = 0.3, .g = 0.5, .b = 0.4, .a = 1},
+                .clear_color = c.SDL_FColor{.r = 0.1, .g = 0.2, .b = 0.2, .a = 1},
                 .load_op = c.SDL_GPU_LOADOP_CLEAR,
                 .store_op = c.SDL_GPU_STOREOP_STORE,
             };
@@ -183,9 +197,9 @@ pub fn main () !void
 
             c.SDL_BindGPUGraphicsPipeline( renderpass, geo.pipeline );
             c.SDL_BindGPUVertexBuffers( renderpass, 0, &c.SDL_GPUBufferBinding{.buffer = geo.vertex_buffer_gpu, .offset = 0}, 1);
-            c.SDL_BindGPUIndexBuffer( renderpass, &c.SDL_GPUBufferBinding{.buffer = geo.index_buffer_gpu, .offset = 0}, c.SDL_GPU_INDEXELEMENTSIZE_32BIT);
-            // c.SDL_PushGPUVertexUniformData( cmdbuf, 0, &world_view_proj, @sizeOf([16]f32) );
-            c.SDL_BindGPUFragmentSamplers( renderpass, 0, &c.SDL_GPUTextureSamplerBinding{.texture = texture, .sampler = samplers[0]}, 1);
+            c.SDL_BindGPUIndexBuffer( renderpass, &c.SDL_GPUBufferBinding{.buffer = geo.index_buffer_gpu, .offset = 0}, geo.index_format);
+            c.SDL_PushGPUVertexUniformData( cmdbuf, 0, &m_view_proj, @sizeOf(numerics.Matrix4x4) );
+            // c.SDL_BindGPUFragmentSamplers( renderpass, 0, &c.SDL_GPUTextureSamplerBinding{.texture = texture, .sampler = samplers[0]}, 1);
             c.SDL_DrawGPUIndexedPrimitives( renderpass, geo.total_indices_len, 1, 0, 0, 0);
             c.SDL_EndGPURenderPass( renderpass );
         }
