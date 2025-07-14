@@ -11,6 +11,7 @@ textures/
 *.txt
 *.gnu
 *.png
+*.bmp
 *.html
 *.so
 *.dll
