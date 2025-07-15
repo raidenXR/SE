@@ -179,12 +179,9 @@ pub fn main () !void
                 c.SDL_BindGPUIndexBuffer(renderpass, &.{.buffer = ritem.geometry.index_buffer_gpu, .offset = 0}, c.SDL_GPU_INDEXELEMENTSIZE_32BIT);
 
                 c.SDL_PushGPUVertexUniformData(cmdbuf, 0, &.{ritem.world, ritem.tex_transform}, 2 * @sizeOf(Matrix4x4));
-                c.SDL_PushGPUVertexUniformData(cmdbuf, 1, &cbpass, @sizeOf(r.PassConstants));                
+                c.SDL_PushGPUVertexUniformData(cmdbuf, 1, &cbpass, @sizeOf(r.PassConstants));                               
                 
-                c.SDL_PushGPUFragmentUniformData(cmdbuf, 0, &.{ritem.world, ritem.tex_transform}, 2 * @sizeOf(Matrix4x4));
-                c.SDL_PushGPUFragmentUniformData(cmdbuf, 0, &cbpass, @sizeOf(r.PassConstants));
-                
-                // c.SDL_DrawGPUIndexedPrimitives(renderpass, num_indices, 1, 0, 0, 0);
+                c.SDL_DrawGPUIndexedPrimitives(renderpass, num_indices, 1, 0, 0, 0);
                 // c.SDL_DrawGPUIndexedPrimitives(renderpass, num_indices, 1, ritem.submesh.start_index_location, ritem.submesh.base_vertex_location, 0);                
                 c.SDL_EndGPURenderPass(renderpass);
             }
