@@ -56,6 +56,45 @@ pub fn loadShaderInfo (path:[]const u8) ShaderInfo
     return res;
 }
 
+pub fn loadShader (device:?*c.SDL_GPUDevice, path:[]const u8) ?*c.SDL_GPUShader
+{    
+    const format: u32 = @intCast(c.SDL_GPU_SHADERFORMAT_SPIRV);
+    const shader_info = loadShaderInfo(path);
+
+    const stage = blk: {
+        if (string.contains(path, "_vs") or string.contains(path, ".vert"))
+        {
+            break :blk @as(u32, @intCast(c.SDL_GPU_SHADERSTAGE_VERTEX));
+        }
+        else if (string.contains(path, "_ps") or string.contains(path, ".frag"))
+        {
+            break :blk @as(u32, @intCast(c.SDL_GPU_SHADERSTAGE_FRAGMENT));
+        }
+        else
+        {
+            @panic ("invalid shader stage");
+        }       
+    };
+
+    var code_size: usize = undefined;
+    const code: [*c]u8 = @ptrCast(@alignCast(c.SDL_LoadFile(path.ptr, &code_size)));
+    defer c.SDL_free(code);    
+
+    std.debug.print("loaded shader entry: -{s}-\n", .{shader_info.entry.ptr});
+
+    return c.SDL_CreateGPUShader(device, &c.SDL_GPUShaderCreateInfo{
+        .code = code,
+        .code_size = code_size,
+        .format = format,
+        .stage = stage,
+        .entrypoint = shader_info.entry.ptr,
+        .num_samplers = shader_info.samplers,
+        .num_uniform_buffers = shader_info.uniform_buffers,
+        .num_storage_buffers = shader_info.storage_buffers,
+        .num_storage_textures = shader_info.storage_textures,
+    });
+}
+
 test "test loadShaderInfo" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -97,46 +136,7 @@ test "test loadShaderInfo" {
     std.debug.print("\ndeserialized json: {any}, -- \"{s}\"\n\n", .{info, info.entry});
     defer c.SDL_ReleaseGPUShader(ctx.device, shader);
     assert(shader != null);
-
 }
-
-pub fn loadShader (device:?*c.SDL_GPUDevice, path:[]const u8) ?*c.SDL_GPUShader
-{    
-    const format: u32 = @intCast(c.SDL_GPU_SHADERFORMAT_SPIRV);
-    const shader_info = loadShaderInfo(path);
-
-    const stage = blk: {
-        if (string.contains(path, "_vs") or string.contains(path, ".vert"))
-        {
-            break :blk @as(u32, @intCast(c.SDL_GPU_SHADERSTAGE_VERTEX));
-        }
-        else if (string.contains(path, "_ps") or string.contains(path, ".frag"))
-        {
-            break :blk @as(u32, @intCast(c.SDL_GPU_SHADERSTAGE_FRAGMENT));
-        }
-        else
-        {
-            @panic ("invalid shader stage");
-        }       
-    };
-
-    var code_size: usize = undefined;
-    const code: [*c]u8 = @ptrCast(@alignCast(c.SDL_LoadFile(path.ptr, &code_size)));
-    defer c.SDL_free(code);    
-
-    return c.SDL_CreateGPUShader(device, &c.SDL_GPUShaderCreateInfo{
-        .code = code,
-        .code_size = code_size,
-        .format = format,
-        .stage = stage,
-        .entrypoint = shader_info.entry.ptr,
-        .num_samplers = shader_info.samplers,
-        .num_uniform_buffers = shader_info.uniform_buffers,
-        .num_storage_buffers = shader_info.storage_buffers,
-        .num_storage_textures = shader_info.storage_textures,
-    });
-}
-
 
 // #####################
 // asset 
