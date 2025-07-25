@@ -7,7 +7,7 @@ fonts/
 vertices/
 Content/
 
-
+*.log
 *.txt
 *.gnu
 *.png

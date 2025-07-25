@@ -252,6 +252,8 @@ pub const MeshGeometry = struct
         );
 
         c.SDL_ReleaseGPUTransferBuffer(device, transfer_buffer);
+        c.SDL_EndGPUCopyPass(copypass);
+        _ = c.SDL_SubmitGPUCommandBuffer(cmdbuf);
 
         m.vertex_buffer_gpu = vertex_buffer;
         m.index_buffer_gpu  = index_buffer;
@@ -539,7 +541,7 @@ pub fn init (wnd_name:[*c]const u8, w:c_int, h:c_int, window_flags:c.SDL_WindowF
     const device = c.SDL_CreateGPUDevice(
         // c.SDL_GPU_SHADERFORMAT_SPIRV | c.SDL_GPU_SHADERFORMAT_DXIL | c.SDL_GPU_SHADERFORMAT_MSL,
         c.SDL_GPU_SHADERFORMAT_SPIRV,
-        false,
+        true,
         null);
 
     if (device == null) return error.DeviceFailed;

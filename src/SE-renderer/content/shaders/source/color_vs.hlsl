@@ -40,7 +40,7 @@ struct VertexOut
 
 VertexOut VS(VertexIn vin)
 {
-	VertexOut vout;
+	VertexOut vout = (VertexOut)0.0f;
 	
 	// Transform to homogeneous clip space.
     float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);

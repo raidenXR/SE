@@ -6,10 +6,6 @@ open System.Collections.Generic
 type Entity = uint32
 
 type Entities = ArraySegment<Entity>
-        
-/// Container for caching Entity ids set and iterating over
-/// Acts as a Filter, for running over those filters systems etc
-type Types = list<Type>
 
 type EntityStorage = {
     mutable ids: array<Entity>
@@ -17,15 +13,14 @@ type EntityStorage = {
     mutable rebuild: bool
 }
 
-type IComponents =
-    abstract Count: int
-    abstract Capacity: int
-    abstract Entities: Entities
-    abstract Remove: Entity -> unit
-    abstract Contains: Entity -> bool
-    abstract Sort: unit -> unit
-    abstract PrintEntities: unit -> unit
-    
+type Trigger =
+    | OnAdd
+    | OnSet
+    | OnUpdate
+    | OnRemove
+    | OnSort
+    | OnIterate
+
 type Phase =
     | OnLoad
     | PostLoad
@@ -37,15 +32,10 @@ type Phase =
     | OnStore
     | Free
 
-
-type Trigger =
-    | OnAdd
-    | OnSet
-    | OnUpdate
-    | OnRemove
-    | OnSort
-    | OnIterate
-
+        
+/// Container for caching Entity ids set and iterating over
+/// Acts as a Filter, for running over those filters systems etc
+type Types = list<Type>
 
 /// A system is a query combined with a callback. 
 /// Systems can be either ran manually or ran as part of an ECS-managed main loop (see Pipeline)
@@ -57,10 +47,21 @@ type System = Types * (Entities -> unit)
 type Observer = Types * (Entities -> unit)
 
 
+type IComponents =
+    abstract Count: int
+    abstract Capacity: int
+    abstract Entities: Entities
+    abstract Remove: Entity -> unit
+    abstract Clear: unit -> unit
+    abstract Contains: Entity -> bool
+    abstract Sort: unit -> unit
+    abstract PrintEntities: unit -> unit
+    
+
 /// Contairer class for storing components and entity ids
 type Components<'T>() =
     let mutable count = 0
-    let mutable capacity = 10
+    let mutable capacity = 16
     let mutable ids = Array.zeroCreate<Entity> capacity
     let mutable items = Array.zeroCreate<'T> capacity
 
@@ -107,7 +108,7 @@ type Components<'T>() =
     let resize () = 
         capacity <- capacity * 2
         Array.Resize(&ids, capacity)
-        Array.Resize(&ids, capacity)
+        Array.Resize(&items, capacity)
 
     let sort () =
         for i = 0 to count - 2 do
@@ -174,7 +175,15 @@ type Components<'T>() =
         else linear_search 0 count id &idx
                     
 
+    let warning condition (str:string) =
+        if condition then
+            Console.ForegroundColor <- ConsoleColor.Red
+            Console.WriteLine str
+            Console.ForegroundColor <- ConsoleColor.White
+
     let append (id:Entity) (value:'T) = 
+        // if capacity <= count + 1 then resize()
+        warning (count < 0 || count >= capacity || ids.Length <= count || items.Length <= count) $"append failed: count: {count}, capacity: {capacity}, ids: {ids.Length}, items: {items.Length}"
         ids[count] <- id
         items[count] <- value
         count <- count + 1
@@ -199,11 +208,14 @@ type Components<'T>() =
             id_prev <- 0x00u
             id_current <- 0x00u
 
+    let clear () = count <- 0        
+
     interface IComponents with
         member this.Count with get() = count
         member this.Capacity with get() = capacity
         member this.Entities with get() = Entities(ids, 0, count)
         member this.Remove (id:Entity) = remove id
+        member this.Clear () = clear ()
         member this.Contains (id:Entity) = 
             let mutable i = 0
             contains id &i
@@ -266,7 +278,7 @@ type Components<'T>() =
                     let s = $"0x{id:X6}"
                     Console.ForegroundColor <- ConsoleColor.Red
                     printfn $"Component<{typeof<'T>.Name}> Does not contain this Entity: {s}"
-                    printEntities ()
+                    // printEntities ()
                     Console.ForegroundColor <- ConsoleColor.White
                     failwith ""
                 | true -> 
@@ -298,7 +310,7 @@ type Components<'T>() =
 
     member this.Entities with get() = Entities(ids, 0, count)
 
-    member this.Clear() = count <- 0
+    member this.Clear() = clear ()
 
 
 
@@ -306,30 +318,253 @@ type Components<'T>() =
 module Components =
     let mutable components_table = new Dictionary<Type,IComponents>()
 
+    // obsolete
+    // let assign<'T> () =
+    //     if not (components_table.ContainsKey(typedefof<'T>)) then
+    //         let pool = Components<'T>()
+    //         components_table.Add(typedefof<'T>, pool :> IComponents)        
+
     /// check is storage for 'T is available and return instance.
     /// If storage is not available, create a new storage for type 'T
     let get<'T> () =
-        if not (components_table.ContainsKey(typedefof<'T>)) then
+        if not (components_table.ContainsKey(typeof<'T>)) then
             let pool = Components<'T>()
-            components_table.Add(typedefof<'T>, pool :> IComponents)
+            components_table.Add(typeof<'T>, pool :> IComponents)
             pool
         else
-            components_table[typedefof<'T>] :?> Components<'T>
+            components_table[typeof<'T>] :?> Components<'T>
 
     /// returns the enties Slice for the type t' of Components 
     let entities (t':Type) =
-        if components_table.ContainsKey t' then components_table[t'].Entities else failwith $"Components does not contain {t'.Name}"
+        match components_table.ContainsKey t' with
+        | true ->
+            components_table[t'].Entities
+        | false ->
+            Console.ForegroundColor <- ConsoleColor.Red
+            printfn "components_table.Key len: %d" (components_table.Count)
+            for t in components_table.Keys do
+                printfn "%s" (t.Name)
+            Console.ForegroundColor <- ConsoleColor.White
+            failwith $"Components does not contain {t'.Name}"
+
+    let clearAll () =
+        for components in components_table.Values do
+            components.Clear()
+
+
+
+type IRelations =
+    abstract Count: int
+    abstract Remove: struct(Entity * Entity) -> unit
+    abstract Contains: struct(Entity * Entity) -> bool
+    abstract HasIn: Entity -> bool
+    abstract HasOut: Entity -> bool
+    abstract GetIn: Entity -> Entity
+    abstract GetOut: Entity -> Entity
+
+/// Storage for relations, akin to Components
+type Relations<'T>() =
+    let mutable count = 0
+    let mutable capacity = 16
+    let mutable items = Array.zeroCreate<'T> capacity
+    let mutable pairs = Array.zeroCreate<struct(Entity * Entity)> capacity
+    let mutable rhs_pairs = Array.zeroCreate<Entity> capacity
+    let mutable lhs_pairs = Array.zeroCreate<Entity> capacity
+
+    let resize () =  
+        capacity <- capacity * 2
+        Array.Resize(&pairs, capacity)
+        Array.Resize(&items, capacity)
+        Array.Resize(&rhs_pairs, capacity)
+        Array.Resize(&lhs_pairs, capacity)
+
+    let append (a:Entity) (b:Entity) (value:'T) =        
+        pairs[count] <- struct(a,b)
+        items[count] <- value
+        lhs_pairs[count] <- a
+        rhs_pairs[count] <- b
+        count <- count + 1
+
+    let remove (pair:struct(Entity * Entity)) =
+        let mutable i = 0
+        let mutable r = false
+        while i < count && not r do
+            r <- if pairs[i] = pair then true else r
+            i <- i + 1
+        if r then
+            pairs[i] <- pairs[count - 1]
+            items[i] <- items[count - 1]
+            lhs_pairs[i] <- lhs_pairs[count - 1]
+            rhs_pairs[i] <- rhs_pairs[count - 1]
+            count <- count - 1
+        
+    let contains (a:Entity) (b:Entity) =
+        let mutable i = 0
+        let mutable r = false
+        while i < count && not r do
+            r <- if pairs[i] = struct(a, b) then true else r
+            i <- i + 1
+        r
+
+    let hasOut (id:Entity) =
+        let mutable i = 0
+        let mutable r = false
+        while i < count && not r do
+            let struct(lhs,rhs) = pairs[i]
+            r <- if lhs = id then true else r
+            i <- i + 1
+        r
+            
+    let hasIn (id:Entity) =
+        let mutable i = 0
+        let mutable r = false
+        while i < count && not r do
+            let struct(lhs,rhs) = pairs[i]
+            r <- if rhs = id then true else r
+            i <- i + 1
+        r
+
+    let getOut (id:Entity) =
+        let mutable i = 0
+        let mutable e = 0x00u
+        let mutable r = false
+        while i < count && not r do
+            let struct(lhs,rhs) = pairs[i]
+            if lhs = id then
+                r <- true
+                e <- rhs
+            i <- i + 1
+        if r then e else failwith "no out relation exists"
+
+    let getIn (id:Entity) =
+        let mutable i = 0
+        let mutable e = 0x00u
+        let mutable r = false
+        while i < count && not r do
+            let struct(lhs,rhs) = pairs[i]
+            if rhs = id then
+                r <- true
+                e <- lhs
+            i <- i + 1
+        if r then e else failwith "no in relation exists"
+
+    let inRelations () =
+        Entities(lhs_pairs, 0, count)        
+
+    let outRelations () =
+        Entities(rhs_pairs, 0, count)
+
+    let get (a:Entity) (b:Entity) =
+        let mutable i = 0
+        let mutable r = false
+        while i < count && not r do
+            r <- if pairs[i] = struct(a,b) then true else r
+            i <- i + 1
+        if r then items[i] else failwith "relations does not contain this pair"
+
+
+    interface IRelations with
+        member this.Count with get() = count
+        member this.HasOut (e:Entity) = hasOut e
+        member this.HasIn (e:Entity) = hasIn e
+        member this.GetOut (e:Entity) = getOut e
+        member this.GetIn (e:Entity) = getIn e
+        member this.Remove (pair:struct(Entity * Entity)) = remove pair        
+        member this.Contains (pair:struct(Entity * Entity)) =
+            let struct(lhs,rhs) = pair
+            contains lhs rhs        
+        
+
+    member this.Add (a:Entity, b:Entity, value:'T) =
+        if count + 1 >= capacity then resize ()
+        append a b value
+
+    member this.Remove (relation:struct(Entity * Entity)) = remove relation
+    member this.HasOut (e:Entity) = hasOut e
+    member this.HasIn (e:Entity) = hasIn e
+    member this.GetOut (e:Entity) = getOut e
+    member this.GetIn (e:Entity) = getIn e
+    member this.Contains (pair:struct(Entity * Entity)) =
+        let struct(a,b) = pair
+        contains a b
+    member this.InRelations () = inRelations ()
+    member this.OutRelations () = outRelations ()
+    member this.Item with get(pair:struct(Entity * Entity)) =
+        let struct(lhs,rhs) = pair
+        get lhs rhs
+    
+
+module Relation =
+    let mutable relations_table = new Dictionary<Type,IRelations>(16)
+
+    let private get<'T> () =
+        if not (relations_table.ContainsKey(typeof<'T>)) then
+            let pool = Relations<'T>()
+            relations_table.Add(typeof<'T>, pool :> IRelations)
+            pool
+        else
+            relations_table[typeof<'T>] :?> Relations<'T>
+
+    let create<'T> (a:Entity) (b:Entity) (relation:'T) =
+        let relations = get<'T>()
+        relations.Add(a, b, relation)
+
+    let value<'T> (a:Entity) (b:Entity) =
+        let relations = get<'T>()
+        relations[struct(a,b)]
+
+    let getIn<'T> (e:Entity) :Entity =
+        let relations = get<'T>()
+        relations.GetIn e
+    
+    let getOut<'T> (e:Entity) :Entity =
+        let relations = get<'T>()
+        relations.GetOut e
+
+    let has<'T> (a:Entity) (b:Entity) =
+        let relations = get<'T>()
+        relations.Contains(struct(a,b))
+
+    let hasIn<'T> (e:Entity) = 
+        let relations = get<'T>()
+        relations.HasIn e
+
+    let hasOut<'T> (e:Entity) = 
+        let relations = get<'T>()
+        relations.HasOut e
+
+    let destroy<'T> (a:Entity) (b:Entity) = 
+        let relations = get<'T>()
+        relations.Remove (struct(a, b))
+
+    let outRelations<'T> () =
+        let relations = get<'T>()
+        relations.OutRelations()
+
+    let inRelations<'T> () =
+        let relations = get<'T>()
+        relations.InRelations()
 
 
 module Queries =            
-    let queries = new Dictionary<Types,EntityStorage>()
+    let queries = new Dictionary<Types,EntityStorage>(16)
     let entities = System.Buffers.ArrayPool<Entity>.Create()    
 
+    let private warning (condition:bool) (str:string) =
+        if condition then
+            Console.ForegroundColor <- ConsoleColor.Yellow
+            Console.WriteLine str
+            Console.ForegroundColor <- ConsoleColor.White
+
     let private max_len (types:Types) =
-        let mutable n = 0
+        let mutable n = 1
         for t in types do 
-            let c = Components.components_table[t]
-            n <- max n c.Count
+            match Components.components_table.ContainsKey t with
+            | true ->
+                let c = Components.components_table[t]
+                n <- max n c.Count
+            | false ->
+                warning true ($"{t} is not assigned in Components<'T>")
         n
 
     let private sort (ent_storage:EntityStorage) =
@@ -350,8 +585,12 @@ module Queries =
         for i = 0 to slice.Count - 1 do
             buffer[i] <- slice[i]
 
-    let intersect (a:Entities) (b:Entities) (buffer:array<Entity>) =
-        if a[a.Count - 1] < b[0] || b[b.Count - 1] < a[0] then 
+    /// writes over a buffer the common ids between two Entities array segments
+    let intersect (a:Entities) (b:Entities) (buffer:array<Entity>) =        
+        if a.Count = 0 || b.Count = 0 then
+            Entities()
+        elif a[a.Count - 1] < b[0] || b[b.Count - 1] < a[0] then 
+            warning (a.Count = 0 || b.Count = 0) (sprintf"intersect failed a.Count: %d, b.Count: %d" a.Count b.Count)
             Entities()
         else
             let mutable i = 0
@@ -370,7 +609,7 @@ module Queries =
             Entities(buffer, 0, n)
 
 
-    let build (types:Types) = 
+    let private build (types:Types) = 
         if types.Length > 1 then
             // printfn $"Query.build is running for key: {types}"
             match queries.ContainsKey types with
@@ -408,11 +647,11 @@ module Queries =
     let rec get (types:Types) =
         match types.Length with
         | 0 -> Entities()
-        | 1 -> Components.entities types[0]
+        | 1 -> if (Components.components_table.ContainsKey types[0]) then (Components.entities types[0]) else Entities()
         | _ when queries.ContainsKey types ->
             let q = queries[types] 
             if q.rebuild then build types
-            ArraySegment(q.ids, 0, q.count)         
+            Entities(q.ids, 0, q.count)         
         | _ ->
             build types
             get types
@@ -429,6 +668,10 @@ module Queries =
     /// checks all the mapped queries and adds the id to those queries that contain the id for 
     /// the rest of the types 
     let add (t':Type) (id:Entity) =
+        if not (queries.ContainsKey ([t'])) then
+            let ids = Components.components_table[t'].Entities
+            queries.Add([t'], {ids = ids.Array; count = ids.Count; rebuild = false})
+            
         // let mutable r = true
         for kvp in queries do
             let types = kvp.Key
@@ -463,7 +706,7 @@ module System =
     let mutable private running = true
 
     let create (phase:Phase) (types:Types) (fn:Entities -> unit) =
-        Queries.build types
+        // Queries.build types
         match phase with
         | OnLoad -> on_load.Add (types,fn)
         | PostLoad -> post_load.Add (types,fn)
@@ -480,7 +723,8 @@ module System =
         running <- false
 
 
-    let progress () =
+    let progress (n_iterations:option<int>) =
+        let mutable i = match n_iterations with | Some n -> n | None -> 0
         for (types,fn) in on_load do fn (Queries.get types)
         for (types,fn) in post_load do fn (Queries.get types)  
         while running do
@@ -490,7 +734,8 @@ module System =
             for (types,fn) in post_update do fn (Queries.get types)  
             // for debugging and testing keep it like that to prevent eternal loop
             // keep it a single loop
-            quit ()
+            if i <= 0 then quit ()
+            i <- i - 1
         for (types,fn) in pre_store do fn (Queries.get types)  
         for (types,fn) in on_store do fn (Queries.get types)  
 
@@ -508,16 +753,16 @@ module Observers =
     
     /// The observers are created post-load
     let create (trigger:Trigger) (types:Types) (fn:Entities -> unit) =
-        // System.create PostLoad types (fun _ -> 
-        Queries.build types
-        match trigger with
-        | OnAdd -> on_add.Add (types,fn)
-        | OnSet -> on_set.Add (types,fn)
-        | OnUpdate -> on_update.Add (types,fn)
-        | OnRemove -> on_remove.Add (types,fn)
-        | OnSort -> on_sort.Add (types,fn)
-        | OnIterate -> on_iterate.Add (types,fn)        
-        // )
+        System.create PostLoad types (fun _ -> 
+            // Queries.build types
+            match trigger with
+            | OnAdd -> on_add.Add (types,fn)
+            | OnSet -> on_set.Add (types,fn)
+            | Trigger.OnUpdate -> on_update.Add (types,fn)
+            | OnRemove -> on_remove.Add (types,fn)
+            | OnSort -> on_sort.Add (types,fn)
+            | OnIterate -> on_iterate.Add (types,fn)        
+        )
 
     let triggerOnAdd<'T> () =
         for (types,fn) in on_add do fn (Queries.get types)            
@@ -534,6 +779,7 @@ module Entity =
     let private entities = System.Collections.Generic.Stack<Entity>()
     let mutable private last: Entity = 0x00u
 
+    /// creates a new entity - id
     let create () =
         match entities.Count with
         | 0 -> 
@@ -542,14 +788,21 @@ module Entity =
         | _ ->
             entities.Pop()
 
+    /// resets id to 0
+    /// Use very carefully. i.e. When destroying world
+    let reset () = last <- 0u
+
+    /// destroys an entity, and removes its components
     let destroy (id:Entity) =
         entities.Push id
         for components in Components.components_table.Values do
             components.Remove id
 
+    /// ckecks whether a id - uint value exists
     let exist (id:Entity) = 
         if id <= last && not (entities.Contains id) then true else false      
 
+    /// adds some component over an entity 
     let add<'T> (id:Entity) =
         let components = Components.get<'T>()
         if not (components.Contains id) then
@@ -557,7 +810,8 @@ module Entity =
             Queries.add typeof<'T> id
             Observers.triggerOnAdd<'T>()
         id
-    
+
+    /// adds some component with a given value over an entity
     let set (value:'T) (id:Entity) =
         let components = Components.get<'T>()
         if not (components.Contains id) then 
@@ -567,6 +821,7 @@ module Entity =
         Observers.triggerOnSet<'T>()
         id
 
+    /// removes a component from an entity
     let remove<'T> (id:Entity) =
         let components = Components.get<'T>()
         if components.Contains id then
@@ -575,6 +830,18 @@ module Entity =
             Observers.triggerOnRemove<'T>()
         id
 
+    /// returns the Value of the Component of type 'T for a specific entity id
+    let get<'T> (id:Entity) =
+        let components = Components.get<'T>()
+        components[id]
+
+    /// ckecks if an entity id has some type of Component
+    let has<'T> (id:Entity) =
+        let components = Components.get<'T>()
+        components.Contains(id)
+
+    /// prints the component-types that are assigned over an entity
+    /// mostly for debugging purposes
     let printComponents (id:Entity) =
         printf $"0x{id:X6} components: ["
         for kvp in Components.components_table do
@@ -594,13 +861,20 @@ module Entity =
         Console.Write("0x{0:X6}, ", id)
 
         
-        
+// uses these as keywords for better scripting ergonomy of the API        
+[<AutoOpen>]
+module FnDecls =
+    let entity = Entity.create
+    let system = System.create
+    let observer = Observers.create
+    let query = Queries.get
+    let relate = Relation.create
 
-/// a pipeline schedules and runs systems
-module Pipeline =
-    let systems = []
+// /// a pipeline schedules and runs systems
+// module Pipeline =
+//     let systems = []
     
-/// Events manager
-/// an event determines when an observer is invoked
-module Events =
-    let mutable events_queue = new Queue<obj>()
+// /// Events manager
+// /// an event determines when an observer is invoked
+// module Events =
+//     let mutable events_queue = new Queue<obj>()

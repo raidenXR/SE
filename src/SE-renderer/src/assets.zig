@@ -77,13 +77,12 @@ pub fn loadShader (device:?*c.SDL_GPUDevice, path:[]const u8) ?*c.SDL_GPUShader
     };
 
     var code_size: usize = undefined;
-    const code: [*c]u8 = @ptrCast(@alignCast(c.SDL_LoadFile(path.ptr, &code_size)));
-    defer c.SDL_free(code);    
+    const code = c.SDL_LoadFile(path.ptr, &code_size);
 
-    std.debug.print("loaded shader entry: -{s}-\n", .{shader_info.entry.ptr});
+    std.debug.print("loaded shader entry: -{s}-, code size: {}\n", .{shader_info.entry.ptr, code_size});
 
-    return c.SDL_CreateGPUShader(device, &c.SDL_GPUShaderCreateInfo{
-        .code = code,
+    const shader = c.SDL_CreateGPUShader(device, &c.SDL_GPUShaderCreateInfo{
+        .code = @ptrCast(@alignCast(code)),
         .code_size = code_size,
         .format = format,
         .stage = stage,
@@ -93,6 +92,10 @@ pub fn loadShader (device:?*c.SDL_GPUDevice, path:[]const u8) ?*c.SDL_GPUShader
         .num_storage_buffers = shader_info.storage_buffers,
         .num_storage_textures = shader_info.storage_textures,
     });
+    
+    if (shader == null) @panic("shader is null");
+    c.SDL_free(code);    
+    return shader;
 }
 
 test "test loadShaderInfo" {

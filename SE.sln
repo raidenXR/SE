@@ -7,6 +7,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{4BAC39CB-EE3
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "SE-core", "src\SE-core\SE-core.fsproj", "{253DA844-1E0E-4D1B-9AD3-7622602FA7AE}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "SE-benchmark", "src\SE-benchmarks\SE-benchmark.fsproj", "{026F99B8-75DE-4749-989D-94F2767E7BE9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -20,8 +22,13 @@ Global
 		{253DA844-1E0E-4D1B-9AD3-7622602FA7AE}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{253DA844-1E0E-4D1B-9AD3-7622602FA7AE}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{253DA844-1E0E-4D1B-9AD3-7622602FA7AE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{026F99B8-75DE-4749-989D-94F2767E7BE9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{026F99B8-75DE-4749-989D-94F2767E7BE9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{026F99B8-75DE-4749-989D-94F2767E7BE9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{026F99B8-75DE-4749-989D-94F2767E7BE9}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{253DA844-1E0E-4D1B-9AD3-7622602FA7AE} = {4BAC39CB-EE3E-416C-AAD6-CE28F4081FF0}
+		{026F99B8-75DE-4749-989D-94F2767E7BE9} = {4BAC39CB-EE3E-416C-AAD6-CE28F4081FF0}
 	EndGlobalSection
 EndGlobal

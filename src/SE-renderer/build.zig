@@ -42,11 +42,11 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
 
-    lib_mod.addIncludePath(.{.cwd_relative = "deps/include"});
+    // lib_mod.addIncludePath(.{.cwd_relative = "deps/include"});
     lib_mod.addCSourceFiles(.{.files = source_files, .flags = flags});
+    lib_mod.addIncludePath(.{.cwd_relative = "deps/include"});
+    lib_mod.addLibraryPath(.{.cwd_relative = "deps/lib"});
     
-    // lib_mod.addLibraryPath(.{.cwd_relative = "deps"});
-    // lib_mod.addImport("SE-renderer_lib", lib_mod);
     lib_mod.addImport("dotnet", module);
     lib_mod.linkSystemLibrary("SDL3", .{});
 
@@ -62,16 +62,13 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
 
-    exe_mod.addIncludePath(.{.cwd_relative = "deps/include"});
     exe_mod.addCSourceFiles(.{.files = source_files, .flags = flags});
-    
-    // Modules can depend on one another using the `std.Build.Module.addImport` function.
-    // This is what allows Zig source code to use `@import("foo")` where 'foo' is not a
-    // file path. In this case, we set up `exe_mod` to import `lib_mod`.
-    // exe_mod.addLibraryPath(.{.cwd_relative = "deps"});
-    // exe_mod.addImport("SE-renderer_lib", lib_mod);
+    exe_mod.addIncludePath(.{.cwd_relative = "deps/include"});
+    exe_mod.addLibraryPath(.{.cwd_relative = "deps/lib"});
+
     exe_mod.addImport("dotnet", module);
     exe_mod.linkSystemLibrary("SDL3", .{});
+    
 
 
     // Now, we will create a static library based on the module we created above.
