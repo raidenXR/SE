@@ -370,29 +370,64 @@ type IRelations =
 type Relations<'T>() =
     let mutable count = 0
     let mutable capacity = 16
-    let mutable items = Array.zeroCreate<'T> capacity
     let mutable pairs = Array.zeroCreate<struct(Entity * Entity)> capacity
-    let mutable rhs_pairs = Array.zeroCreate<Entity> capacity
-    let mutable lhs_pairs = Array.zeroCreate<Entity> capacity
+    let mutable items = Array.zeroCreate<'T> capacity
+    let mutable lhs_ids = Array.zeroCreate<Entity> capacity
+    let mutable rhs_ids = Array.zeroCreate<Entity> capacity
+
+    // cache current
+    let mutable idx_current = -1
+    let mutable lhs_current = 0x00u
+    let mutable rhs_current = 0x00u
+    let mutable pair_current = struct(0x00u,0x00u)
+
+    // cache previous
+    let mutable idx_prev = -1
+    let mutable lhs_prev = 0x00u
+    let mutable rhs_prev = 0x00u
+    let mutable pair_prev = struct(0x00u,0x00u)
+
+    
+    let cache (i:int) = 
+        idx_prev <- idx_current
+        pair_prev <- pair_current
+        lhs_prev <- lhs_current
+        rhs_prev <- rhs_current
+        idx_current <- i
+        pair_current <- pairs[i]
+        lhs_current <- lhs_ids[i]
+        rhs_current <- rhs_ids[i]
 
     let resize () =  
         capacity <- capacity * 2
         Array.Resize(&pairs, capacity)
         Array.Resize(&items, capacity)
-        Array.Resize(&rhs_pairs, capacity)
-        Array.Resize(&lhs_pairs, capacity)
+        Array.Resize(&rhs_ids, capacity)
+        Array.Resize(&lhs_ids, capacity)
 
     let append (a:Entity) (b:Entity) (value:'T) =        
         pairs[count] <- struct(a,b)
         items[count] <- value
-        lhs_pairs[count] <- a
-        rhs_pairs[count] <- b
+        lhs_ids[count] <- a
+        rhs_ids[count] <- b
         count <- count + 1
 
     let remove (pair:struct(Entity * Entity)) =
         let mutable i = 0
         let mutable n = 0
         let mutable r = false
+        if idx_current >= 1 && idx_current - 1 < count && pairs[idx_current - 1] = pair then
+            r <- true
+            n <- idx_current - 1
+            idx_current <- -1
+        elif pair_current = pair && idx_current >= 0 then        
+            r <- true
+            n <- idx_current
+            idx_current <- -1
+        elif idx_current >= 0 && idx_current + 1 < count && pairs[idx_current + 1] = pair then
+            r <- true
+            n <- idx_current + 1
+            idx_current <- -1
         while i < count && not r do
             if pairs[i] = pair then
                 r <- true
@@ -401,8 +436,8 @@ type Relations<'T>() =
         if r then
             pairs[n] <- pairs[count - 1]
             items[n] <- items[count - 1]
-            lhs_pairs[n] <- lhs_pairs[count - 1]
-            rhs_pairs[n] <- rhs_pairs[count - 1]
+            lhs_ids[n] <- lhs_ids[count - 1]
+            rhs_ids[n] <- rhs_ids[count - 1]
             count <- count - 1
 
     let clear () = count <- 0
@@ -410,8 +445,19 @@ type Relations<'T>() =
     let contains (a:Entity) (b:Entity) =
         let mutable i = 0
         let mutable r = false
+        let pair = struct(a,b)
+        if idx_current >= 1 && idx_current - 1 < count && pairs[idx_current - 1] = pair then
+            r <- true
+            cache (idx_current - 1)
+        elif pair_current = pair && idx_current >= 0 then
+            r <- true
+        elif idx_current >= 0 && idx_current + 1 < count && pairs[idx_current + 1] = pair then
+            r <- true
+            cache (idx_current + 1)
         while i < count && not r do
-            r <- if pairs[i] = struct(a,b) then true else r
+            if pairs[i] = struct(a,b) then
+                r <- true
+                cache i
             i <- i + 1
         r
 
@@ -420,46 +466,87 @@ type Relations<'T>() =
         let mutable r = false
         match kind with
         | Out ->
+            if idx_current >= 1 && idx_current - 1 < count && lhs_ids[idx_current - 1] = id then
+                r <- true            
+                cache (idx_current - 1)
+            elif lhs_current = id then r <- true
+            elif idx_current >= 0 && idx_current + 1 < count && lhs_ids[idx_current + 1] = id then
+                r <- true
+                cache (idx_current + 1)
             while i < count && not r do
                 let struct(lhs,rhs) = pairs[i]
-                r <- if lhs = id then true else r
+                if lhs = id then
+                    r <- true
+                    cache i
                 i <- i + 1
         | In -> 
+            if idx_current >= 1 && idx_current - 1 < count && rhs_ids[idx_current - 1] = id then
+                r <- true            
+                cache (idx_current - 1)
+            elif rhs_current = id then r <- true
+            elif idx_current >= 0 && idx_current + 1 < count && rhs_ids[idx_current + 1] = id then
+                r <- true
+                cache (idx_current + 1)
             while i < count && not r do
                 let struct(lhs,rhs) = pairs[i]
-                r <- if rhs = id then true else r
+                if rhs = id then
+                    r <- true
+                    cache i
                 i <- i + 1
         r       
 
     let get (kind:RelationKind) (id:Entity) =
         let mutable i = 0
-        let mutable e = 0x00u
         let mutable r = false
         match kind with
-        | Out ->
+        | In ->
+            let mutable e = rhs_ids[0]
+            if idx_current >= 1 && idx_current - 1 < count && lhs_ids[idx_current - 1] = id then
+                r <- true            
+                e <- rhs_ids[idx_current - 1]
+                cache (idx_current - 1)
+            elif lhs_current = id then 
+                r <- true
+                e <- rhs_current
+            elif idx_current >= 0 && idx_current + 1 < count && lhs_ids[idx_current + 1] = id then
+                r <- true
+                e <- rhs_ids[idx_current + 1]
+                cache (idx_current + 1)
             while i < count && not r do
                 let struct(lhs,rhs) = pairs[i]
                 if lhs = id then
                     r <- true
-                    e <- rhs
+                    e <- rhs                    
+                    cache i
                 i <- i + 1
-            if r then e else failwith $"0x{0:X6}: no in relation exists"
-        | In ->
+            if r then e else failwith $"0x{0:X6}: no In relation exists"
+        | Out ->
+            let mutable e = lhs_ids[0]
+            if idx_current >= 1 && idx_current - 1 < count && rhs_ids[idx_current - 1] = id then
+                r <- true            
+                e <- lhs_ids[idx_current - 1]
+                cache (idx_current - 1)
+            elif rhs_current = id then 
+                r <- true
+                e <- lhs_current
+            elif idx_current >= 0 && idx_current + 1 < count && rhs_ids[idx_current + 1] = id then
+                r <- true
+                e <- lhs_ids[idx_current + 1]
+                cache (idx_current + 1)
             while i < count && not r do
                 let struct(lhs,rhs) = pairs[i]
                 if rhs = id then
                     r <- true
                     e <- lhs
+                    cache i
                 i <- i + 1
-            if r then e else failwith $"0x{0:X6}: no out relation exists"
+            if r then e else failwith $"0x{0:X6}: no Out relation exists"
         
 
     let relations (kind:RelationKind) =
         match kind with
-        | Out -> Entities(lhs_pairs, 0, count)
-        | In -> Entities(rhs_pairs, 0, count)
-
-
+        | Out -> Entities(lhs_ids, 0, count)
+        | In -> Entities(rhs_ids, 0, count)
 
 
     interface IRelations with
@@ -490,7 +577,18 @@ type Relations<'T>() =
     member this.Item with get(pair:struct(Entity * Entity)) =
         let mutable i = 0
         let mutable r = false
-        let mutable v = items[0]
+        let mutable v = items[0]        
+        if idx_current >= 1 && idx_current - 1 < count && pairs[idx_current - 1] = pair then
+            v <- items[idx_current - 1]
+            r <- true
+            cache (idx_current - 1)
+        elif pair_current = pair && idx_current >= 0 then
+            v <- items[idx_current]
+            r <- true
+        elif idx_current >= 0 && idx_current + 1 < count && pairs[idx_current + 1] = pair then
+            v <- items[idx_current + 1]
+            r <- true
+            cache (idx_current + 1)
         while i < count && not r do
             if pairs[i] = pair then 
                 r <- true
@@ -509,7 +607,7 @@ type Relations<'T>() =
 module Relation =
     let mutable relations_table = new Dictionary<Type,IRelations>(16)
 
-    let private from_storage<'T> () =
+    let from_storage<'T> () =
         if not (relations_table.ContainsKey(typeof<'T>)) then
             let pool = Relations<'T>()
             relations_table.Add(typeof<'T>, pool :> IRelations)

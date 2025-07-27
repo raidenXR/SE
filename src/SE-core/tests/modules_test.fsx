@@ -67,7 +67,7 @@ printfn "e0: %s" (Entity.sprintf e0)
 printfn "e2: %s" (Entity.sprintf e2)
 printfn "Relation value: %A" (Relation.value<TimerDt> e0 e2)
 printfn "Relation value: %A" (Relation.value<StressSolver> e0 e1)
-printfn "get ids: -out: %s, -in: %s" (Entity.sprintf (Relation.get<TimerDt> Out e0)) (Entity.sprintf (Relation.get<TimerDt> In e2))
+printfn "get ids: -out: %s, -in: %s" (Entity.sprintf (Relation.get<TimerDt> In e0)) (Entity.sprintf (Relation.get<TimerDt> Out e2))
 
 
 let relations_out = Relation.relations<StressSolver> Out
@@ -81,6 +81,17 @@ Relation.destroy<TimerDt> e0 e2
 printfn "TimerDt relations -after Relation.destroy- exist: %b, count: %d" (Relation.exists<TimerDt> e0 e2) ((Relation.relations<TimerDt> Out).Count)
 storage.PrintContent()
 printfn ""
+
+// example of a real(?) use in some system??
+let stress_relations = Relation.from_storage<StressSolver>()
+let stress_actors = Relation.relations<StressSolver> Out
+stress_relations.PrintContent()
+printfn "stess_actors.len: %d" stress_actors.Count
+for e in stress_actors do
+    Entity.printf e
+    let stress_source = Relation.get<StressSolver> In e
+    let stress_value  = Relation.value<StressSolver> e stress_source
+    ()    
 
 // test equality
 let b = [typeof<Move>; typeof<TimerDt>] = [typeof<TimerDt>; typeof<Move>]
