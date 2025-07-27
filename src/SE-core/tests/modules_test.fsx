@@ -8,11 +8,11 @@ open SE.Core
 type [<Struct>] View = View of Matrix4x4
 type [<Struct>] Rotation = Rotation of float
 type [<Struct>] TimerDt = {dt:float32}
+type [<Struct>] StressSolver = {v:float}
 
 
 // tags
 type Move = struct end
-type StressSolver = struct end
 
 
 // test Entity module
@@ -48,7 +48,7 @@ printfn ""
 
 printfn "#################\ntest relations module\n#################"
 // test Relation module
-relate e0 e1 (StressSolver())
+relate e0 e1 {StressSolver.v = 5434.324}
 printfn "relation exists: %b, %b" (Relation.exists<StressSolver> e0 e1) (Relation.exists<StressSolver> e1 e0)
 printfn "relation expected: %b, %b" (Relation.has<StressSolver> Out e0) (Relation.has<StressSolver> In e1)
 printfn "relation reversed: %b, %b" (Relation.has<StressSolver> Out e1) (Relation.has<StressSolver> In e0)
@@ -67,7 +67,7 @@ printfn "e0: %s" (Entity.sprintf e0)
 printfn "e2: %s" (Entity.sprintf e2)
 printfn "Relation value: %A" (Relation.value<TimerDt> e0 e2)
 printfn "Relation value: %A" (Relation.value<StressSolver> e0 e1)
-printfn "get ids: -out: %s, -in: %s" (Entity.sprintf (Relation.get<TimerDt> In e0)) (Entity.sprintf (Relation.get<TimerDt> Out e2))
+printfn "get ids: -out: %s, -in: %s" (Entity.sprintf (Relation.get<TimerDt> Out e0)) (Entity.sprintf (Relation.get<TimerDt> In e2))
 
 
 let relations_out = Relation.relations<StressSolver> Out
@@ -87,13 +87,13 @@ let stress_relations = Relation.from_storage<StressSolver>()
 let stress_actors = Relation.relations<StressSolver> Out
 stress_relations.PrintContent()
 printfn "stess_actors.len: %d" stress_actors.Count
-for e in stress_actors do
-    Entity.printf e
-    let stress_source = Relation.get<StressSolver> In e
-    let stress_value  = Relation.value<StressSolver> e stress_source
-    ()    
+for stress_actor in stress_actors do
+    let stress_source = Relation.get<StressSolver> In stress_actor
+    let stress_value  = Relation.value<StressSolver> stress_source stress_actor
+    printfn "stress source:%s, stress actor:%s, stress value:%g" (Entity.sprintf stress_source) (Entity.sprintf stress_actor) stress_value.v
 
 // test equality
+let s = struct(0x10u,0x09u) = struct(0x09u,0x10u)
 let b = [typeof<Move>; typeof<TimerDt>] = [typeof<TimerDt>; typeof<Move>]
-printfn "test equality: %b" b
+printfn "test equality: %b, %b" s b
 

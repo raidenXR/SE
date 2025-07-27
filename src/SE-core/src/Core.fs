@@ -499,7 +499,7 @@ type Relations<'T>() =
         let mutable i = 0
         let mutable r = false
         match kind with
-        | In ->
+        | Out ->
             let mutable e = rhs_ids[0]
             if idx_current >= 1 && idx_current - 1 < count && lhs_ids[idx_current - 1] = id then
                 r <- true            
@@ -519,8 +519,8 @@ type Relations<'T>() =
                     e <- rhs                    
                     cache i
                 i <- i + 1
-            if r then e else failwith $"0x{0:X6}: no In relation exists"
-        | Out ->
+            if r then e else failwith $"0x{0:X6}: no Out relation exists"
+        | In ->
             let mutable e = lhs_ids[0]
             if idx_current >= 1 && idx_current - 1 < count && rhs_ids[idx_current - 1] = id then
                 r <- true            
@@ -540,13 +540,13 @@ type Relations<'T>() =
                     e <- lhs
                     cache i
                 i <- i + 1
-            if r then e else failwith $"0x{0:X6}: no Out relation exists"
+            if r then e else failwith $"0x{0:X6}: no In relation exists"
         
 
     let relations (kind:RelationKind) =
         match kind with
-        | Out -> Entities(lhs_ids, 0, count)
-        | In -> Entities(rhs_ids, 0, count)
+        | Out -> Entities(rhs_ids, 0, count)
+        | In -> Entities(lhs_ids, 0, count)
 
 
     interface IRelations with
