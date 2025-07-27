@@ -48,31 +48,38 @@ printfn ""
 
 printfn "#################\ntest relations module\n#################"
 // test Relation module
-let stress_relation = relate e0 e1 (StressSolver())
-printfn "relation exists: %b" (Relation.has<StressSolver> e0 e1)
-printfn "relation expected: %b, %b" (Relation.hasOut<StressSolver> e0) (Relation.hasIn<StressSolver> e1)
-printfn "relation reversed: %b, %b" (Relation.hasOut<StressSolver> e1) (Relation.hasIn<StressSolver> e0)
-printfn "contains %b" (Relation.has<StressSolver> e0 e1)
+relate e0 e1 (StressSolver())
+printfn "relation exists: %b, %b" (Relation.exists<StressSolver> e0 e1) (Relation.exists<StressSolver> e1 e0)
+printfn "relation expected: %b, %b" (Relation.has<StressSolver> Out e0) (Relation.has<StressSolver> In e1)
+printfn "relation reversed: %b, %b" (Relation.has<StressSolver> Out e1) (Relation.has<StressSolver> In e0)
 
 
 let e2 = entity ()
-relate e0 e2 ({dt = 7.f})
+let e3 = entity ()
+relate e0 e2 {TimerDt.dt = 7.f}
+relate e0 e3 {TimerDt.dt = 6.4f} 
+relate e0 e1 {TimerDt.dt = 2.4f} 
+let storage = Relation.relations_table[typeof<TimerDt>] :?> Relations<TimerDt>
+printfn "TimerDt relations -before Relation.destroy- exist: %b, count: %d" (Relation.exists<TimerDt> e0 e2) ((Relation.relations<TimerDt> Out).Count)
+storage.PrintContent()
 
 printfn "e0: %s" (Entity.sprintf e0)
 printfn "e2: %s" (Entity.sprintf e2)
 printfn "Relation value: %A" (Relation.value<TimerDt> e0 e2)
-printfn "get ids: -out: %s, -int: %s" (Entity.sprintf (Relation.getOut<TimerDt> e0)) (Entity.sprintf (Relation.getIn<TimerDt> e2))
+printfn "Relation value: %A" (Relation.value<StressSolver> e0 e1)
+printfn "get ids: -out: %s, -in: %s" (Entity.sprintf (Relation.get<TimerDt> Out e0)) (Entity.sprintf (Relation.get<TimerDt> In e2))
 
 
-let out_entities = Relation.outRelations<StressSolver>()
-let in_entities  = Relation.inRelations<StressSolver>()
-printfn "out_relations count: %d" (out_entities.Count)
-printfn "in_relations count: %d" (in_entities.Count)
-for e in out_entities do Entity.printfn e
-for e in in_entities do Entity.printfn e
+let relations_out = Relation.relations<StressSolver> Out
+let relations_in  = Relation.relations<StressSolver> In
+printfn "out_relations count: %d" (relations_out.Count)
+printfn "in_relations count: %d" (relations_in.Count)
+for e in relations_out do Entity.printfn e
+for e in relations_in do Entity.printfn e
 
 Relation.destroy<TimerDt> e0 e2
-printfn "TimerDt relations -after Relation.destroy- exist: %b, count: %d" (Relation.has<TimerDt> e0 e2) (Relation.outRelations<TimerDt>().Count)
+printfn "TimerDt relations -after Relation.destroy- exist: %b, count: %d" (Relation.exists<TimerDt> e0 e2) ((Relation.relations<TimerDt> Out).Count)
+storage.PrintContent()
 printfn ""
 
 // test equality

@@ -13,6 +13,11 @@ type EntityStorage = {
     mutable rebuild: bool
 }
 
+[<Struct>]
+type RelationKind =
+    | In
+    | Out
+
 type Trigger =
     | OnAdd
     | OnSet
@@ -356,11 +361,10 @@ module Components =
 type IRelations =
     abstract Count: int
     abstract Remove: struct(Entity * Entity) -> unit
+    abstract Clear: unit -> unit
     abstract Contains: struct(Entity * Entity) -> bool
-    abstract HasIn: Entity -> bool
-    abstract HasOut: Entity -> bool
-    abstract GetIn: Entity -> Entity
-    abstract GetOut: Entity -> Entity
+    abstract Has: RelationKind * Entity -> bool
+    abstract Get: RelationKind * Entity -> Entity
 
 /// Storage for relations, akin to Components
 type Relations<'T>() =
@@ -387,117 +391,125 @@ type Relations<'T>() =
 
     let remove (pair:struct(Entity * Entity)) =
         let mutable i = 0
+        let mutable n = 0
         let mutable r = false
         while i < count && not r do
-            r <- if pairs[i] = pair then true else r
+            if pairs[i] = pair then
+                r <- true
+                n <- i
             i <- i + 1
         if r then
-            pairs[i] <- pairs[count - 1]
-            items[i] <- items[count - 1]
-            lhs_pairs[i] <- lhs_pairs[count - 1]
-            rhs_pairs[i] <- rhs_pairs[count - 1]
+            pairs[n] <- pairs[count - 1]
+            items[n] <- items[count - 1]
+            lhs_pairs[n] <- lhs_pairs[count - 1]
+            rhs_pairs[n] <- rhs_pairs[count - 1]
             count <- count - 1
+
+    let clear () = count <- 0
         
     let contains (a:Entity) (b:Entity) =
         let mutable i = 0
         let mutable r = false
         while i < count && not r do
-            r <- if pairs[i] = struct(a, b) then true else r
-            i <- i + 1
-        r
-
-    let hasOut (id:Entity) =
-        let mutable i = 0
-        let mutable r = false
-        while i < count && not r do
-            let struct(lhs,rhs) = pairs[i]
-            r <- if lhs = id then true else r
-            i <- i + 1
-        r
-            
-    let hasIn (id:Entity) =
-        let mutable i = 0
-        let mutable r = false
-        while i < count && not r do
-            let struct(lhs,rhs) = pairs[i]
-            r <- if rhs = id then true else r
-            i <- i + 1
-        r
-
-    let getOut (id:Entity) =
-        let mutable i = 0
-        let mutable e = 0x00u
-        let mutable r = false
-        while i < count && not r do
-            let struct(lhs,rhs) = pairs[i]
-            if lhs = id then
-                r <- true
-                e <- rhs
-            i <- i + 1
-        if r then e else failwith "no out relation exists"
-
-    let getIn (id:Entity) =
-        let mutable i = 0
-        let mutable e = 0x00u
-        let mutable r = false
-        while i < count && not r do
-            let struct(lhs,rhs) = pairs[i]
-            if rhs = id then
-                r <- true
-                e <- lhs
-            i <- i + 1
-        if r then e else failwith "no in relation exists"
-
-    let inRelations () =
-        Entities(lhs_pairs, 0, count)        
-
-    let outRelations () =
-        Entities(rhs_pairs, 0, count)
-
-    let get (a:Entity) (b:Entity) =
-        let mutable i = 0
-        let mutable r = false
-        while i < count && not r do
             r <- if pairs[i] = struct(a,b) then true else r
             i <- i + 1
-        if r then items[i] else failwith "relations does not contain this pair"
+        r
+
+    let has (kind:RelationKind) (id:Entity) =
+        let mutable i = 0
+        let mutable r = false
+        match kind with
+        | Out ->
+            while i < count && not r do
+                let struct(lhs,rhs) = pairs[i]
+                r <- if lhs = id then true else r
+                i <- i + 1
+        | In -> 
+            while i < count && not r do
+                let struct(lhs,rhs) = pairs[i]
+                r <- if rhs = id then true else r
+                i <- i + 1
+        r       
+
+    let get (kind:RelationKind) (id:Entity) =
+        let mutable i = 0
+        let mutable e = 0x00u
+        let mutable r = false
+        match kind with
+        | Out ->
+            while i < count && not r do
+                let struct(lhs,rhs) = pairs[i]
+                if lhs = id then
+                    r <- true
+                    e <- rhs
+                i <- i + 1
+            if r then e else failwith $"0x{0:X6}: no in relation exists"
+        | In ->
+            while i < count && not r do
+                let struct(lhs,rhs) = pairs[i]
+                if rhs = id then
+                    r <- true
+                    e <- lhs
+                i <- i + 1
+            if r then e else failwith $"0x{0:X6}: no out relation exists"
+        
+
+    let relations (kind:RelationKind) =
+        match kind with
+        | Out -> Entities(lhs_pairs, 0, count)
+        | In -> Entities(rhs_pairs, 0, count)
+
+
 
 
     interface IRelations with
         member this.Count with get() = count
-        member this.HasOut (e:Entity) = hasOut e
-        member this.HasIn (e:Entity) = hasIn e
-        member this.GetOut (e:Entity) = getOut e
-        member this.GetIn (e:Entity) = getIn e
         member this.Remove (pair:struct(Entity * Entity)) = remove pair        
+        member this.Clear () = clear ()
         member this.Contains (pair:struct(Entity * Entity)) =
             let struct(lhs,rhs) = pair
             contains lhs rhs        
+        member this.Has (kind:RelationKind, e:Entity) = has kind e
+        member this.Get (kind:RelationKind, e:Entity) = get kind e
         
 
     member this.Add (a:Entity, b:Entity, value:'T) =
         if count + 1 >= capacity then resize ()
         append a b value
 
+    member this.Count () = count
     member this.Remove (relation:struct(Entity * Entity)) = remove relation
-    member this.HasOut (e:Entity) = hasOut e
-    member this.HasIn (e:Entity) = hasIn e
-    member this.GetOut (e:Entity) = getOut e
-    member this.GetIn (e:Entity) = getIn e
+    member this.Clear () = clear ()
+    member this.Has (e:Entity, kind:RelationKind) = has kind e
+    member this.Get (e:Entity, kind:RelationKind) = get kind e
+    member this.Relations (kind:RelationKind) = relations kind
     member this.Contains (pair:struct(Entity * Entity)) =
         let struct(a,b) = pair
         contains a b
-    member this.InRelations () = inRelations ()
-    member this.OutRelations () = outRelations ()
+        
     member this.Item with get(pair:struct(Entity * Entity)) =
-        let struct(lhs,rhs) = pair
-        get lhs rhs
+        let mutable i = 0
+        let mutable r = false
+        let mutable v = items[0]
+        while i < count && not r do
+            if pairs[i] = pair then 
+                r <- true
+                v <- items[i]
+            i <- i + 1
+        if r then v else failwith "relations does not contain this pair"
+        
+    member this.PrintContent () =
+        for i in 0..count - 1 do
+            let struct(lhs,rhs) = pairs[i]
+            let s_lhs = $"0x{lhs:X6}"
+            let s_rhs = $"0x{rhs:X6}"
+            printfn "(%s, %s): %A" s_lhs s_rhs items[i] 
     
 
 module Relation =
     let mutable relations_table = new Dictionary<Type,IRelations>(16)
 
-    let private get<'T> () =
+    let private from_storage<'T> () =
         if not (relations_table.ContainsKey(typeof<'T>)) then
             let pool = Relations<'T>()
             relations_table.Add(typeof<'T>, pool :> IRelations)
@@ -505,45 +517,41 @@ module Relation =
         else
             relations_table[typeof<'T>] :?> Relations<'T>
 
+    /// create a relation between pair (a,b)
     let create<'T> (a:Entity) (b:Entity) (relation:'T) =
-        let relations = get<'T>()
+        let relations = from_storage<'T>()
         relations.Add(a, b, relation)
 
-    let value<'T> (a:Entity) (b:Entity) =
-        let relations = get<'T>()
-        relations[struct(a,b)]
-
-    let getIn<'T> (e:Entity) :Entity =
-        let relations = get<'T>()
-        relations.GetIn e
-    
-    let getOut<'T> (e:Entity) :Entity =
-        let relations = get<'T>()
-        relations.GetOut e
-
-    let has<'T> (a:Entity) (b:Entity) =
-        let relations = get<'T>()
-        relations.Contains(struct(a,b))
-
-    let hasIn<'T> (e:Entity) = 
-        let relations = get<'T>()
-        relations.HasIn e
-
-    let hasOut<'T> (e:Entity) = 
-        let relations = get<'T>()
-        relations.HasOut e
-
+    /// remove the relation of (a,b)
     let destroy<'T> (a:Entity) (b:Entity) = 
-        let relations = get<'T>()
+        let relations = from_storage<'T>()
         relations.Remove (struct(a, b))
 
-    let outRelations<'T> () =
-        let relations = get<'T>()
-        relations.OutRelations()
+    /// checks whether a relation between a and b exists.
+    /// Whether it is (a,b) or (b,a)
+    let exists<'T> (a:Entity) (b:Entity) =
+        let relations = from_storage<'T>()
+        relations.Contains(struct(a,b)) || relations.Contains(struct(b,a))
 
-    let inRelations<'T> () =
-        let relations = get<'T>()
-        relations.InRelations()
+    /// returns the relation component for the pair (a,b) if it exists
+    let value<'T> (a:Entity) (b:Entity) =
+        let relations = from_storage<'T>()
+        relations[struct(a,b)]        
+
+    /// ckecks whether the entity is assigned in any relation of kind
+    let has<'T> (kind:RelationKind) (e:Entity) =
+        let relations = from_storage<'T>()
+        relations.Has(e, kind)
+
+    /// returns the entity that the target entity has a relation with
+    let get<'T> (kind:RelationKind) (e:Entity) :Entity =
+        let relations = from_storage<'T>()
+        relations.Get(e, kind)
+
+    /// gets relations of kind for the specified type 'T
+    let relations<'T> (kind:RelationKind) =
+        let relations = from_storage<'T>()
+        relations.Relations(kind)
 
 
 module Queries =            
