@@ -14,12 +14,57 @@ type [<Struct>] Projection = Projection of Matrix4x4
 type [<Struct>] Rotation = Rotation of float
 type [<Struct>] Temperature = Temperature of float
 
+type [<Struct>] Phase = {mutable active:bool; mutable norm:float}
+
 
 // tags
 type Move = struct end
+type Active = struct end
 
 
 // initialization systems
+let create_views (e:Entities) = 
+    ignore e
+    for i in 1..4 do entity () |> Entity.set (View (Matrix4x4.CreateScale(Vector3(0.3f + float32 i, 0.4f, 2f / float32 i)))) |> ignore
+    
+let print_views_A (e:Entities) =
+    printfn "print_view_A"
+    let views = Components.get<View>()
+    for id in e do printfn "%A" views[id]     
+        
+let print_views_B (e:Entities) =
+    printfn "print_view_B"
+    let views = Components.get<View>()
+    for view in views.Entities do printfn "%A" view   
+
+system OnLoad [] (fun _ ->
+    for i in 0..10 do
+        entity ()
+        |> Entity.add<Active>
+        |> Entity.set ({active = false; norm = 0.34})
+        |> ignore
+)
+
+system PostLoad [typeof<Active>; typeof<Phase>] (fun q ->
+    let c0 = Components.get<Phase>()
+    let c1 = Components.get<Active>()
+    let entries = c0.Slice(q)
+    for i in 0..entries.Length - 1 do
+        let v = &entries[i]
+        v.active <- not v.active
+        v.norm <- float (i * i) * v.norm / 2.0
+
+    printfn "query.len: %d" q.Count
+    printfn "phases.count: %d" c0.Count
+    printfn "active.count: %d" c1.Count
+    for e in entries do
+        printfn "state: %b, norm: %g" e.active e.norm        
+)
+    
+
+system OnLoad [] create_views
+system PostLoad [typeof<View>] print_views_A
+system PostLoad [typeof<View>] print_views_B
 
 // create movables
 system OnLoad [] (fun _ ->
@@ -116,6 +161,11 @@ system OnUpdate [typeof<Rotation>] (fun q ->
     |> Entity.remove<Rotation> |> ignore
 )
 
+// systems chain -- from bevy example
+// let system_f0 (q:Entities) = ...
+// let system_f1 (q:Entities) = ...
+// let system_f2 = system_f0 >> system_f1  // must return some value...
+
 system OnUpdate [typeof<Velocity>; typeof<Temperature>] (fun q -> 
     let temperatures = Components.get<Temperature>()
     let velocities = Components.get<Velocity>()
@@ -137,5 +187,5 @@ observer OnRemove [typeof<Rotation>] (fun q -> printfn "trigger on remove fired!
 
 // run all assigned systems
 #time
-System.progress (None)
+Systems.progress_N (None)
 #time

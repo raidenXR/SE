@@ -18,6 +18,7 @@ type RelationKind =
     | In
     | Out
 
+[<Struct>]
 type Trigger =
     | OnAdd
     | OnSet
@@ -26,6 +27,7 @@ type Trigger =
     | OnSort
     | OnIterate
 
+[<Struct>]
 type Phase =
     | OnLoad
     | PostLoad
@@ -35,6 +37,7 @@ type Phase =
     | PostUpdate
     | PreStore
     | OnStore
+    | OnExit
     | Free
 
         
@@ -275,7 +278,7 @@ type Components<'T>() =
     member this.Item
         with get(id:Entity) =
             if id_current = id && idx_current > -1 then
-                items[idx_current]
+                &items[idx_current]
             else
                 let mutable i = -1
                 match contains id &i with
@@ -285,37 +288,47 @@ type Components<'T>() =
                     printfn $"Component<{typeof<'T>.Name}> Does not contain this Entity: {s}"
                     // printEntities ()
                     Console.ForegroundColor <- ConsoleColor.White
-                    failwith ""
+                    failwith "components[idx] failed"
+                    &items[0]
                 | true -> 
-                    // id_prev <- id_current
-                    // idx_prev <- idx_current
-                    // id_current <- id
-                    // idx_current <- i
-                    items[i]
-        and set(id:Entity) value = 
-            if id_current = id && idx_current > -1 then
-                items[idx_current] <- value
-            else
-                let mutable i = -1
-                match contains id &i with
-                | false -> 
-                    let s = $"0x{id:X6}"
-                    Console.ForegroundColor <- ConsoleColor.Red
-                    printfn $"Component<{typeof<'T>.Name}> Does not contain this Entity: {s}"
-                    printEntities ()
-                    Console.ForegroundColor <- ConsoleColor.White
-                    failwith ""
-                | true -> 
-                    // id_prev <- id_current
-                    // idx_prev <- idx_current
-                    // id_current <- id
-                    // idx_current <- i
-                    items[i] <- value
+                    &items[i]
+        // and set(id:Entity) value = 
+        //     if id_current = id && idx_current > -1 then
+        //         items[idx_current] <- value
+        //     else
+        //         let mutable i = -1
+        //         match contains id &i with
+        //         | false -> 
+        //             let s = $"0x{id:X6}"
+        //             Console.ForegroundColor <- ConsoleColor.Red
+        //             printfn $"Component<{typeof<'T>.Name}> Does not contain this Entity: {s}"
+        //             printEntities ()
+        //             Console.ForegroundColor <- ConsoleColor.White
+        //             failwith ""
+        //         | true -> 
+        //             // id_prev <- id_current
+        //             // idx_prev <- idx_current
+        //             // id_current <- id
+        //             // idx_current <- i
+        //             items[i] <- value
                     
 
     member this.Entities with get() = Entities(ids, 0, count)
 
+    member this.Entries with get() = Span(items, 0, count)
+
+    member this.Count with get() = count
+
     member this.Clear() = clear ()
+
+    /// assumes the entities are continuous
+    member this.Slice(q:Entities) =
+        let mutable b = false
+        let mutable i = 0
+        while i < count && not b do
+            b <- ids[i] = q[0]
+            i <- i + 1
+        if b && count - (i - 1) >= q.Count then Span(items, (i - 1), q.Count) else Span(items, 0, 0)
 
 
 
@@ -799,7 +812,7 @@ module Queries =
             
 
 /// Systems manager              
-module System = 
+module Systems = 
     let on_load     = ResizeArray<System>()
     let post_load   = ResizeArray<System>()
     let pre_update  = ResizeArray<System>()
@@ -808,10 +821,11 @@ module System =
     let post_update = ResizeArray<System>()
     let pre_store   = ResizeArray<System>()
     let on_store    = ResizeArray<System>()
+    let on_exit     = ResizeArray<System>()
 
     let mutable private running = true
 
-    let create (phase:Phase) (types:Types) (fn:Entities -> unit) =
+    let add (phase:Phase) (types:Types) (fn:Entities -> unit) =
         // Queries.build types
         match phase with
         | OnLoad -> on_load.Add (types,fn)
@@ -822,14 +836,28 @@ module System =
         | PostUpdate -> post_update.Add (types,fn)
         | PreStore -> pre_update.Add (types,fn)
         | OnStore -> on_store.Add (types,fn)
+        | OnExit -> on_exit.Add (types,fn)
         | Free -> ()
 
 
     let quit () =
         running <- false
 
+    
+    let progress () =
+        for (types,fn) in on_load do fn (Queries.get types)
+        for (types,fn) in post_load do fn (Queries.get types)  
+        while running do
+            for (types,fn) in pre_update do fn (Queries.get types)  
+            for (types,fn) in on_update do fn (Queries.get types)  
+            for (types,fn) in on_validate do fn (Queries.get types)  
+            for (types,fn) in post_update do fn (Queries.get types)  
+        for (types,fn) in pre_store do fn (Queries.get types)  
+        for (types,fn) in on_store do fn (Queries.get types)  
+        for (types,fn) in on_exit do fn (Queries.get types)
+    
 
-    let progress (n_iterations:option<int>) =
+    let progress_N (n_iterations:option<int>) =
         let mutable i = match n_iterations with | Some n -> n | None -> 0
         for (types,fn) in on_load do fn (Queries.get types)
         for (types,fn) in post_load do fn (Queries.get types)  
@@ -844,6 +872,7 @@ module System =
             i <- i - 1
         for (types,fn) in pre_store do fn (Queries.get types)  
         for (types,fn) in on_store do fn (Queries.get types)  
+        for (types,fn) in on_exit do fn (Queries.get types)
 
 
 /// Observers are similar to systems, in that they are queries that are combined with a callback. 
@@ -859,7 +888,7 @@ module Observers =
     
     /// The observers are created post-load
     let create (trigger:Trigger) (types:Types) (fn:Entities -> unit) =
-        System.create PostLoad types (fun _ -> 
+        Systems.add PostLoad types (fun _ -> 
             // Queries.build types
             match trigger with
             | OnAdd -> on_add.Add (types,fn)
@@ -971,7 +1000,7 @@ module Entity =
 [<AutoOpen>]
 module FnDecls =
     let entity = Entity.create
-    let system = System.create
+    let system = Systems.add
     let observer = Observers.create
     let query = Queries.get
     let relate = Relation.create
