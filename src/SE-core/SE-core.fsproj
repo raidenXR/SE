@@ -2,16 +2,14 @@
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
+    <OutputType>library</OutputType>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="src/gltfLoader.fs" />
-    <Compile Include="src/binLoader.fs" />
-    <Compile Include="src/Core.fs" />
-    <Compile Include="src/Gnuplot.fs" />
+    <Compile Include="src/core.fs" />
+    <Compile Include="src/gnuplot.fs" />
     <Compile Include="src/serializers.fs" />
-    <Compile Include="src/rendererFS.fs" />
   </ItemGroup>
 
 </Project>

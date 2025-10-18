@@ -1,0 +1,28 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>library</OutputType>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="src/geometry.fs" />
+    <Compile Include="src/common.fs" />
+    <Compile Include="src/gltfloader.fs" />
+    <Compile Include="src/testgame.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ImGui.NET" Version="1.91.6.1" />
+    <PackageReference Include="OpenTK" Version="4.9.4" />
+    <PackageReference Include="StbImageSharp" Version="2.30.15" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="shaders/**" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="resources/**" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="models/**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
