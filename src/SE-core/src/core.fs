@@ -323,12 +323,17 @@ type Components<'T>() =
 
     /// assumes the entities are continuous
     member this.Slice(q:Entities) =
-        let mutable b = false
-        let mutable i = 0
-        while i < count && not b do
-            b <- ids[i] = q[0]
-            i <- i + 1
-        if b && count - (i - 1) >= q.Count then Span(items, (i - 1), q.Count) else Span(items, 0, 0)
+        if count < q.Count  then Span(items,0,0)
+        else
+            let q_count = q.Count
+            let a = q[0]
+            let n = q[q_count - 1]
+            let mutable b = false
+            let mutable i = 0
+            while count - i >= q_count && not b do
+                b <- ids[i] = a && ids[i + q_count - 1] = n
+                i <- i + 1
+            if b then Span(items, i - 1, q_count) else Span(items, 0, 0)
 
 
 

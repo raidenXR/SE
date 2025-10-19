@@ -8,7 +8,7 @@ open OpenTK.Mathematics
 
 
 type Model(vertices: array<float32>, indices: array<uint32>) =
-    let mutable scale = Matrix4.Identity
+    let mutable transform = Matrix4.Identity
 
     member this.Vertices with get() = vertices
     member this.Indices with get() = indices
@@ -19,7 +19,7 @@ type Model(vertices: array<float32>, indices: array<uint32>) =
     member this.VerticesBufferSize with get() = vertices.Length * sizeof<float32>
     member this.IndicesBufferSize with get() = indices.Length * sizeof<uint32>
 
-    member this.Scale with get() = scale and set(value) = scale <- value
+    member this.Transform with get() = transform and set(value) = transform <- value
 
     member this.Print() =
         let v = vertices

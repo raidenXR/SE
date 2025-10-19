@@ -1,9 +1,9 @@
-#load "../src/Core.fs"
-#load "../src/Gnuplot.fs"
+#load "../src/core.fs"
+#load "../src/gnuplot.fs"
 
 open System
 open SE.Core
-open SE.Core.Plotting
+open SE.Plotting
 open FSharp.Data.UnitSystems.SI.UnitSymbols
 
 // components

@@ -107,7 +107,7 @@ type TestGame(ob_model:Model, game_window_settings:GameWindowSettings, native_wi
         shader.Use()
         shader.SetMatrix4("view", camera.GetViewMatrix())
         shader.SetMatrix4("projection", camera.GetProjectionMatrix())
-        shader.SetMatrix4("model", ob_model.Scale)
+        shader.SetMatrix4("model", ob_model.Transform)
         shader.SetVector3("viewPos", camera.Position)
 
         shader.SetVector3("material.ambient", Vector3(1.0f, 0.5f, 0.31f))

@@ -1,4 +1,4 @@
-#load "../src/Core.fs"
+#load "../src/core.fs"
 
 open System
 open System.Numerics
@@ -40,11 +40,15 @@ let e1 =
 
 
 printfn "#################\ntest query function\n#################"
-let qt0 = query [typeof<Rotation>; typeof<Move>]
-let qt1 = query [typeof<Move>]
-printfn "qt0: %d" (qt0.Count)
-printfn "qt1: %d, component.len: %d" (qt1.Count) (Components.get<Move>().Entities.Count)
-printfn ""
+do
+    let move_components = Components.get<Move>()
+    let qt0 = query [typeof<Rotation>; typeof<Move>]
+    let qt1 = query [typeof<Move>]
+    let move_entries = move_components.Slice(qt1)
+    printfn "qt0: %d" (qt0.Count)
+    printfn "qt1: %d, component.len: %d" (qt1.Count) (Components.get<Move>().Entities.Count)
+    printfn "move_components.len: %d" move_entries.Length
+    printfn ""
 
 printfn "#################\ntest relations module\n#################"
 // test Relation module

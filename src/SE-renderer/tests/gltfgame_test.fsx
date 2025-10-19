@@ -1,4 +1,4 @@
-#r "../bin/Debug/net9.0/SE-renderer.dll"
+#r "../bin/Release/net9.0/SE-renderer.dll"
 #r "nuget: OpenTK, 4.9.4"
 
 open System
@@ -14,13 +14,13 @@ let model =
     | GLTF.IsTxt ->
         let (vertices,indices) = Geometry.load (args[2], 0.55f, 0.55f, 0.53f, 1.0f)
         let _model = Model(vertices,indices)
-        _model.Scale <- Matrix4.CreateScale(0.2f)
+        _model.Transform <- Matrix4.CreateScale(0.2f)
         _model
     | GLTF.IsGltf ->
         use gltf = new GLTF.Deserializer(path)
         let (vertices,indices) = gltf.ReadAllMeshes()
         let _model = Model(vertices,indices)
-        _model.Scale <- Matrix4.CreateScale(10.0f)
+        _model.Transform <- Matrix4.CreateScale(10.0f)
         _model
     | GLTF.IsEmpty ->          
         let (vertices,indices) = Geometry.cube ()

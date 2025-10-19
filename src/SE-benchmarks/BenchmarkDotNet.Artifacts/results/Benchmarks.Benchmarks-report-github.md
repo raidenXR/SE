@@ -8,14 +8,15 @@ Intel Core i5-4300U CPU 1.90GHz (Haswell), 1 CPU, 4 logical and 2 physical cores
 
 
 ```
-| Method         | size | Mean         | Error      | StdDev     |
-|--------------- |----- |-------------:|-----------:|-----------:|
-| **CreateEntities** | **10**   |     **9.798 μs** |  **0.0998 μs** |  **0.0885 μs** |
-| SetEntities    | 10   |    27.276 μs |  0.4289 μs |  0.3802 μs |
-| Queries        | 10   | 1,235.486 μs | 15.9481 μs | 14.9178 μs |
-| **CreateEntities** | **100**  |    **87.342 μs** |  **1.6833 μs** |  **2.0038 μs** |
-| SetEntities    | 100  |   259.536 μs |  4.8254 μs |  7.6535 μs |
-| Queries        | 100  | 1,277.798 μs | 11.5529 μs | 15.4228 μs |
-| **CreateEntities** | **1000** |   **860.531 μs** | **16.7782 μs** | **20.6051 μs** |
-| SetEntities    | 1000 | 2,562.333 μs | 45.3661 μs | 58.9888 μs |
-| Queries        | 1000 | 1,265.296 μs | 10.4206 μs |  9.2376 μs |
+| Method                      | Mean           | Error        | StdDev       |
+|---------------------------- |---------------:|-------------:|-------------:|
+| RegularArray                |       946.2 ns |      1.28 ns |      1.07 ns |
+| ComputePrimitive            |     7,483.1 ns |     41.99 ns |     39.28 ns |
+| ComputePrimitiveiSequential |       615.5 ns |      0.85 ns |      0.75 ns |
+| ComputeRecord               |     7,528.6 ns |     14.69 ns |     13.02 ns |
+| ComputeRecordSequential     |       619.6 ns |      0.59 ns |      0.49 ns |
+| ComputeDURead               |     7,482.9 ns |     36.26 ns |     33.92 ns |
+| ComputeDU                   |     7,468.7 ns |     12.53 ns |     11.10 ns |
+| ComputeDUSequential         |       621.9 ns |      4.87 ns |      4.55 ns |
+| CreateEntities              |   945,515.5 ns |  6,182.81 ns |  5,162.92 ns |
+| SetEntities                 | 2,722,765.7 ns | 38,735.14 ns | 30,241.85 ns |

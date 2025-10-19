@@ -1,4 +1,4 @@
-namespace SE.Core
+namespace SE
 open System
 open System.Text
 open System.IO

@@ -1,4 +1,4 @@
-#load "../src/Core.fs"
+#load "../src/core.fs"
 
 open System
 open System.Numerics
@@ -49,6 +49,7 @@ system PostLoad [typeof<Active>; typeof<Phase>] (fun q ->
     let c0 = Components.get<Phase>()
     let c1 = Components.get<Active>()
     let entries = c0.Slice(q)
+    printfn "slice.len: %d" entries.Length
     for i in 0..entries.Length - 1 do
         let v = &entries[i]
         v.active <- not v.active
