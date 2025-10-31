@@ -218,6 +218,12 @@ type Components<'T>() =
 
     let clear () = count <- 0        
 
+    // let sliceEqual a b =
+    //     let va = System.Numerics.Vector<Entity>(a, 0)
+    //     let vb = System.Numerics.Vector<Entity>(b, 0)
+    //     let ln = System.Numerics.Vector<Entity>().Length
+    //     va = vb
+
     interface IComponents with
         member this.Count with get() = count
         member this.Capacity with get() = capacity
@@ -322,19 +328,20 @@ type Components<'T>() =
     member this.Clear() = clear ()
 
     /// assumes the entities are continuous
-    member this.Slice(q:Entities) =
-        if count < q.Count  then Span(items,0,0)
+    /// CHANGE THAT TO APPLY BINARY SEARCH
+    member this.AsSpan(q:Entities) =
+        if q.Count = 0 || count < q.Count  then Span(items,0,0)
         else
             let q_count = q.Count
             let a = q[0]
             let n = q[q_count - 1]
-            let mutable b = false
             let mutable i = 0
-            while count - i >= q_count && not b do
-                b <- ids[i] = a && ids[i + q_count - 1] = n
-                i <- i + 1
-            if b then Span(items, i - 1, q_count) else Span(items, 0, 0)
-
+            let mutable b = contains q[0] &i
+            if b then
+                let a_span = Span(ids, i, q_count)
+                let b_span = Span(q.Array, q.Offset, q.Count)
+                b <- a_span.SequenceEqual(b_span)
+            if b then Span(items, i, q_count) else Span(items, 0, 0)
 
 
 /// Components manager
@@ -356,6 +363,15 @@ module Components =
             pool
         else
             components_table[typeof<'T>] :?> Components<'T>
+
+    /// function as a shortcut to Components.get<T>.AsSpan (entities)
+    /// Ensures that entities are continuous at entries
+    let span<'T> (entities:Entities) =
+        let _components = get<'T>()
+        let _span = _components.AsSpan(entities)
+        if _components.Count = 0 then failwith "components.Count is empty (= 0)"
+        if _span.Length = 0 then failwith "entities are not continuous at Components<T>"
+        _span
 
     /// returns the enties Slice for the type t' of Components 
     let entities (t':Type) =
@@ -917,6 +933,7 @@ module Observers =
 
 module Entity =
     let private entities = System.Collections.Generic.Stack<Entity>()
+    let private entity_names = System.Collections.Generic.Dictionary<Entity,string>()
     let mutable private last: Entity = 0x00u
 
     /// creates a new entity - id
@@ -937,6 +954,7 @@ module Entity =
         entities.Push id
         for components in Components.components_table.Values do
             components.Remove id
+        if entity_names.ContainsKey id then ignore (entity_names.Remove(id))
 
     /// ckecks whether a id - uint value exists
     let exist (id:Entity) = 
@@ -980,6 +998,24 @@ module Entity =
         let components = Components.get<'T>()
         components.Contains(id)
 
+    /// adds a tag to that entity
+    let tag (str:string) (id:Entity) =
+        match entity_names.ContainsKey id with
+        | true -> entity_names[id] <- str
+        | false -> entity_names.Add(id, str)
+        id
+
+    /// returns an entity from its tag
+    let get_tagged (str:string) =
+        let mutable r = 0u
+        if entity_names.ContainsValue str then
+            for kvp in entity_names do
+                let t = kvp.Key
+                let c = kvp.Value
+                if c = str then r <- t
+        if r = 0u then failwith $"{str} -tag is not present in Entities"
+        r
+
     /// prints the component-types that are assigned over an entity
     /// mostly for debugging purposes
     let printComponents (id:Entity) =
@@ -991,20 +1027,32 @@ module Entity =
         printfn "]"
         id
 
+    /// returns a list of the component types assigned to entity
+    let components (id:Entity) =
+        let _comps = ResizeArray()
+        for kvp in Components.components_table do
+            let t = kvp.Key
+            let c = kvp.Value
+            if c.Contains id then _comps.Add(t)
+        List.ofArray (_comps.ToArray())
+
     let sprintf (id:Entity) =
-        $"0x{id:X6}, "
+        if entity_names.ContainsKey id then entity_names[id] else $"0x{id:X6}"
 
     let printfn (id:Entity) =
-        Console.WriteLine("0x{0:X6}", id)
+        Console.WriteLine(sprintf id)
+        // Console.WriteLine("0x{0:X6}", id)
         
     let printf (id:Entity) =
-        Console.Write("0x{0:X6}, ", id)
+        Console.Write(sprintf id)
+        // Console.Write("0x{0:X6}, ", id)
 
         
 // uses these as keywords for better scripting ergonomy of the API        
 [<AutoOpen>]
 module FnDecls =
     let entity = Entity.create
+    let entity_tagged (str:string) = Entity.create () |> Entity.tag str
     let system = Systems.add
     let observer = Observers.create
     let query = Queries.get

@@ -7,11 +7,11 @@ open SE.Plotting
 open FSharp.Data.UnitSystems.SI.UnitSymbols
 
 // components
-type [<Struct>] Temperature   = {temp:  float<K>}
-type [<Struct>] Molarity      = {moles: float<mol>}
+type [<Struct>] Temperature   = {mutable temp:  float<K>}
+type [<Struct>] Molarity      = {mutable moles: float<mol>}
+type [<Struct>] Mass = {mutable mass: float<kg>}
 type [<Struct>] Stoichiometry = {coeff: float}
-type Mass = float<kg>
-type Speed = float<m/s>
+type [<Struct>] MolecularMass = {MR: float<kg mol^-1>}
 
 // tags
 type Reactant = struct end
@@ -25,12 +25,14 @@ let mutable equilibrium = false
 
 // static fields
 let dt = 1.0<s>
-let reaction_rate = 0.05
+let reaction_rate = 0.01
 let values = System.Collections.Generic.Dictionary<Entity,ResizeArray<float>>()
-// let gnuplot = Gnuplot(true, true, None)
+// let gnuplot = Gnuplot(true, false, Some "output/output.png")
 let gnuplot = Gnuplot()
 let dr = Array.zeroCreate<array<float>> 2
 let dp = Array.zeroCreate<array<float>> 2
+let dr_names = Array.zeroCreate<string> 2
+let dp_names = Array.zeroCreate<string> 2
 
 
 let resetline f =
@@ -44,90 +46,107 @@ let resetline f =
 
 // create elements
 system OnLoad [] (fun _ ->
-    let A = entity ()
+    let A = entity_tagged "C2H6"
             |> Entity.add<Reactant>
-            |> Entity.set {coeff = 2}
+            |> Entity.set {coeff = 1}
             |> Entity.set {moles = 4.3<mol>}
-            |> Entity.set (0.1<kg>)
-            |> Entity.set (0.00001<m/s>)
+            |> Entity.set {mass = 0.7<kg>}
+            |> Entity.set {MR = 34.123<kg mol^-1>}
 
-    let B = entity ()
+    let B = entity_tagged "O2"
             |> Entity.add<Reactant>
-            |> Entity.set {coeff = 1}
-            |> Entity.set {moles = 2.3<mol>}
-            |> Entity.set (0.4<kg>)
-            |> Entity.set (0.00001<m/s>)
+            |> Entity.set {coeff = 5}
+            |> Entity.set {moles = 6.3<mol>}
+            |> Entity.set {mass = 0.7<kg>}
+            |> Entity.set {MR = 34.123<kg mol^-1>}
 
-    let C = entity ()
+    let C = entity_tagged "H2O"
             |> Entity.add<Product>
-            |> Entity.set {coeff = 1}
+            |> Entity.set {coeff = 3}
             |> Entity.set {moles = 0.0<mol>}
-            |> Entity.set (0.0<kg>)
-            |> Entity.set (0.00001<m/s>)
+            |> Entity.set {mass = 0.0<kg>}
+            |> Entity.set {MR = 34.123<kg mol^-1>}
     
-    let D = entity ()
+    let D = entity_tagged "CO2"
             |> Entity.add<Product>
-            |> Entity.set {coeff = 1}
+            |> Entity.set {coeff = 2}
             |> Entity.set {moles = 0.0<mol>}
-            |> Entity.set (0.0<kg>)
-            |> Entity.set (0.00001<m/s>)
+            |> Entity.set {mass = 0.0<kg>}
+            |> Entity.set {MR = 34.123<kg mol^-1>}
 
     gnuplot
     |>>  "set title 'Gnuplot A'"
+    |>> "array Molecule[4]"
+    |>> "Molecule[1] = 'C2H6'"
+    |>> "Molecule[2] = 'O2'"
+    |>> "Molecule[3] = 'H2O'"
+    |>> "Molecule[4] = 'CO2'"
     |>> "plot 0"
     |> Gnuplot.run
     |> ignore
 )
 
 system OnUpdate [typeof<Reactant>] (fun q ->
-    let molarity = Components.get<Molarity>()
-    let stoichiometry = Components.get<Stoichiometry>()
-    let mass_components = Components.get<float<kg>>()
+    let mols = Components.span<Molarity> q
+    let stoich = Components.span<Stoichiometry> q
+    let mass = Components.span<Mass> q
+    let mrs = Components.span<MolecularMass> q
     let mutable n = 0
 
-    for r in q do
-        let moles = molarity[r].moles
-        let coeff = stoichiometry[r].coeff
-        let mass = &mass_components[r]
-        let dm = reaction_rate * moles * coeff
+    for i in 0..q.Count - 1 do
+        let r = q[i]
+        let mr = mrs[i].MR
+        let coeff = stoich[i].coeff
+        let r_mol = &mols[i]
+        let r_mass = &mass[i]
+        let dm = reaction_rate * r_mol.moles * coeff
         if not (values.ContainsKey(r)) then values.Add(r, ResizeArray<float>())
 
-        equilibrium <- equilibrium || if abs(moles - dm) < 0.09<mol> then true else false
+        equilibrium <- equilibrium || if abs(r_mol.moles - dm) < 0.0<mol> then true else false
+        // if equilibrium then 
+        //     printfn "%s : dm: %g" (Entity.sprintf r) dm
         if not equilibrium then
-            molarity[r] <- {moles = moles - dm}
-            values[r].Add(float molarity[r].moles)
-            mass <- molarity[r].moles * 0.7634234<kg mol^-1>
+            r_mol.moles <- r_mol.moles - dm
+            r_mass.mass <- r_mass.mass - r_mol.moles * mr
+            values[r].Add(float r_mol.moles)
             
             dr[n] <- values[r].ToArray()
+            dr_names[n] <- Entity.sprintf r
             n <- n + 1
 )
 
 system OnUpdate [typeof<Product>] (fun q ->
-    let molarity = Components.get<Molarity>()
-    let stoichiometry = Components.get<Stoichiometry>()
-    let mass_components = Components.get<float<kg>>()
+    let mols = Components.span<Molarity> q
+    let stoich = Components.span<Stoichiometry> q
+    let mass = Components.span<Mass> q
+    let mrs = Components.span<MolecularMass> q
     let mutable n = 0
 
     if not equilibrium then
-        for p in q do
-            let moles = molarity[p].moles
-            let mass = &mass_components[p]
-            let m = &molarity[p]
-            let coeff = stoichiometry[p].coeff
-            let dm = reaction_rate * coeff * 1.0<mol>
+        for i in 0..q.Count - 1 do
+            let p = q[i]
+            let mr = mrs[i].MR
+            let coeff = stoich[i].coeff
+            let p_mol = &mols[i]
+            let p_mass = &mass[i]
+            let dm = reaction_rate * coeff
+            // printfn "%s : dm: %g" (Entity.sprintf p) dm
             if not (values.ContainsKey(p)) then values.Add(p, ResizeArray<float>())
-            m <- {moles = moles + dm}
-            mass <- 0.453545<kg mol^-1> * m.moles
-            // molarity[p] <- {moles = moles + dm}
-            values[p].Add(float molarity[p].moles)
+            p_mol.moles <- p_mol.moles + dm * 1.0<mol>
+            p_mass.mass <- p_mass.mass + p_mol.moles * mr
+            values[p].Add(float p_mol.moles)
 
             dp[n] <- values[p].ToArray()
+            dp_names[n] <- Entity.sprintf p
             n <- n + 1   
 
-    let data = [| dr[0]; dr[1]; dp[0]; dr[1] |]
+    let data = [| dr[0]; dr[1]; dp[0]; dp[1] |]
+    // printfn "%A" data
+    let data_names = [|dr_names[0]; dr_names[1]; dp_names[0]; dp_names[1]|]
     gnuplot
+    |> Gnuplot.stringArray data_names "Molecule" 
     |> Gnuplot.datablockN data "Data"
-    |>> "plot for [i = 1:4] $Data using i title 'element '.i w lines lw 2"
+    |>> $"plot for [i = 1:4] $Data using i title Molecule[i] w lines lw 2"
     |> ignore
 )
 
@@ -145,16 +164,16 @@ system OnExit [] (fun _ ->
     let products  = query [typeof<Product>]
 
     let moles = Components.get<Molarity>()
-    let mass  = Components.get<float<kg>>()
-    let speed = Components.get<float<m/s>>()
+    let mass  = Components.get<Mass>()
 
     for r in reactants do
-        printfn "reactant %s: mol: %g, m: %g, speed: %g" (Entity.sprintf r) (moles[r].moles) (mass[r]) (speed[r])
+        printfn "%s: mol: %g, m: %g" (Entity.sprintf r) (moles[r].moles) (mass[r].mass)
 
     for p in products do
-        printfn "product %s: mol: %g, m: %g, speed: %g" (Entity.sprintf p) (moles[p].moles) (mass[p]) (speed[p])
+        printfn "%s: mol: %g, m: %g" (Entity.sprintf p) (moles[p].moles) (mass[p].mass)
 
-    // gnuplot.Close()
+    // gnuplot.Run()
+    gnuplot.Close()
 )
 
 

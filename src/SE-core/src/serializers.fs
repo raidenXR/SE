@@ -1,5 +1,4 @@
-namespace MKXK
-
+namespace SE.Serializers
 open System
 open System.Text
 open System.IO
@@ -38,7 +37,7 @@ module Ascii =
 
 
     let table (h: seq<string>) (content: list<list<'T>>) (ascii:AsciiBuilder) =
-        let t = content |> Seq.map (Seq.map (fun x -> string x)) |> List.ofSeq 
+        let t = if (Seq.length h) > 0 then content |> Seq.map (Seq.map (fun x -> string x)) |> List.ofSeq else []
         let ht = h::t |> Array.ofList |> Array.map (fun x -> Array.ofSeq x)
         let lens = ht |> Array.transpose |> Array.map (Array.max) |> Array.map (fun w -> w.Length + 3)
 
@@ -63,8 +62,8 @@ module Ascii =
                 ascii.write_ignore " |"
             ascii.writeln_ignore ""
         padline ()
-
-        ascii.writeln "\n"
+        ascii
+        // ascii.writeln "\n"
 
 
     let close path (ascii:AsciiBuilder) = 

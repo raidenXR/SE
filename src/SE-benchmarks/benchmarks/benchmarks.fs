@@ -127,6 +127,17 @@ type Benchmarks() =
             |> Entity.set (Temperature 90.0)
             |> ignore      
 
+    [<Benchmark>]
+    member this.RunContains () =
+        let tempT = Components.get<TemperaturT>()
+        let ids = tempT.Entities
+        let r = Random.Shared
+        for i in 0.._size - 1 do
+            let e = ids[r.Next(ids.Count - 1)]
+            let mutable k = -1
+            let b = tempT.Contains(e)
+            ()
+
 
     // [<Benchmark>]
     // member this.Queries () =

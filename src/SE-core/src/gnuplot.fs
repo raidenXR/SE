@@ -12,6 +12,7 @@ module Plotting =
         let total_input = StringBuilder(2024)
         let mutable keep_process_alive = keep_process_alive
         let mutable is_running = false
+        let mutable is_disposed = false
         let mutable process': Process = null
 
         do
@@ -25,10 +26,13 @@ module Plotting =
         
         /// close the process and dispose resources
         let pclose () =
-            process'.StandardInput.Close()
-            process'.WaitForExit()
-            process'.Close()
-            process'.Dispose()            
+            if not is_disposed then
+                process'.StandardInput.Close()
+                process'.WaitForExit()
+                process'.Close()
+                process'.Dispose()            
+            is_disposed <- true
+            is_running <- false
         
         new() = Gnuplot(false, true, None)
         new(path:string) = Gnuplot(false, false, Some path)
@@ -91,6 +95,12 @@ module Plotting =
         let run (gnu:Gnuplot) = gnu.Run(); gnu
 
         let close (gnu:Gnuplot) = gnu.Close()
+
+        let stringArray (strs:array<string>) (tag:string) (gnu:Gnuplot) =
+            gnu.writeln $"array {tag}[{strs.Length}] "
+            for i in 0..strs.Length - 1 do
+                gnu.writeln $"{tag}[{i + 1}] = '{strs[i]}'" 
+            gnu
 
         let datablockX (x:array<float>) (tag:string) (gnu:Gnuplot) = 
             gnu.writeln $"\n${tag} << EOD"
