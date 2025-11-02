@@ -157,20 +157,22 @@ type Matrix(m:int, n:int, values:array<float>) =
                 yield l.Length
         ]
         let sb = System.Text.StringBuilder(4096)
+        ignore (sb.Append(" "))
         for j = 1 to n do
-            ignore (sb.Append(" |-"))
-            ignore (sb.Append("".PadRight(_v[j - 1], '-')))
-        ignore (sb.AppendLine("-|"))
+            ignore (sb.Append("|-"))
+            ignore (sb.Append("".PadRight(_v[j - 1] + 1, '-')))
+        ignore (sb.AppendLine("|"))
         for i = 1 to m do
             for j = 1 to n do
                 ignore (sb.Append(" | "))
                 let s = string this[i,j]
                 ignore (sb.Append(s.PadRight(_v[j - 1])))
             ignore (sb.AppendLine(" |"))
+        ignore (sb.Append(" "))
         for j = 1 to n do
-            ignore (sb.Append(" |-"))
-            ignore (sb.Append("".PadRight(_v[j - 1], '-')))
-        ignore (sb.AppendLine("-|"))
+            ignore (sb.Append("|-"))
+            ignore (sb.Append("".PadRight(_v[j - 1] + 1, '-')))
+        ignore (sb.AppendLine("|"))
         string sb
 
     static member (+) (a:Matrix, b:Matrix) =
@@ -407,7 +409,8 @@ module Matrix =
         //         b_k = b_k1 / b_k1_norm
 
         //     return b_k
-        let b_k = m.RowVector(System.Random.Shared.Next(m.M + 1))
+        let r = System.Random.Shared.Next(m.M) + 1  // avoid 0 index or > m.M !!
+        let b_k = m.RowVector(r)
         for i = 1 to N do
             let b_k1 = m * b_k
             let b_k1_norm = Vector.L2 b_k1
@@ -500,6 +503,11 @@ module Matrix =
                 a[k,i] <- tt * d
             a[i,i] <- d
         a
+
+    let conditionNumber (a:Matrix) =
+        use a_inv = inverse a
+        (L2 a) * (L2 a_inv)
+    
 
 module Decomposition =
     let LU (m:Matrix) =

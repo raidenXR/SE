@@ -44,10 +44,11 @@ do
     printfn "%s" (string (inverse I))
 
 do
-    use _eigenvalues = Matrix.eigenvalues a
-    let norm = Matrix.L2 a
-    printfn "norm: %g" norm
-    printfn "eigenvalues:\n%s" (string _eigenvalues)
+    use _a = inverse a
+    printfn "eigenvalues:\n%s" (string (eigenvalues a))
+    printfn "norm: %g, inv norm: %g" (L2 a) (L2 _a)
+    printfn "condition_number: %g" (conditionNumber a)
+    printfn "inverse:\n%s" (string _a)
 
 // do
 //     // use s = Matrix.random 6 6 10.
