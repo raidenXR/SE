@@ -9,8 +9,8 @@
   <ItemGroup>
     <Compile Include="src/serializers.fs" />
     <Compile Include="src/core.fs" />
-    <Compile Include="src/numerical_methods.fs" />
-    <Compile Include="src/mathematics.fs" />
+    <Compile Include="src/linearalg.fs" />
+    <Compile Include="src/numerics.fs" />
     <Compile Include="src/geometry.fs" />
     <Compile Include="src/gnuplot.fs" />
   </ItemGroup>

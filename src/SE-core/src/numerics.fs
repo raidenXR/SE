@@ -1,6 +1,6 @@
 #nowarn "9"
 #nowarn "51"
-namespace SE.Mathematics
+namespace SE.Numerics
 open System
 open System.Buffers
 open FSharp.NativeInterop

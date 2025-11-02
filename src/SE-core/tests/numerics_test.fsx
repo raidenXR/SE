@@ -1,8 +1,8 @@
-#load "../src/mathematics.fs"
+#load "../src/numerics.fs"
 
 open System
 open System.Buffers
-open SE.Mathematics
+open SE.Numerics
 open Integration
 open Differentiation
 
