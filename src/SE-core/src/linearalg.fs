@@ -1,23 +1,27 @@
 #nowarn "9"
 #nowarn "51"
 namespace SE.Numerics
-open SE.Serializers
 open System
 open System.Buffers
-open FSharp.NativeInterop
+open System.Runtime.CompilerServices
 
-type Vector(n:int, values:array<float>) =
-    let buffer = if values = null then ArrayPool<float>.Shared.Rent(n) else values
-    let is_from_arraypool = if values = null then true else false
+
+type FmtType = | Txt | Csv
+
+
+type Vector(n:int, values:array<float>, is_from_arraypool:bool) =
+    let buffer =
+        match values with
+        | null ->
+            let buf = ArrayPool<float>.Shared.Rent(n)
+            Array.Clear(buf)
+            buf
+        | _ -> values
     let mutable entries = ArraySegment(buffer, 0, n)
     let mutable is_disposed = false
-    let clear () = Array.Clear(entries.Array)
-    do
-        if is_from_arraypool then clear ()
 
-    new(n:int) = new Vector(n, null) 
-
-    new(values:array<float>) = new Vector(values.Length, values)
+    new(n:int) = new Vector(n, null, true) 
+    new(values:array<float>) = new Vector(values.Length, values, false)
 
     interface IDisposable with
         member this.Dispose() =
@@ -26,93 +30,103 @@ type Vector(n:int, values:array<float>) =
                 // printfn "vector got disposed"
                 is_disposed <- true                    
 
-    member this.Length = n
+    member this.N = n
     member this.Entries = entries
+    member this.IsPooled = is_from_arraypool
 
     member this.Dispose() = (this :> IDisposable).Dispose()
 
-    member this.Clear() = clear ()
+    member this.Clear() = Array.Clear(buffer)
 
     member this.Item
-        with get(i:int) = entries[i - 1]
-        and set(i:int) value = entries[i - 1] <- value
+        with [<MethodImpl(MethodImplOptions.AggressiveInlining)>] get(i:int) = buffer[i - 1]
+        and  [<MethodImpl(MethodImplOptions.AggressiveInlining)>] set(i:int) value = buffer[i - 1] <- value
+
+    member this.GetSlice(startIdx, endIdx) =
+        let s = defaultArg startIdx 1
+        let e = defaultArg endIdx n
+        ReadOnlySpan(buffer, s - 1, e - (s - 1))        
 
     override this.ToString() =
         let _v = entries.ToArray()
         sprintf "%A" _v
 
+    member this.Span(i:int, len:int) = ReadOnlySpan(buffer, i - 1, len)
 
     static member (+) (a:Vector, b:Vector) =
-        assert (a.Length = b.Length)
-        let c = new Vector(a.Length)
-        for i = 1 to a.Length do
+        assert (a.N = b.N)
+        let c = new Vector(a.N)
+        for i = 1 to a.N do
             c[i] <- a[i] + b[i]
         c
 
     static member (-) (a:Vector, b:Vector) =
-        assert (a.Length = b.Length)
-        let c = new Vector(a.Length)
-        for i = 1 to a.Length do
+        assert (a.N = b.N)
+        let c = new Vector(a.N)
+        for i = 1 to a.N do
             c[i] <- a[i] - b[i]
         c
     
     static member (*) (s:float, v:Vector) =
-        let c = new Vector(v.Length)
-        for i = 1 to v.Length do
+        let c = new Vector(v.N)
+        for i = 1 to v.N do
             c[i] <- s * v[i]
         c
     
     static member (/) (v:Vector, s:float) =
-        let c = new Vector(v.Length)
-        for i = 1 to v.Length do
+        let c = new Vector(v.N)
+        for i = 1 to v.N do
             c[i] <- v[i] / s
         c
     
     static member (*) (v:Vector, s:float) =
-        let c = new Vector(v.Length)
-        for i = 1 to v.Length do
+        let c = new Vector(v.N)
+        for i = 1 to v.N do
             c[i] <- s * v[i]
         c
 
     static member (*) (a:Vector, b:Vector) =
         let mutable sum = 0.
-        for i = 1 to a.Length do
+        for i = 1 to a.N do
             sum <- sum + a[i] * b[i]
         sum
 
     static member (+=) (a:Vector, b:Vector) =
-        assert (a.Length = b.Length)
-        for i = 1 to a.Length do
+        assert (a.N = b.N)
+        for i = 1 to a.N do
             a[i] <- a[i] + b[i]
 
     static member (-=) (a:Vector, b:Vector) =
-        assert (a.Length = b.Length)
-        for i = 1 to a.Length do
+        assert (a.N = b.N)
+        for i = 1 to a.N do
             a[i] <- a[i] - b[i]
 
     static member ( *= ) (a:Vector, s:float) =
-        for i = 1 to a.Length do
+        for i = 1 to a.N do
             a[i] <- a[i] * s
 
     static member (/=) (a:Vector, s:float) =
-        for i = 1 to a.Length do
+        for i = 1 to a.N do
             a[i] <- a[i] / s
 
     static member (==) (a:Vector, b:Vector) =
-        for i = 1 to a.Length do
+        for i = 1 to a.N do
             a[i] <- b[i]
 
     
-type Matrix(m:int, n:int, values:array<float>) =
-    let buffer = if values = null then ArrayPool<float>.Shared.Rent(m * n) else values
-    let is_from_arraypool = if values = null then true else false
+type Matrix(m:int, n:int, values:array<float>, is_from_arraypool:bool) =
+    let buffer =
+        match values with
+        | null ->
+            let buf = ArrayPool<float>.Shared.Rent(m * n)
+            Array.Clear(buf)
+            buf
+        | _ -> values
     let mutable entries = ArraySegment(buffer, 0, m * n)
     let mutable is_disposed = false
-    let clear () = Array.Clear(entries.Array)
-    do
-        if is_from_arraypool then clear ()
 
-    new(m:int, n:int) = new Matrix(m, n, null) 
+    new(m:int, n:int) = new Matrix(m, n, null, true) 
+    new(m:int, n:int, values:array<float>) = new Matrix(m, n, values, false)
 
     interface IDisposable with
         member this.Dispose() =
@@ -124,14 +138,21 @@ type Matrix(m:int, n:int, values:array<float>) =
     member this.M = m
     member this.N = n
     member this.Entries = entries
+    member this.IsPooled = is_from_arraypool
 
     member this.Dispose() = (this :> IDisposable).Dispose()
 
-    member this.Clear() = clear ()
+    member this.Clear() = Array.Clear(buffer)
 
     member this.Item
-        with get(i:int, j:int) = entries[(i - 1) * n + (j - 1)]
-        and set(i:int, j:int) value = entries[(i - 1) * n + (j - 1)] <- value
+        with [<MethodImpl(MethodImplOptions.AggressiveInlining)>] get(i:int, j:int) = buffer[(i - 1) * n + (j - 1)]
+        and  [<MethodImpl(MethodImplOptions.AggressiveInlining)>] set(i:int, j:int) value = buffer[(i - 1) * n + (j - 1)] <- value
+
+    member this.GetSlice(i, startIdx, endIdx) =
+        let s = defaultArg startIdx 1
+        let e = defaultArg endIdx n 
+        let offset = (i - 1) * n + (s - 1)
+        ReadOnlySpan(buffer, offset, e - (s - 1))
 
 
     member this.RowVector(i:int) =
@@ -175,6 +196,43 @@ type Matrix(m:int, n:int, values:array<float>) =
         ignore (sb.AppendLine("|"))
         string sb
 
+    member this.SaveAs (fmt:FmtType, path:string) =
+        use fs = System.IO.File.CreateText(path)
+        match fmt with
+        | Txt ->
+            for i = 1 to m do
+                for j = 1 to n do
+                    fs.WriteLine($"{i}  {j}  {this[i,j]}")
+        | Csv ->
+            for i = 1 to m do
+                for j = 1 to n do
+                    fs.WriteLine($"{i},{j},{this[i,j]}")
+        fs.Flush()
+        fs.Close()
+
+    member this.SaveAsGrid (fmt:FmtType, path:string, xrange:float * float, yrange: float * float) =
+        use fs = System.IO.File.CreateText(path)
+        let x_min, x_max = xrange
+        let y_min, y_max = yrange
+        let dx = (x_max - x_min) / (float n)
+        let dy = (y_max - y_min) / (float m)
+        match fmt with
+        | Txt ->
+            for i = 1 to m do
+                for j = 1 to n do
+                    fs.WriteLine($"{x_min + dx * float j}  {y_min + dy * float i}  {this[i,j]}")
+        | Csv ->
+            for i = 1 to m do
+                for j = 1 to n do
+                    fs.WriteLine($"{x_min + dx * float j},{y_min + dy * float i},{this[i,j]}")
+        fs.Flush()
+        fs.Close()
+
+    member this.SetSymmetric (i:int, j:int, v:float) =
+        assert (n = m)
+        this[i,j] <- v
+        this[j,i] <- v
+
     static member (+) (a:Matrix, b:Matrix) =
         let c = new Matrix(a.M, a.N)
         for i = 1 to a.M do
@@ -208,7 +266,7 @@ type Matrix(m:int, n:int, values:array<float>) =
         c
 
     static member (*) (a:Matrix, x:Vector) =
-        assert (a.N = x.Length)
+        assert (a.N = x.N)
         let y = new Vector(a.M)
         for i = 1 to a.M do
             let mutable sum = 0.
@@ -218,7 +276,7 @@ type Matrix(m:int, n:int, values:array<float>) =
         y
 
     static member (*) (x:Vector, a:Matrix) =
-        assert (a.M = x.Length)
+        assert (a.M = x.N)
         let y = new Vector(a.N)
         for j = 1 to a.N do
             let mutable sum = 0.
@@ -246,18 +304,46 @@ type Matrix(m:int, n:int, values:array<float>) =
         for i in 1..m.M do
             for j in 1..m.N do
                 m[i,j] <- m[i,j] / s
+
+    static member (%) (a:Matrix, b:Matrix) =
+        assert (a.N = b.N)
+        let y = new Matrix(a.M, b.M)
+        for i = 1 to a.M do
+            for j = 1 to b.M do
+                let mutable x = 0.
+                for k = 1 to a.N do
+                    x <- x + a[k,i] * b[k,j]
+                y[i,j] <- x
+        y
+                
+    static member (%) (m:Matrix, v:Vector) =
+        assert (m.N = v.N)
+        let y = new Vector(m.M)
+        for i = 1 to m.M do
+            let mutable x = 0.
+            for k = 1 to m.N do
+                x <- x + m[k,i] * v[k]
+            y[i] <- x
+        y
         
 
 module Vector =
-    let dot (x:Vector) (y:Vector) =
-        assert (x.Length = y.Length)
+    // let dot (x:Vector) (y:Vector) =
+    //     assert (x.Length = y.Length)
+    //     let mutable s = 0.
+    //     for i = 1 to x.Length do
+    //         s <- s + x[i] * y[i]
+    //     s
+
+    let dot (a:ReadOnlySpan<float>) (b:ReadOnlySpan<float>) =
+        assert (a.Length = b.Length)
         let mutable s = 0.
-        for i = 1 to x.Length do
-            s <- s + x[i] * y[i]
+        for i = 0 to a.Length - 1 do
+            s <- s + a[i] * b[i]
         s
 
     let cross (a:Vector) (b:Vector) =
-        assert (a.Length = b.Length && a.Length = 3)
+        assert (a.N = b.N && a.N = 3)
         new Vector([|
             a[2] * b[3] - a[3] * b[2]
             a[3] * b[1] - a[1] * b[3]
@@ -265,22 +351,23 @@ module Vector =
         |])
 
     let diadic (x:Vector) (y:Vector) =
-        let a = new Matrix(x.Length, y.Length)
+        let a = new Matrix(x.N, y.N)
         for i = 1 to a.M do
             for j = 1 to a.N do
                 a[i,j] <- x[i] * y[j]
         a
 
     let copy (v:Vector) =
-        let a = new Vector(v.Length)
-        for i = 1 to a.Length do
+        let a = new Vector(v.N)
+        for i = 1 to a.N do
             a[i] <- v[i]
         a
 
-    let zeroes (n:int) =
-        let v = new Vector(n)
-        v.Clear()
-        v
+    let empty = new Vector(0, [||], false)
+
+    let undefined (n:int) =
+        let buffer = ArrayPool<float>.Shared.Rent(n)
+        new Vector(n, buffer, true)
 
     let random (n:int) (d:float) =
         let r = System.Random.Shared
@@ -288,33 +375,39 @@ module Vector =
         for i in 1..n do v[i] <- d + r.NextDouble()
         v
 
+    let init (n:int) f =
+        let a = undefined n
+        for i = 1 to n do
+            a[i] <- f (float i) 
+        a
+
     let sum (v:Vector) =
         let mutable s = 0.
-        for i = 1 to v.Length do
+        for i = 1 to v.N do
             s <- s + v[i]
         s
 
     let sumAbs (v:Vector) =
         let mutable s = 0.
-        for i = 1 to v.Length do
+        for i = 1 to v.N do
             s <- s + abs v[i]
         s
 
     let L1 (v:Vector) =
         let mutable sum = 0.
-        for i = 1 to v.Length do
+        for i = 1 to v.N do
             sum <- sum + abs v[i]
         sum
 
     let L2 (v:Vector) =
         let mutable sum = 0.
-        for i = 1 to v.Length do
+        for i = 1 to v.N do
             sum <- sum + (v[i] * v[i])
         sqrt sum
 
     let Linf (v:Vector) =
         let mutable r = v[1]
-        for i = 1 to v.Length do
+        for i = 1 to v.N do
             r <- max r (abs v[i])
         r
 
@@ -355,6 +448,7 @@ module Matrix =
     let trace (m:Matrix) =
         assert (m.M = m.N)
         let mutable sum = 0.
+        // for n in 1..(m.N + 1)..(m.M * m.N) do sum <- sum + m.Entries[n - 1]
         for i = 1 to m.M do
             for j = 1 to m.N do
                 sum <- if i = j then sum + m[i,j] else sum
@@ -367,16 +461,31 @@ module Matrix =
                 a[i,j] <- m[i,j]
         a
 
-    let zeroes m n =
-        let a = new Matrix(m, n)
-        a.Clear()
+    let diagonal (m:Matrix) =
+        let a = new Matrix(m.M, m.N)
+        for i = 1 to m.M do
+            for j = 1 to m.N do
+                a[i,j] <- if j = i then m[i,j] else 0.
         a
+
+    let empty = new Matrix(0, 0, [||], false)        
+
+    let undefined (m:int) (n:int) =
+        let buffer = ArrayPool<float>.Shared.Rent(m * n)
+        new Matrix(m, n, buffer, true)
         
     let random (n:int) (m:int) (d:float) =
         let r = System.Random.Shared
         let a = new Matrix(m,n)
         for i = 1 to m do
             for j = 1 to n do a[i,j] <- d + r.NextDouble()
+        a
+
+    let init (m:int) (n:int) f =
+        let a = undefined m n
+        for i = 1 to m do
+            for j = 1 to n do
+                a[i,j] <- f (float i) (float j)
         a
 
     let columnSum (m:Matrix) (j:int) =
@@ -412,11 +521,11 @@ module Matrix =
         let r = System.Random.Shared.Next(m.M) + 1  // avoid 0 index or > m.M !!
         let b_k = m.RowVector(r)
         for i = 1 to N do
-            let b_k1 = m * b_k
+            use b_k1 = m * b_k
             let b_k1_norm = Vector.L2 b_k1
             b_k1 /= b_k1_norm
             b_k == b_k1
-            (b_k1 :> IDisposable).Dispose()
+            // (b_k1 :> IDisposable).Dispose()
         b_k
 
     let eigenvalues (m:Matrix) = power_iteration m 130
@@ -553,32 +662,54 @@ module Decomposition =
 
 
 module Solvers =              
-    let Jacobi (A:Matrix) (B:Vector) N =
-        use a = Matrix.copy A
-        use b = Vector.copy B
-        let x = new Vector(b.Length)
-        for p = 1 to N do
+    let residuals (x:Vector) (b:Vector) =
+        use r = x - b
+        Vector.L2 r
+
+    let Jacobi (a:Matrix) (b:Vector) =
+        assert (a.M = a.N && a.M = b.N)
+        let N = 1000  // iterations
+        let x = new Vector(b.N)
+        use x_k = Vector.copy x
+
+        let mutable k = 1
+        let mutable converged = false 
+        while k < N && not converged do
+            x_k.Clear()
             for i = 1 to a.M do
-                let mutable sigma = 0.
-                for j = 1 to a.N do
-                    if (j <> i) then
-                        sigma <- sigma + a[i,j] * x[j]
-                x[i] <- (b[i] - sigma) / a[i,i]
+                let s1 = Vector.dot a[i, 1..i] x[1..i]
+                let s2 = Vector.dot a[i, i + 1..] x[i + 1..]
+                x_k[i] <- (b[i] - s1 - s2) / a[i,i]
+                // if x_k[i] = x_k[i - 1] then
+                //     converged <- true
+            converged <- (residuals x x_k) < 1e-6
+            k <- k + 1
+            x == x_k
+            // if not converged then
         x
     
-    let Gauss_elimination (A:Matrix) (B:Vector) =
+    let GaussElimination (A:Matrix) (B:Vector) =
+        assert (A.M = A.N && A.M = B.N)
         use a = Matrix.copy A
         use b = Vector.copy B
-        let x = new Vector(b.Length)
+        let x = new Vector(b.N)
+
         let forward_substitution () =
+            let eps = 1e-6
+            let mutable ier = 0
             for k = 1 to a.N - 1 do
-                for i = k + 1 to a.N do
-                    for j = k + 1 to a.N do
-                        a[i,j] <- a[i,j] - a[k,j] * a[i,k] / a[k,k]  // matrix factorization
-                    b[i] <- b[i] - b[k] * a[i,k] / a[k,k]
+                if (abs a[k,k]) > eps then
+                    for i = k + 1 to a.N do
+                        if a[i,k] <> 0. then
+                            let t = a[i,k] / a[k,k]
+                            for j = k + 1 to a.N do
+                                a[i,j] <- a[i,j] - t * a[k,j]
+                            b[i] <- b[i] - t * b[k]
+                else
+                    ier <- -1
 
         let backward_substitution () =
-            for i = a.N to 1 do
+            for i = a.N downto 1 do
                 let mutable sum = 0.
                 for j = i + 1 to a.N do
                     sum <- sum + a[i,j] * x[j]
@@ -588,19 +719,37 @@ module Solvers =
         backward_substitution ()                    
         x
         
-    let GaussSeidel (A:Matrix) (B:Vector) =
-        assert (A.M = A.N && A.M = B.Length)
-        use a = Matrix.copy A
-        use b = Vector.copy B
-        let x = new Vector(b.Length)
-        for j = 1 to a.N do
-            let mutable d = b[j]
-            for i = 1 to a.M do
-                if j <> i then
-                    d <- d - a[j,i] * x[i]
-            x[j] <- d / a[j,j]
-        x
+    let GaussSeidel (a:Matrix) (b:Vector) =
+        assert (a.M = a.N && a.M = b.N)
+        let N = 100  // iterations
+        let x = new Vector(b.N)
+        use x_k = Vector.copy x
 
+        let mutable k = 1
+        let mutable converged = false
+        while k < N && not converged do
+            x_k.Clear()
+            for i = 1 to a.M do
+                let s1 = Vector.dot (a[i, 1..i]) x_k[1..i]
+                let s2 = Vector.dot (a[i, i + 1..]) x[i + 1..]
+                x_k[i] <- (b[i] - s1 - s2) / a[i,i]
+            converged <- (residuals x x_k) < 1e-6
+            k <- k + 1
+            x == x_k
+            // if not converged then
+        x
+            
+
+    let LUSolve (A:Matrix) (B:Vector) =
+        assert (A.M = A.N && A.M = B.N)
+        let (L,U) = Decomposition.LU A
+        use L' = Matrix.inverse L
+        use U' = Matrix.inverse U
+        use _t = U' * L'        
+        let x = _t * B        
+        L.Dispose()
+        U.Dispose()
+        x
 
 
         

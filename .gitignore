@@ -6,6 +6,8 @@ runtimes/
 fonts/
 vertices/
 Content/
+output/
+BenchmarkDotNet.Artifacts/
 
 *.log
 *.txt

@@ -12,6 +12,7 @@
     <Compile Include="src/linearalg.fs" />
     <Compile Include="src/numerics.fs" />
     <Compile Include="src/geometry.fs" />
+    <Compile Include="src/fem.fs" />
     <Compile Include="src/gnuplot.fs" />
   </ItemGroup>
 

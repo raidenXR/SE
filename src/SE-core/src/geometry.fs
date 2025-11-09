@@ -2,7 +2,7 @@ namespace SE.Geometry
 
 open System
 open System.Numerics
-open SE.Mathematics
+open SE.Numerics
 
 type Triangle() =
     [<DefaultValue>] val mutable vert: varray3<Vector3> 

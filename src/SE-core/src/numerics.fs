@@ -52,10 +52,26 @@ type [<Struct>] varray6<'T when 'T: unmanaged> =
 
 
 module PtrOperations =
+    
     // add more ptr related operations
     let inline stackalloc<'a when 'a: unmanaged> (length: int): Span<'a> =
       let p = NativePtr.stackalloc<'a> length |> NativePtr.toVoidPtr
       Span<'a>(p, length)
+
+    let inline ( !! ) (ptr:nativeptr<'T>) = NativePtr.read ptr
+
+    let inline (++) (ptr:nativeptr<'T>) (offset:int) = NativePtr.add ptr offset
+
+    let inline (~~) (ptr:nativeptr<'T>) = NativePtr.toVoidPtr ptr
+
+    let inline cast<'T when 'T: unmanaged> (ptr:voidptr) =
+        NativePtr.ofVoidPtr<'T> ptr
+        
+    type nativeptr<'T when 'T: unmanaged> with
+        member this.Item
+            with inline get(i:int) = NativePtr.read this
+            and inline set(i:int) value = NativePtr.set this i value
+             
 
 
 module Integration =
