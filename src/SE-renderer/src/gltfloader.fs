@@ -409,9 +409,10 @@ module GLTF =
     let inline private (++) ptr offset = NativePtr.add ptr offset
     let inline private (--) ptr offset = NativePtr.add ptr (-offset)
 
-    let (|IsTxt|IsGltf|IsEmpty|) (str:string) =
+    let (|IsTxt|IsGltf|IsPly|IsEmpty|) (str:string) =
         if str.Contains(".gltf") then IsGltf
         elif str.Contains(".txt") then IsTxt
+        elif str.Contains(".ply") then IsPly
         else IsEmpty
 
 

@@ -7,10 +7,95 @@ open OpenTK.Windowing.Common
 open OpenTK.Windowing.Desktop
 open OpenTK.Windowing.GraphicsLibraryFramework
 open System
+open System.Collections.Generic
 open System.ComponentModel
 open System.Diagnostics
 
 // open Dear_ImGui_Sample.Backends
+
+type [<Struct>] Triangle = {n0:Vector3; n1:Vector3; n2:Vector3}
+
+type [<Struct>] Voxel = {c:Vector3; t:bool; data:float}
+
+type MeshIterator(vertices:array<float32>, indices:array<uint32>) =
+    let indices_count = indices.Length / 3
+    let mutable i = -1
+    
+    interface IEnumerator<Triangle> with
+        member this.Current with get() = 
+            let i0 = int32 (indices[3 * i + 0])
+            let i1 = int32 (indices[3 * i + 1])
+            let i2 = int32 (indices[3 * i + 2])
+
+            let v0 = Vector3(vertices[10 * i0 + 0], vertices[10 * i0 + 1], vertices[10 * i0 + 2])
+            let v1 = Vector3(vertices[10 * i1 + 0], vertices[10 * i1 + 1], vertices[10 * i1 + 2])
+            let v2 = Vector3(vertices[10 * i2 + 0], vertices[10 * i2 + 1], vertices[10 * i2 + 2])
+            {n0 = v0; n1 = v1; n2 = v2}
+
+        member this.Dispose() = ()
+
+    interface Collections.IEnumerator with
+        member this.Current with get() = null
+
+        member this.MoveNext() =
+            i <- i + 1
+            i < indices_count
+        
+        member this.Reset() =
+            i <- 0
+
+type Model(vertices: array<float32>, indices: array<uint32>) =
+    let mutable transform = Matrix4.Identity
+
+    interface IEnumerable<Triangle> with
+        member this.GetEnumerator() = new MeshIterator(vertices, indices)
+
+    interface System.Collections.IEnumerable with
+        member this.GetEnumerator() = null
+
+    member this.Vertices with get() = vertices
+    member this.Indices with get() = indices
+    member this.Stride with get() = 10 * sizeof<float32>
+    member this.Attrib0 with get() = 0 * sizeof<float32>
+    member this.Attrib1 with get() = 3 * sizeof<float32>
+    member this.Attrib2 with get() = 6 * sizeof<float32>
+    member this.VerticesBufferSize with get() = vertices.Length * sizeof<float32>
+    member this.IndicesBufferSize with get() = indices.Length * sizeof<uint32>
+
+    member this.Transform with get() = transform and set(value) = transform <- value
+
+    // member this.Print() =
+    //     let v = vertices
+    //     let i = indices
+    //     let mutable j = 0
+    //     while j < 100 do
+    //         printfn "[%g, %g, %g], [%g, %g, %g]" v[j + 0] v[j + 1] v[j + 2] v[j + 3] v[j + 4] v[j + 5]
+    //         j <- j + 10
+
+    //     j <- 0
+    //     while j < 30 do
+    //         printfn "[%d, %d, %d]" i[j + 0] i[j + 1] i[j + 2]
+    //         j <- j + 3
+
+    // member this.SaveAsTxt(path:string) =
+    //     use fs = System.IO.File.CreateText(path)
+    //     fs.WriteLine("Vertices")
+    //     let mutable n = 0
+    //     for v in vertices do
+    //         if n = 10 then
+    //             fs.Write("\n")
+    //             n <- 0
+    //         fs.Write($"{v}, ")
+    //         n <- n + 1
+    //     fs.WriteLine("\nIndices")
+    //     n <- 0
+    //     for v in indices do
+    //         if n = 3 then
+    //             fs.Write("\n")
+    //             n <- 0
+    //         fs.Write($"{v}, ")
+    //         n <- n + 1
+
 
 module Geometry =
     let cube_vertices = [|
@@ -202,8 +287,86 @@ module Geometry =
 
     type State = | Vertices | Indices
 
+    let compute_normal (p0:Vector3) (p1:Vector3) (p2:Vector3) =
+        let u = p1 - p0
+        let v = p2 - p0
+        Vector3.Normalize(Vector3.Cross(u,v))
+
+    /// deserializes the vertices and indices from a .ply file
+    let load_ply (path:string, r:float32, g:float32, b:float32, a:float32) =
+        let ply = System.IO.File.ReadAllLines(path)
+        let vertices_count = ply[3].Split() |> Array.takeWhile (fun x -> x.Length > 0) |> Seq.item 2 |> Int32.Parse
+        let indices_count  = ply[9].Split() |> Array.takeWhile (fun x -> x.Length > 0) |> Seq.item 2 |> Int32.Parse
+
+        let I = 12 
+        let J = 12 + vertices_count
+
+        let positions =
+            let v = Array.zeroCreate<float32> (vertices_count * 3)
+            for i in 0..vertices_count - 1 do
+                let values = ply[I + i].Split() |> Array.takeWhile (fun x -> x.Length > 0)
+                v[3 * i + 0] <- Single.Parse(values[0])
+                v[3 * i + 1] <- Single.Parse(values[1])
+                v[3 * i + 2] <- Single.Parse(values[2])
+            v
+        printfn "vertices.count %d" vertices_count
+
+        let indices =
+            let idx = Array.zeroCreate<uint32> (indices_count * 3)
+            for i in 0..indices_count - 1 do
+                let values = ply[J + i].Split() |> Array.takeWhile (fun x -> x.Length > 0)
+                idx[3 * i + 0] <- UInt32.Parse(values[1])
+                idx[3 * i + 1] <- UInt32.Parse(values[2])
+                idx[3 * i + 2] <- UInt32.Parse(values[3])
+            idx
+        printfn "indices.count: %d" indices_count
+
+        let normals =
+            let n = Array.zeroCreate<float32> (vertices_count * 3)
+            for i in 0..indices_count - 1 do
+                let i0 = int32 (indices[3 * i + 0])
+                let i1 = int32 (indices[3 * i + 1])
+                let i2 = int32 (indices[3 * i + 2])
+                
+                let v0 = Vector3(positions[3 * i0 + 0], positions[3 * i0 + 1], positions[3 * i0 + 2])
+                let v1 = Vector3(positions[3 * i1 + 0], positions[3 * i1 + 1], positions[3 * i1 + 2])
+                let v2 = Vector3(positions[3 * i2 + 0], positions[3 * i2 + 1], positions[3 * i2 + 2])
+
+                let e0 = v1 - v0
+                let e1 = v2 - v0
+                let face_normal = Vector3.Cross(e0, e1)
+                
+                n[3 * i0 + 0] <- n[3 * i0 + 0] + face_normal.X
+                n[3 * i0 + 1] <- n[3 * i0 + 1] + face_normal.Y
+                n[3 * i0 + 2] <- n[3 * i0 + 2] + face_normal.Z                
+                n[3 * i1 + 0] <- n[3 * i1 + 0] + face_normal.X
+                n[3 * i1 + 1] <- n[3 * i1 + 1] + face_normal.Y
+                n[3 * i1 + 2] <- n[3 * i1 + 2] + face_normal.Z                
+                n[3 * i2 + 0] <- n[3 * i2 + 0] + face_normal.X
+                n[3 * i2 + 1] <- n[3 * i2 + 1] + face_normal.Y
+                n[3 * i2 + 2] <- n[3 * i2 + 2] + face_normal.Z                
+
+            for i in 0..vertices_count - 1 do
+                let normal = Vector3.Normalize(Vector3(n[3 * i + 0], n[3 * i + 1], n[3 * i + 2]))
+                n[3 * i + 0] <- normal.X                                                        
+                n[3 * i + 1] <- normal.Y                                                        
+                n[3 * i + 2] <- normal.Z                                                        
+            n
+            
+        let colors =
+            let c = Array.zeroCreate<float32> (vertices_count * 4)
+            for i in 0..4..c.Length - 5 do
+                c[i + 0] <- r
+                c[i + 1] <- g
+                c[i + 2] <- b
+                c[i + 3] <- a
+            c
+            
+        let (_,vertices) = (3,positions) |> compose (3,normals) |> compose (4,colors)
+        (vertices,indices)
+
     /// deserializes the vertices and indices from a .txt file
-    let load (path:string, r:float32, g:float32, b:float32, a:float32) =
+    let load_txt (path:string, r:float32, g:float32, b:float32, a:float32) =
         let src = System.IO.File.ReadAllText(path)
         let lines = src.Split('\n')
         let idx_0 = lines[0].IndexOf(':') + 2
@@ -269,4 +432,68 @@ module Geometry =
             c
         let (_,vertices) = (3,positions) |> compose (3,normals) |> compose (4,colors)
         (vertices,indices)
+
+
+
+    let cube_intersects (n:float32) (c:Vector3) (t:Triangle) =
+        let ct (p:Vector3) =
+            let d = c - p
+            (d.X < n) && (d.Y < n) && (d.Z < n)
+        (ct t.n0) || (ct t.n1) || (ct t.n2)
+
+    let voxelize (resolution:int) (vertices:array<float32>) (indices:array<uint32>) =
+        let mutable x_min = vertices[0]
+        let mutable y_min = vertices[1]
+        let mutable z_min = vertices[2]
+
+        let mutable x_max = x_min
+        let mutable y_max = y_min
+        let mutable z_max = z_min
+
+        for i in 0..10..vertices.Length - 10 do
+            x_min <- min x_min vertices[i + 0]
+            y_min <- min y_min vertices[i + 1]
+            z_min <- min z_min vertices[i + 2]
+            x_max <- max x_max vertices[i + 0]
+            y_max <- max y_max vertices[i + 1]
+            z_max <- max z_max vertices[i + 2]
+
+        let dx = x_max - x_min
+        let dy = y_max - y_min
+        let dz = z_max - z_min
+        let n = (min (min dx dy) dz) / float32(resolution)
+        let indices_count = indices.Length / 3
+        let voxels = Array.zeroCreate<Voxel> (resolution * resolution * resolution)        
+        let model = Model(vertices, indices)
+
+        for i in 0..resolution - 1 do
+            for j in 0..resolution - 1 do
+            let mutable voxel_state = false
+            for mesh in (model :> System.Collections.Generic.IEnumerable<Triangle>) do
+                let v0 = mesh.n0
+                let v1 = mesh.n1
+                let v2 = mesh.n2
+            // for i in 0..indices_count - 1 do
+            //     let i0 = int32 (indices[3 * i + 0])
+            //     let i1 = int32 (indices[3 * i + 1])
+            //     let i2 = int32 (indices[3 * i + 2])
+
+            //     let v0 = Vector3(vertices[10 * i0 + 0], vertices[10 * i0 + 1], vertices[10 * i0 + 2])
+            //     let v1 = Vector3(vertices[10 * i1 + 0], vertices[10 * i1 + 1], vertices[10 * i1 + 2])
+            //     let v2 = Vector3(vertices[10 * i2 + 0], vertices[10 * i2 + 1], vertices[10 * i2 + 2])
+            
+                // if cube_intersects n c {n0 = v0; n1 = v1; n2 = v2} then voxel_state <- true
+
+                for k in 0..resolution - 1 do
+                    let x = float32(i) * n
+                    let y = float32(j) * n
+                    let z = float32(k) * n
+                    let c = Vector3(x,y,z)
+
+
+                    voxels[i * resolution * resolution + j * resolution + k] <- {c = c; t = voxel_state; data = 0.0}
+        voxels
+            
+            
+            
 

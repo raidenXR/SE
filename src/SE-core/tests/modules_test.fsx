@@ -11,6 +11,10 @@ type [<Struct>] TimerDt = {dt:float32}
 type [<Struct>] StressSolver = {v:float}
 type [<Struct>] Position = {mutable x:float; mutable y:float}
 
+type [<Struct>] V1 = {v1:float}
+type [<Struct>] V2 = {v2:float}
+type [<Struct>] V3 = {v3:float}
+type [<Struct>] V4 = {v4:float}
 
 // tags
 type Move = struct end
@@ -37,6 +41,34 @@ do
     printfn "%A" (components |> List.map (fun x -> x.Name))
     printfn "%s" (Entity.sprintf e1)
     
+// test Components module
+printfn "\n#################\ntest components module\n#################"
+do
+    let N = 100
+    let ids = Array.init N (fun _ -> entity())
+    let v1 = Array.init N (fun i -> {v1 = float(i)}) 
+    let v2 = Array.init N (fun i -> {v2 = 2.0 * float(i)}) 
+    let v3 = Array.init N (fun i -> {v3 = 0.5 * float(i)}) 
+    let v4 = Array.init N (fun i -> {v4 = float(i*i)}) 
+    Components.init ids v1
+    Components.init ids v2
+    Components.init ids v3
+    Components.init ids v4
+    let v1_components = Components.get<V1>()
+    let v2_components = Components.get<V2>()
+    let v3_components = Components.get<V3>()
+    let v4_components = Components.get<V4>()
+    printfn "v1_components.Count: %d" v1_components.Count
+    printfn "v2_components.Count: %d" v2_components.Count
+    printfn "v3_components.Count: %d" v3_components.Count
+    printfn "v4_components.Count: %d" v3_components.Count
+    let q1 = query [typeof<V1>; typeof<V3>]
+    let q2 = query [typeof<V1>; typeof<V2>; typeof<V3>; typeof<V4>]
+    printfn "q1.len: %d,  q2.len: %d" q1.Count q2.Count
+
+    let v1_span = v1_components.AsSpan(ids)
+    let v2_span = v2_components.AsSpan(ids)
+    printfn "v1: %g, v2: %g" (v1_span[10].v1) (v2_span[10].v2)
 
 printfn "\n#################\ntest query function\n#################"
 do

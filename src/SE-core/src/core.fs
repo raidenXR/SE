@@ -67,11 +67,11 @@ type IComponents =
     
 
 /// Contairer class for storing components and entity ids
-type Components<'T>() =
-    let mutable count = 0
-    let mutable capacity = 16
-    let mutable ids = Array.zeroCreate<Entity> capacity
-    let mutable items = Array.zeroCreate<'T> capacity
+type Components<'T>(_ids:array<Entity>, _items:array<'T>) =
+    let mutable count = if _ids = null then 0 else _ids.Length
+    let mutable capacity = if _ids = null then 16 else _ids.Length
+    let mutable ids = if _ids <> null then Array.copy _ids else Array.zeroCreate<Entity> capacity
+    let mutable items = if _ids <> null then _items else Array.zeroCreate<'T> capacity
 
     // cache current
     let mutable idx_current = -1
@@ -224,6 +224,8 @@ type Components<'T>() =
     //     let ln = System.Numerics.Vector<Entity>().Length
     //     va = vb
 
+    new() = new Components<'T>(null,null)
+
     interface IComponents with
         member this.Count with get() = count
         member this.Capacity with get() = capacity
@@ -328,7 +330,6 @@ type Components<'T>() =
     member this.Clear() = clear ()
 
     /// assumes the entities are continuous
-    /// CHANGE THAT TO APPLY BINARY SEARCH
     member this.AsSpan(q:Entities) =
         if q.Count = 0 || count < q.Count  then Span(items,0,0)
         else
@@ -390,6 +391,14 @@ module Components =
         for components in components_table.Values do
             components.Clear()
 
+
+    /// Initializes a new Components instance from buffers
+    let init (ids:array<Entity>) (items:array<'T>) =
+        if ids = null || items = null then failwith "WARNING: ids and items must not be null"
+        if ids.Length <> items.Length then failwith "WARNING: ids and items must have the same .Lenght"
+        if components_table.ContainsKey(typeof<'T>) then failwith $"{typeof<Components<'T>>.Name} already exists!!"
+        let pool = Components<'T>(ids,items)
+        components_table.Add(typeof<'T>, pool :> IComponents)
 
 
 type IRelations =

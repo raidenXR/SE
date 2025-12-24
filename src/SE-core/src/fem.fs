@@ -11,22 +11,24 @@ open FSharp.NativeInterop
 
 type FEM_GaussQuadratureOrder = | TwoPoints | ThreePoints
 
+/// REMOVE INDEXER
 type [<Struct>] Vector3 = {x:float; y:float; z:float} with
     member v.Item 
         with inline get(i:int) = NativePtr.get (&&v.x) i
         and inline set(i:int) value = NativePtr.set (&&v.x) i value
-
-// type [<Struct>] Node = {
-//     xyz_init: nativeptr<Vector3>
-//     xyz: nativeptr<Vector3>
-//     global_index: nativeptr<int64>
-// }
+    override this.ToString() = sprintf "<%g, %g, %g>" this.x this.y this.z
 
 type [<Struct>] Node = {
-    xyz_init: nativeptr<float>
-    xyz: nativeptr<float>
+    xyz_init: nativeptr<Vector3>
+    xyz: nativeptr<Vector3>
     global_index: nativeptr<int64>
-}
+} with
+    override this.ToString() =
+        let a = !!this.xyz_init
+        let b = !!this.xyz
+        let c = this.global_index
+        sprintf "<%g, %g, %g>  <%g, %g, %g>  <%d, %d, %d>" a.x a.y a.z b.x b.y b.z c[0] c[1] c[2]
+
 
 module Vector3 =
     let sub (a:Vector3) (b:Vector3) =
@@ -59,7 +61,7 @@ module Vector3 =
     
 type GaussQuadraturePoints(order:FEM_GaussQuadratureOrder) =
     let n = match order with | TwoPoints -> 2 * 2 * 2 | ThreePoints -> 3 * 3 * 3
-    let p = Array.zeroCreate<float> (n * 3)   // use OpenGL AttribPtr style
+    let p = Array.zeroCreate<Vector3> n
     let w = Array.zeroCreate<float> n
 
     do
@@ -71,9 +73,7 @@ type GaussQuadraturePoints(order:FEM_GaussQuadratureOrder) =
                 for j in 1..2 do
                     for k in 1..2 do
                         I <- 4 * (i - 1) + 2 * (j - 1) + k - 1  // range 0..7
-                        p[I * 3 + 0] <- point[i]
-                        p[I * 3 + 1] <- point[j]
-                        p[I * 3 + 2] <- point[k]
+                        p[I] <- {x = point[i]; y = point[j]; z = point[k]}
                         w[I] <- 1.0 
         | ThreePoints ->
             use point = new Vector([|-sqrt(0.6); 0.0; sqrt(0.6)|])
@@ -83,15 +83,13 @@ type GaussQuadraturePoints(order:FEM_GaussQuadratureOrder) =
                 for j in 1..3 do
                     for k in 1..3 do
                         I <- 9 * (i - 1) + 3 * (j - 1) + k - 1   // range 0..26                        
-                        p[I * 3 + 0] <- point[i]
-                        p[I * 3 + 1] <- point[j]
-                        p[I * 3 + 2] <- point[k]
+                        p[I] <- {x = point[i]; y = point[j]; z = point[k]}
                         w[I] <- weight[i] * weight[j] * weight[k]
 
 
     member this.N = n
     [<MethodImpl(MethodImplOptions.AggressiveInlining)>] member this.weights(i:int) = w[i]
-    [<MethodImpl(MethodImplOptions.AggressiveInlining)>] member this.points(i:int) = {x = p[(i - 1) * 3 + 0]; y = p[(i - 1) * 3 + 1]; z = p[(i - 1) * 3 + 2]}
+    [<MethodImpl(MethodImplOptions.AggressiveInlining)>] member this.points(i:int) = p[i]
 
 
 type Parameters() =
@@ -135,17 +133,17 @@ type Parameters() =
 
 type NodeArray(par:Parameters) =
     let n = (par.ni + 1) * (par.nj + 1) * (par.nk + 1)  // use OpenGL AttribPtr style
-    let xyz_init = NativeMemory.AllocZeroed(unativeint (n * 3 * sizeof<float>)) |> NativePtr.ofVoidPtr<float>
-    let xyz = NativeMemory.AllocZeroed(unativeint (n * 3 * sizeof<float>)) |> NativePtr.ofVoidPtr<float>
-    let global_index = NativeMemory.AllocZeroed(unativeint (n * 3 * sizeof<int64>)) |> NativePtr.ofVoidPtr<int64>
+    let xyz_init = malloc<Vector3> n
+    let xyz = malloc<Vector3> n
+    let global_index = malloc<int64> (n * 3)
     let mutable _N = 0
     let mutable is_disposed = false
 
     let dispose () =
         if not is_disposed then
-            NativeMemory.Free(~~xyz_init)
-            NativeMemory.Free(~~xyz)
-            NativeMemory.Free(~~global_index)
+            free xyz_init
+            free xyz
+            free global_index
         is_disposed <- true
         
     interface IDisposable with
@@ -155,11 +153,11 @@ type NodeArray(par:Parameters) =
 
     member this.Item
         with get(i:int, j:int, k:int) = 
-            let idx = (i - 1) * 3 * par.nj + (j - 1) * 3 * par.nk + (k - 1) * 3
+            let idx = (i - 1) * par.nj + (j - 1) * par.nk + (k - 1)
             {
                 xyz_init = (xyz_init ++ idx)
                 xyz = (xyz ++ idx)
-                global_index = (global_index ++ idx)
+                global_index = (global_index ++ (idx * 3))
             }
     
     member this.Dispose() = dispose ()
@@ -168,29 +166,24 @@ type NodeArray(par:Parameters) =
         for i = 1 to par.ni do
             for j = 1 to par.nj do
                 for k = 1 to par.nk do
-                    let idx = (i - 1) * 3 * par.nj + (j - 1) * 3 * par.nk + (k - 1) * 3
-                    // printfn "idx: %d, n: %d, ni: %d, nj: %d, dk: %d" idx n par.ni par.nj par.nk
+                    let idx = (i - 1) * par.nj + (j - 1) * par.nk + (k - 1)
                     _N <- _N + 1
-                    global_index[idx + 0] <- _N
+                    global_index[idx * 3 + 0] <- _N
                     _N <- _N + 1
-                    global_index[idx + 1] <- _N
+                    global_index[idx * 3 + 1] <- _N
                     _N <- _N + 1
-                    global_index[idx + 2] <- _N
+                    global_index[idx * 3 + 2] <- _N
                         
     member this.SetInitialLocation(i:int, j:int, k:int, x:float, y:float, z:float) =
-        let idx = (i - 1) * 3 * par.nj + (j - 1) * 3 * par.nk + (k - 1) * 3
-        xyz_init[idx + 0] <- x
-        xyz_init[idx + 1] <- y
-        xyz_init[idx + 2] <- z
-        xyz[idx + 0] <- x
-        xyz[idx + 1] <- y
-        xyz[idx + 2] <- z
+        let idx = (i - 1) * par.nj + (j - 1) * par.nk + (k - 1)
+        xyz_init[idx] <- {x = x; y = y; z = z}
+        xyz[idx] <- {x = x; y = y; z = z}
 
     member this.SetZeroBoundaryCondition(i:int, j:int, k:int) =
-        let idx = (i - 1) * 3 * par.nj + (j - 1) * 3 * par.nk + (k - 1) * 3
-        global_index[idx + 0] <- -1
-        global_index[idx + 1] <- -1
-        global_index[idx + 2] <- -1
+        let idx = (i - 1) * par.nj + (j - 1) * par.nk + (k - 1)
+        global_index[idx * 3 + 0] <- -1
+        global_index[idx * 3 + 1] <- -1
+        global_index[idx * 3 + 2] <- -1
 
 
         
@@ -216,7 +209,9 @@ type Element(par:Parameters, nodearray:NodeArray, GQ:GaussQuadraturePoints, loca
         | _ -> nodearray[local_i, local_j, local_k + 1]
 
     let get_initial_position i_from_1_to_8 xyz_123 =
-        (get_node i_from_1_to_8).xyz_init[xyz_123 - 1]
+        let node = get_node i_from_1_to_8
+        printfn "initial_position: %s" (string node)
+        node.xyz[0][xyz_123 - 1]
         
     let get_global_index i_from_1_to_24 =
         let xyz_123 = (i_from_1_to_24 - 1) / 8 + 1  // 1..3
@@ -225,46 +220,55 @@ type Element(par:Parameters, nodearray:NodeArray, GQ:GaussQuadraturePoints, loca
     
     let get_deformed_point i_from_1_to_8 =
         let node = get_node i_from_1_to_8
-        let x = node.xyz_init[0] + q[i_from_1_to_8]
-        let y = node.xyz_init[1] + q[i_from_1_to_8 + 8]
-        let z = node.xyz_init[2] + q[i_from_1_to_8 + 16]
+        let x = (!!node.xyz_init).x + q[i_from_1_to_8]
+        let y = (!!node.xyz_init).y + q[i_from_1_to_8 + 8]
+        let z = (!!node.xyz_init).z + q[i_from_1_to_8 + 16]
         {x = x; y = y; z = z}        
     
     let get_DaDr i_from_1_to_8 (rst:Vector3) =
-        match i_from_1_to_8 with
-        | 1 -> -(1. - rst[2]) * (1. - rst[3]) / 8.
-        | 2 -> +(1. - rst[2]) * (1. - rst[3]) / 8.
-        | 3 -> +(1. + rst[2]) * (1. - rst[3]) / 8.
-        | 4 -> -(1. + rst[2]) * (1. - rst[3]) / 8.
-        | 5 -> -(1. - rst[2]) * (1. + rst[3]) / 8.
-        | 6 -> +(1. - rst[2]) * (1. + rst[3]) / 8.
-        | 7 -> +(1. + rst[2]) * (1. + rst[3]) / 8.
-        | 8 -> -(1. + rst[2]) * (1. + rst[3]) / 8.
-        | _ -> failwith "wrong value"
+        let v =
+            match i_from_1_to_8 with
+            | 1 -> -(1. - rst.y) * (1. - rst.z) / 8.
+            | 2 -> +(1. - rst.y) * (1. - rst.z) / 8.
+            | 3 -> +(1. + rst.y) * (1. - rst.z) / 8.
+            | 4 -> -(1. + rst.y) * (1. - rst.z) / 8.
+            | 5 -> -(1. - rst.y) * (1. + rst.z) / 8.
+            | 6 -> +(1. - rst.y) * (1. + rst.z) / 8.
+            | 7 -> +(1. + rst.y) * (1. + rst.z) / 8.
+            | 8 -> -(1. + rst.y) * (1. + rst.z) / 8.
+            | _ -> failwith "wrong value"
+        printfn "vector: %s,  dr: %g" (string rst) v
+        v
 
     let get_DaDs i_from_1_to_8 (rst:Vector3) =
-        match i_from_1_to_8 with
-        | 1 -> -(1. - rst[1]) * (1. - rst[3]) / 8.
-        | 2 -> -(1. + rst[1]) * (1. - rst[3]) / 8.
-        | 3 -> +(1. + rst[1]) * (1. - rst[3]) / 8.
-        | 4 -> +(1. - rst[1]) * (1. - rst[3]) / 8.
-        | 5 -> -(1. - rst[1]) * (1. + rst[3]) / 8.
-        | 6 -> -(1. + rst[1]) * (1. + rst[3]) / 8.
-        | 7 -> +(1. + rst[1]) * (1. + rst[3]) / 8.
-        | 8 -> +(1. - rst[1]) * (1. + rst[3]) / 8.
-        | _ -> failwith "wrong value"
+        let v = 
+            match i_from_1_to_8 with
+            | 1 -> -(1. - rst.x) * (1. - rst.z) / 8.
+            | 2 -> -(1. + rst.x) * (1. - rst.z) / 8.
+            | 3 -> +(1. + rst.x) * (1. - rst.z) / 8.
+            | 4 -> +(1. - rst.x) * (1. - rst.z) / 8.
+            | 5 -> -(1. - rst.x) * (1. + rst.z) / 8.
+            | 6 -> -(1. + rst.x) * (1. + rst.z) / 8.
+            | 7 -> +(1. + rst.x) * (1. + rst.z) / 8.
+            | 8 -> +(1. - rst.x) * (1. + rst.z) / 8.
+            | _ -> failwith "wrong value"
+        printfn "vector: %s,  ds: %g" (string rst) v
+        v
 
     let get_DaDt i_from_1_to_8 (rst:Vector3) =
-        match i_from_1_to_8 with
-        | 1 -> -(1. - rst[1]) * (1. - rst[2]) / 8.
-        | 2 -> -(1. + rst[1]) * (1. - rst[2]) / 8.
-        | 3 -> -(1. + rst[1]) * (1. + rst[2]) / 8.
-        | 4 -> -(1. - rst[1]) * (1. + rst[2]) / 8.
-        | 5 -> +(1. - rst[1]) * (1. - rst[2]) / 8.
-        | 6 -> +(1. + rst[1]) * (1. - rst[2]) / 8.
-        | 7 -> +(1. + rst[1]) * (1. + rst[2]) / 8.
-        | 8 -> +(1. - rst[1]) * (1. + rst[2]) / 8.
-        | _ -> failwith "wrong value"
+        let v = 
+            match i_from_1_to_8 with
+            | 1 -> -(1. - rst.x) * (1. - rst.y) / 8.
+            | 2 -> -(1. + rst.x) * (1. - rst.y) / 8.
+            | 3 -> -(1. + rst.x) * (1. + rst.y) / 8.
+            | 4 -> -(1. - rst.x) * (1. + rst.y) / 8.
+            | 5 -> +(1. - rst.x) * (1. - rst.y) / 8.
+            | 6 -> +(1. + rst.x) * (1. - rst.y) / 8.
+            | 7 -> +(1. + rst.x) * (1. + rst.y) / 8.
+            | 8 -> +(1. - rst.x) * (1. + rst.y) / 8.
+            | _ -> failwith "wrong value"
+        printfn "vector: %s,  dt: %g" (string rst) v
+        v
 
     do
         for k = 0 to GQ.N - 1 do
@@ -285,9 +289,10 @@ type Element(par:Parameters, nodearray:NodeArray, GQ:GaussQuadraturePoints, loca
         use J_inv = new Matrix(3, 3)
         for k = 1 to GQ.N do
             J_inv.Clear() 
+            let p = GQ.points(k)
+            printfn "%s" (string p)
             // 1.0 J_inv a detJ
             for i = 1 to 8 do
-                let p = GQ.points(k)
                 J_inv[1,1] <- (get_DaDr i p) * (get_initial_position i 1)
                 J_inv[2,1] <- (get_DaDs i p) * (get_initial_position i 1)
                 J_inv[3,1] <- (get_DaDt i p) * (get_initial_position i 1)
@@ -339,30 +344,30 @@ type Element(par:Parameters, nodearray:NodeArray, GQ:GaussQuadraturePoints, loca
                     for j = 1 to 3 do
                         let mutable _val = 0.0
                         for s = 1 to 8 do
-                            _val <- _val + DaDX123[k - 1, s - 1][j] * q[s + 8 * (i - 1)]
+                            _val <- _val + DaDX123[k - 1, s - 1][j - 1] * q[s + 8 * (i - 1)]
                         Z[i,j] <- _val
 
             BL[k - 1].Clear()
             for s = 1 to 8 do
                 let Da = DaDX123[k - 1, s - 1]
-                BL[k - 1][1,s] <- (1.0 + Z[1,1]) * Da[1]
-                BL[k - 1][1, 8 + s] <- (Z[2,1]) * Da[1]
-                BL[k - 1][1,16 + s] <- (Z[3,1]) * Da[1]
-                BL[k - 1][2,s] <- (Z[1,2]) * Da[2]
-                BL[k - 1][2, 8 + s] <- (1.0 + Z[2,2]) * Da[2]
-                BL[k - 1][2,16 + s] <- (Z[3,2]) * Da[2]
-                BL[k - 1][3,s] <- (Z[1,3]) * Da[3]
-                BL[k - 1][3, 8 + s] <- (Z[2,3]) * Da[3]
-                BL[k - 1][3,16 + s] <- (1.0 + Z[3,3]) * Da[3]
-                BL[k - 1][4,s] <- (Z[1,2]) * Da[1] + (1.0 + Z[1,1] * Da[2])
-                BL[k - 1][4, 8 + s] <- (1.0 + Z[2,2]) * Da[1] + (1.0 + Z[2,1] * Da[2])
-                BL[k - 1][4,16 + s] <- (Z[3,2]) * Da[1] + (1.0 + Z[2,1] * Da[2])
-                BL[k - 1][5, s] <- Z[1, 3] * Da[2] + Z[1, 2] * Da[3];
-                BL[k - 1][5, 8 + s] <- Z[2, 3] * Da[2] + (1.0 + Z[2, 2]) * Da[3];
-                BL[k - 1][5, 16 + s] <- (1.0 + Z[3, 3]) * Da[2] + Z[3, 2] * Da[3];
-                BL[k - 1][6, s] <- Z[1, 3] * Da[1] + (1.0 + Z[1, 1]) * Da[3];
-                BL[k - 1][6, 8 + s] <- Z[2, 3] * Da[1] + Z[2, 1] * Da[3];
-                BL[k - 1][6, 16 + s] <- (1.0 + Z[3, 3]) * Da[1] + Z[3, 1] * Da[3];
+                BL[k - 1][1,s] <- (1.0 + Z[1,1]) * Da[0]
+                BL[k - 1][1, 8 + s] <- (Z[2,1]) * Da[0]
+                BL[k - 1][1,16 + s] <- (Z[3,1]) * Da[0]
+                BL[k - 1][2,s] <- (Z[1,2]) * Da[1]
+                BL[k - 1][2, 8 + s] <- (1.0 + Z[2,2]) * Da[1]
+                BL[k - 1][2,16 + s] <- (Z[3,2]) * Da[1]
+                BL[k - 1][3,s] <- (Z[1,3]) * Da[2]
+                BL[k - 1][3, 8 + s] <- (Z[2,3]) * Da[2]
+                BL[k - 1][3,16 + s] <- (1.0 + Z[3,3]) * Da[2]
+                BL[k - 1][4,s] <- (Z[1,2]) * Da[0] + (1.0 + Z[1,1] * Da[1])
+                BL[k - 1][4, 8 + s] <- (1.0 + Z[2,2]) * Da[0] + (1.0 + Z[2,1] * Da[1])
+                BL[k - 1][4,16 + s] <- (Z[3,2]) * Da[0] + (1.0 + Z[2,1] * Da[1])
+                BL[k - 1][5, s] <- Z[1, 3] * Da[1] + Z[1, 2] * Da[2];
+                BL[k - 1][5, 8 + s] <- Z[2, 3] * Da[1] + (1.0 + Z[2, 2]) * Da[2];
+                BL[k - 1][5, 16 + s] <- (1.0 + Z[3, 3]) * Da[1] + Z[3, 2] * Da[2];
+                BL[k - 1][6, s] <- Z[1, 3] * Da[0] + (1.0 + Z[1, 1]) * Da[2];
+                BL[k - 1][6, 8 + s] <- Z[2, 3] * Da[0] + Z[2, 1] * Da[2];
+                BL[k - 1][6, 16 + s] <- (1.0 + Z[3, 3]) * Da[0] + Z[3, 1] * Da[2];
                 
             // 5.0 Add all to Klocal, flocal
             //5.1 (BN^T)S(BN)
@@ -371,15 +376,15 @@ type Element(par:Parameters, nodearray:NodeArray, GQ:GaussQuadraturePoints, loca
                 if par.llarge_deformations then
                     for i = 1 to 8 do            
                         for j = 1 to 8 do
-                            _val <- s[k - 1][1] * DaDX123[k - 1, i - 1][1] * DaDX123[k - 1, j - 1][1] +
-                                        s[k - 1][2] * DaDX123[k - 1, i - 1][2] * DaDX123[k - 1, j - 1][2] +
-                                        s[k - 1][3] * DaDX123[k - 1, i - 1][3] * DaDX123[k - 1, j - 1][3] +
-                                        s[k - 1][4] * (DaDX123[k - 1, i - 1][1] * DaDX123[k - 1, j - 1][2] +
+                            _val <- s[k - 1][1] * DaDX123[k - 1, i - 1][0] * DaDX123[k - 1, j - 1][0] +
+                                        s[k - 1][2] * DaDX123[k - 1, i - 1][1] * DaDX123[k - 1, j - 1][1] +
+                                        s[k - 1][3] * DaDX123[k - 1, i - 1][2] * DaDX123[k - 1, j - 1][2] +
+                                        s[k - 1][4] * (DaDX123[k - 1, i - 1][0] * DaDX123[k - 1, j - 1][1] +
+                                        DaDX123[k - 1, i - 1][1] * DaDX123[k - 1, j - 1][0]) +
+                                        s[k - 1][5] * (DaDX123[k - 1, i - 1][1] * DaDX123[k - 1, j - 1][2] +
                                         DaDX123[k - 1, i - 1][2] * DaDX123[k - 1, j - 1][1]) +
-                                        s[k - 1][5] * (DaDX123[k - 1, i - 1][2] * DaDX123[k - 1, j - 1][3] +
-                                        DaDX123[k - 1, i - 1][3] * DaDX123[k - 1, j - 1][2]) +
-                                        s[k - 1][6] * (DaDX123[k - 1, i - 1][3] * DaDX123[k - 1, j - 1][1] +
-                                        DaDX123[k - 1, i - 1][1] * DaDX123[k - 1, j - 1][3])
+                                        s[k - 1][6] * (DaDX123[k - 1, i - 1][2] * DaDX123[k - 1, j - 1][0] +
+                                        DaDX123[k - 1, i - 1][0] * DaDX123[k - 1, j - 1][2])
                             Klocal[i, j] <- _val
                             Klocal[i + 8, j + 8] <- _val
                             Klocal[i + 16, j + 16] <- _val
@@ -450,7 +455,7 @@ type ElementArray(par:Parameters, nodearray:NodeArray) =
         for i = 0 to par.ni - 1 do
             for j = 0 to par.nj - 1 do
                 for k = 0 to par.nk - 1 do
-                    elems[i,j,k] <- Element(par, nodearray, GQ, i, j, k)
+                    elems[i,j,k] <- Element(par, nodearray, GQ, i + 1, j + 1, k + 1)
 
     member this.Elems with get() = elems
 
@@ -472,11 +477,10 @@ type ElementArray(par:Parameters, nodearray:NodeArray) =
             for j = 0 to par.nj - 1 do
                 for k = 0 to par.nk - 1 do
                     let _point = get_deformed_point i j k 
-                    nodearray[i,j,k].xyz[0] <- _point.x
-                    nodearray[i,j,k].xyz[1] <- _point.y
-                    nodearray[i,j,k].xyz[2] <- _point.z
+                    nodearray[i,j,k].xyz[0] <- _point
             
-            
+
+[<Obsolete>]
 type Container() =
     let par = Parameters()
     let nodearray = new NodeArray(par)

@@ -52,6 +52,13 @@ type [<Struct>] varray6<'T when 'T: unmanaged> =
 
 
 module PtrOperations =
+    let inline malloc<'T when 'T: unmanaged> (count:int) =
+        let ptr = System.Runtime.InteropServices.NativeMemory.AllocZeroed(unativeint (sizeof<'T> * count))
+        NativePtr.ofVoidPtr<'T> ptr
+
+    let inline free (ptr:nativeptr<'T>) =
+        let _ptr = NativePtr.toVoidPtr ptr
+        ignore (System.Runtime.InteropServices.NativeMemory.Free _ptr)
     
     // add more ptr related operations
     let inline stackalloc<'a when 'a: unmanaged> (length: int): Span<'a> =
@@ -69,7 +76,7 @@ module PtrOperations =
         
     type nativeptr<'T when 'T: unmanaged> with
         member this.Item
-            with inline get(i:int) = NativePtr.read this
+            with inline get(i:int) = NativePtr.read (this ++ i)
             and inline set(i:int) value = NativePtr.set this i value
              
 

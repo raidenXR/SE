@@ -1,57 +1,11 @@
 namespace SE.Renderer
 open System
+open System.Collections.Generic
 open System.IO
 open System.Drawing
 open StbImageSharp
 open OpenTK.Graphics.OpenGL4
 open OpenTK.Mathematics
-
-
-type Model(vertices: array<float32>, indices: array<uint32>) =
-    let mutable transform = Matrix4.Identity
-
-    member this.Vertices with get() = vertices
-    member this.Indices with get() = indices
-    member this.Stride with get() = 10 * sizeof<float32>
-    member this.Attrib0 with get() = 0 * sizeof<float32>
-    member this.Attrib1 with get() = 3 * sizeof<float32>
-    member this.Attrib2 with get() = 6 * sizeof<float32>
-    member this.VerticesBufferSize with get() = vertices.Length * sizeof<float32>
-    member this.IndicesBufferSize with get() = indices.Length * sizeof<uint32>
-
-    member this.Transform with get() = transform and set(value) = transform <- value
-
-    member this.Print() =
-        let v = vertices
-        let i = indices
-        let mutable j = 0
-        while j < 100 do
-            printfn "[%g, %g, %g], [%g, %g, %g]" v[j + 0] v[j + 1] v[j + 2] v[j + 3] v[j + 4] v[j + 5]
-            j <- j + 10
-
-        j <- 0
-        while j < 30 do
-            printfn "[%d, %d, %d]" i[j + 0] i[j + 1] i[j + 2]
-            j <- j + 3
-
-    member this.SaveAsTxt(path:string) =
-        use fs = System.IO.File.CreateText(path)
-        fs.WriteLine("Vertices")
-        let mutable n = 0
-        for v in vertices do
-            if n = 10 then
-                fs.Write("\n")
-                n <- 0
-            fs.Write($"{v}, ")
-            n <- n + 1
-        fs.WriteLine("\nIndices")
-        n <- 0
-        for v in indices do
-            if n = 3 then
-                fs.Write("\n")
-                n <- 0
-            fs.Write($"{v}, ")
-            n <- n + 1
 
     
 [<AllowNullLiteral>]
