@@ -12,6 +12,107 @@ open System.Diagnostics
 
 // open Dear_ImGui_Sample.Backends
 
+type Particles(ob_model:Model, game_window_settings:GameWindowSettings, native_window_settings:NativeWindowSettings) =
+    inherit GameWindow(game_window_settings, native_window_settings)
+    
+    let mutable vbo = 0
+    let mutable vao = 0
+    // let mutable ebo = 0
+    let mutable shader: Shader = null
+    let mutable camera: Camera = null
+    let mutable first_move = true
+    let mutable last_pos = Vector2.Zero
+    let mutable wireframe_on = false
+    let mutable gltf: option<GLTF.Deserializer> = None
+
+    new(model:Model) = new Particles(model, GameWindowSettings.Default, NativeWindowSettings(ClientSize = Vector2i(800, 600), Title = "opetk-window", Flags = ContextFlags.ForwardCompatible))
+
+    override this.OnLoad() =
+        base.OnLoad()
+        GL.ClearColor(0.2f, 0.2f, 0.2f, 1.0f)
+        GL.Enable(EnableCap.DepthTest)
+        GL.Enable(EnableCap.ProgramPointSize)
+
+        // GL.DebugMessageCallback(Debu
+        do
+            shader <- new Shader("shaders/particles.vert", "shaders/particles.frag")
+            shader.Use()        
+        
+            vbo <- GL.GenBuffer()
+            GL.BindBuffer (BufferTarget.ArrayBuffer, vbo)
+            GL.BufferData (BufferTarget.ArrayBuffer, ob_model.VerticesBufferSize, ob_model.Vertices, BufferUsageHint.StaticDraw)
+            
+            vao <- GL.GenVertexArray()
+            GL.BindVertexArray(vao)
+            GL.EnableVertexAttribArray(0)
+            GL.EnableVertexAttribArray(1)            
+            GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, 7, 0)
+            GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, 7, 3)
+
+            // ebo <- GL.GenBuffer()
+            // GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo)
+            // GL.BufferData(BufferTarget.ElementArrayBuffer, ob_model.IndicesBufferSize, ob_model.Indices, BufferUsageHint.StaticDraw)
+            
+        camera <- Camera(Vector3.UnitZ * 3f, 800f / 600f)
+        this.CursorState <- CursorState.Grabbed
+
+    override this.OnRenderFrame(e:FrameEventArgs) =
+        base.OnRenderFrame(e)
+        GL.Clear(ClearBufferMask.ColorBufferBit ||| ClearBufferMask.DepthBufferBit)
+
+        shader.Use()
+        shader.SetMatrix4("view", camera.GetViewMatrix())
+        shader.SetMatrix4("projection", camera.GetProjectionMatrix())
+        shader.SetMatrix4("model", ob_model.Transform)
+        // shader.SetVector3("viewPos", camera.Position)
+
+        GL.BindVertexArray(vao)
+        GL.DrawArrays(PrimitiveType.Points, 0, ob_model.Vertices.Length)
+
+        this.SwapBuffers()
+
+    override this.OnUpdateFrame(e:FrameEventArgs) =
+        base.OnUpdateFrame(e)
+        let input = this.KeyboardState
+
+        let camera_speed = 1.5f
+        let sensitivity = 0.2f
+
+        if input.IsKeyDown(Keys.W) then
+            wireframe_on <- not wireframe_on
+            if wireframe_on then GL.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Line)
+            if not wireframe_on then GL.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Fill)
+ 
+        if input.IsKeyDown(Keys.Escape) then this.Close()
+        if input.IsKeyDown(Keys.Up) then camera.Position <- camera.Position + camera.Front * camera_speed * (float32 e.Time)
+        if input.IsKeyDown(Keys.Down) then camera.Position <- camera.Position - camera.Front * camera_speed * (float32 e.Time)
+        if input.IsKeyDown(Keys.Right) then camera.Position <- camera.Position + camera.Right * camera_speed * (float32 e.Time)
+        if input.IsKeyDown(Keys.Left) then camera.Position <- camera.Position - camera.Right * camera_speed * (float32 e.Time)
+        if input.IsKeyDown(Keys.Space) then camera.Position <- camera.Position + camera.Up * camera_speed * (float32 e.Time)
+        if input.IsKeyDown(Keys.LeftShift) then camera.Position <- camera.Position - camera.Up * camera_speed * (float32 e.Time)
+                
+        let mouse = this.MouseState
+        if first_move then
+            last_pos <- Vector2(mouse.X, mouse.Y)
+            first_move <- false
+        else
+            let dx = mouse.X - last_pos.X
+            let dy = mouse.Y - last_pos.Y
+            last_pos <- Vector2(mouse.X, mouse.Y)
+            camera.Yaw <- camera.Yaw + dx * sensitivity
+            camera.Pitch <- camera.Pitch - dy * sensitivity
+        
+    override this.OnResize(e:ResizeEventArgs) =
+        base.OnResize(e)
+        let size_x = this.Size.X
+        let size_y = this.Size.Y
+        GL.Viewport(0, 0, size_x, size_y)
+
+    member this.OnClosed() =
+        match gltf with
+        | Some g -> g.Dispose()
+        | None -> ()
+        
 
 type TestGame(ob_model:Model, game_window_settings:GameWindowSettings, native_window_settings:NativeWindowSettings) =
     inherit GameWindow(game_window_settings, native_window_settings)

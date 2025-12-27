@@ -42,7 +42,7 @@ type MeshIterator(vertices:array<float32>, indices:array<uint32>) =
             i < indices_count
         
         member this.Reset() =
-            i <- 0
+            i <- -1
 
 type Model(vertices: array<float32>, indices: array<uint32>) =
     let mutable transform = Matrix4.Identity
@@ -433,6 +433,116 @@ module Geometry =
         let (_,vertices) = (3,positions) |> compose (3,normals) |> compose (4,colors)
         (vertices,indices)
 
+    let inline is_clamped v1 v v2 =
+        v > v1 && v < v2
+
+    /// gets the control volume that includes the model
+    let get_CV (vertices:array<float32>) =
+        let mutable x_min = vertices[0]
+        let mutable y_min = vertices[1]
+        let mutable z_min = vertices[2]
+
+        let mutable x_max = x_min
+        let mutable y_max = y_min
+        let mutable z_max = z_min
+
+        let vertices_count = vertices.Length / 10
+        for i in 0..vertices_count - 1 do
+            x_min <- min x_min vertices[10 * i + 0]
+            y_min <- min y_min vertices[10 * i + 1]
+            z_min <- min z_min vertices[10 * i + 2]
+            x_max <- max x_max vertices[10 * i + 0]
+            y_max <- max y_max vertices[10 * i + 1]
+            z_max <- max z_max vertices[10 * i + 2]
+
+        (Vector3(x_min,y_min,z_min), Vector3(x_max,y_max,z_max))        
+
+
+    /// gets a float32 array ready to be rendered from the shader 7-stride
+    let get_particles (v_min:Vector3) (v_max:Vector3) (voxels:bool array3d) t n =
+        let particles = Array.zeroCreate<float32> (t * 7)
+        let dx = (v_max.X - v_min.X) / float32(n)
+        let dy = (v_max.Y - v_min.Y) / float32(n)
+        let dz = (v_max.Z - v_min.Z) / float32(n)
+            
+        let mutable i = 0
+        for ix in 0..n-1 do
+            for iy in 0..n-1 do
+                for iz in 0..n-1 do
+                    let x = v_min.X + dx * float32(ix)
+                    let y = v_min.Y + dy * float32(iy)
+                    let z = v_min.Z + dz * float32(iz)
+                    if voxels[ix,iy,iz] then
+                        particles[i+0] <- x
+                        particles[i+1] <- y
+                        particles[i+2] <- z
+                        particles[i+3] <- float32(n) * (x - v_min.X) / dx
+                        particles[i+4] <- float32(n) * (y - v_min.Y) / dy
+                        particles[i+5] <- float32(n) * (z - v_min.Z) / dz
+                        particles[i+6] <- 1.f
+                        // printfn ("particle: %g %g %g") x y z
+                        i <- i + 7
+        particles
+
+    /// vertices the points of the model, n the resolution
+    [<Obsolete>]
+    let points_cloud (vertices:array<float32>) (indices:array<uint32>) (N:int) =
+        let v_min,v_max = get_CV vertices
+        let v_center = Vector3(v_min.X + (v_max.X - v_min.X) / 2.f, v_min.Y + (v_max.Y - v_min.Y) / 2.f, v_min.Z + (v_max.Z - v_min.Z) / 2.f)
+        let vertices_count = vertices.Length / 10
+        let inner_points = ResizeArray<Vector3>(pown N 8)
+        let outer_points = [| for i in 0..vertices_count - 1 -> Vector3(vertices[10*i+0], vertices[10*i+1], vertices[10*i+2]) |] |> Array.sortBy (fun x -> x.X)
+
+        let rec octree (v1:Vector3) (v2:Vector3) n =
+            for i in 1..2 do
+                let dx = (v2.X - v1.X) / 2.f
+                let x1 = if i = 1 then v1.X else v1.X + dx      
+                let x2 = if i = 1 then v1.X + dx else v2.X 
+                for j in 1..2 do
+                    let dy = (v2.Y - v1.Y) / 2.f
+                    let y1 = if i = 1 then v1.Y else v1.Y + dy      
+                    let y2 = if i = 1 then v1.Y + dy else v2.Y 
+                    for k in 1..2 do
+                        let dz = (v2.Z - v1.Z) / 2.f
+                        let z1 = if i = 1 then v1.Z else v1.Z + dz      
+                        let z2 = if i = 1 then v1.Z + dy else v2.Z 
+
+                        let x = (x2 - x1) / 2.f
+                        let y = (y2 - y1) / 2.f
+                        let z = (z2 - z1) / 2.f
+                        inner_points.Add(Vector3(x,y1,z))
+                        inner_points.Add(Vector3(x1,y,z))
+                        inner_points.Add(Vector3(x,y,z1))
+                        inner_points.Add(Vector3(x,y2,z))
+                        inner_points.Add(Vector3(x2,y,z))
+                        inner_points.Add(Vector3(x,y,z2))
+                        if n + 1 <= N then
+                            octree (Vector3(x1,y1,z1)) (Vector3(x2,y2,z2)) (n + 1) 
+        
+        octree v_min v_max 1
+
+        // let indices_to_be_removed = ResizeArray<int>(1000)
+        printfn "inner points generated: %d" (inner_points.Count)
+        let model = new Model(vertices, indices)
+        for mesh in (model :> IEnumerable<Triangle>) do
+            let X_min = min (min mesh.n0.X mesh.n1.X) mesh.n2.X
+            let Y_min = min (min mesh.n0.Y mesh.n1.Y) mesh.n2.Y
+            let Z_min = min (min mesh.n0.Z mesh.n1.Z) mesh.n2.Z
+            let X_max = max (max mesh.n0.X mesh.n1.X) mesh.n2.X
+            let Y_max = max (max mesh.n0.Y mesh.n1.Y) mesh.n2.Y
+            let Z_max = max (max mesh.n0.Z mesh.n1.Z) mesh.n2.Z
+
+            let mutable i = 0
+            while i < inner_points.Count do
+                let v_inner = inner_points[i]
+                if (is_clamped Z_min v_inner.Z Z_max) then 
+                    if (is_clamped Y_min v_inner.Y Y_max) then
+                        let x_center = v_center.X
+                        if abs(x_center - v_inner.X) > abs(x_center - (X_min + (X_max - X_min)/2.f)) then
+                            inner_points.RemoveAt(i)
+                            i <- i - 1                
+                i <- i + 1
+        inner_points            
 
 
     let cube_intersects (n:float32) (c:Vector3) (t:Triangle) =
@@ -441,6 +551,51 @@ module Geometry =
             (d.X < n) && (d.Y < n) && (d.Z < n)
         (ct t.n0) || (ct t.n1) || (ct t.n2)
 
+        
+    let inline triangle_center (t:Triangle) =
+        let tx_min = min (min t.n0.X t.n1.X) t.n2.X
+        let ty_min = min (min t.n0.Y t.n1.Y) t.n2.Y
+        let tz_min = min (min t.n0.Z t.n1.Z) t.n2.Z
+        let tx_max = max (max t.n0.X t.n1.X) t.n2.X
+        let ty_max = max (max t.n0.Y t.n1.Y) t.n2.Y
+        let tz_max = max (max t.n0.Z t.n1.Z) t.n2.Z
+
+        Vector3(tx_min + (tx_max - tx_min) / 2.f, ty_min + (ty_max - ty_min) / 2.f, tz_min + (tz_max - tz_min) / 2.f)
+        
+
+    let volume (vertices:array<float32>) (indices:array<uint32>) (n:int) =
+        let voxels = Array3D.zeroCreate<bool> n n n
+        let v_min,v_max = get_CV vertices
+        let x_min = v_min.X
+        let y_min = v_min.Y
+        let z_min = v_min.Z
+        let x_max = v_max.X
+        let y_max = v_max.Y
+        let z_max = v_max.Z
+        let dx = x_max - x_min
+        let dy = y_max - y_min
+        let dz = z_max - z_min
+        let n_size = (min (min dx dy) dz) / float32(n)
+        let mutable total_filled_voxels = 0
+
+        for mesh in (new Model(vertices,indices) :> IEnumerable<Triangle>) do
+            let v_center = triangle_center mesh
+            let ix = (float32(n) * (v_center.X - v_min.X) / dx) |> int32  // normalize to [0..1] and convert to index [0..n]
+            let iy = (float32(n) * (v_center.Y - v_min.Y) / dy) |> int32
+            let iz = (float32(n) * (v_center.Z - v_min.Z) / dz) |> int32
+            voxels[ix,iy,iz] <- true
+
+        for ix in 0..n-1 do
+            for iy in 0..n-1 do
+                let mutable fill = false
+                for iz in 0..n-1 do
+                    if voxels[ix,iy,iz] then fill <- not fill
+                    if fill then voxels[ix,iy,iz] <- true
+                    if voxels[ix,iy,iz] then total_filled_voxels <- total_filled_voxels + 1
+        (voxels,total_filled_voxels)                   
+
+
+    [<Obsolete>]
     let voxelize (resolution:int) (vertices:array<float32>) (indices:array<uint32>) =
         let mutable x_min = vertices[0]
         let mutable y_min = vertices[1]

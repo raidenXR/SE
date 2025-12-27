@@ -11,6 +11,7 @@ BenchmarkDotNet.Artifacts/
 
 *.log
 *.txt
+*.dat
 *.gnu
 *.png
 *.bmp
