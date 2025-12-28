@@ -46,12 +46,8 @@ type Particles(ob_model:Model, game_window_settings:GameWindowSettings, native_w
             GL.BindVertexArray(vao)
             GL.EnableVertexAttribArray(0)
             GL.EnableVertexAttribArray(1)            
-            GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, 7, 0)
-            GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, 7, 3)
-
-            // ebo <- GL.GenBuffer()
-            // GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo)
-            // GL.BufferData(BufferTarget.ElementArrayBuffer, ob_model.IndicesBufferSize, ob_model.Indices, BufferUsageHint.StaticDraw)
+            GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, ob_model.L, ob_model.Attrib0)
+            GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, ob_model.L, ob_model.Attrib1)
             
         camera <- Camera(Vector3.UnitZ * 3f, 800f / 600f)
         this.CursorState <- CursorState.Grabbed
@@ -64,7 +60,6 @@ type Particles(ob_model:Model, game_window_settings:GameWindowSettings, native_w
         shader.SetMatrix4("view", camera.GetViewMatrix())
         shader.SetMatrix4("projection", camera.GetProjectionMatrix())
         shader.SetMatrix4("model", ob_model.Transform)
-        // shader.SetVector3("viewPos", camera.Position)
 
         GL.BindVertexArray(vao)
         GL.DrawArrays(PrimitiveType.Points, 0, ob_model.Vertices.Length)

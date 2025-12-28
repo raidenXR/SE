@@ -8,22 +8,24 @@ open System.IO
 
 let args = System.Environment.GetCommandLineArgs()
 let (vertices,indices) = Geometry.load_ply (args[2], 0.55f, 0.55f, 0.53f, 1.0f)
+let bunny_model = new Model(vertices, indices)
 #time
-let N = 100
-let (voxels,t) = Geometry.volume vertices indices N
-let (v_min,v_max) = Geometry.get_CV vertices
+let N = 50
+let (voxels,t) = Geometry.as_voxels bunny_model N
+let (v_min,v_max) = Geometry.bounds vertices bunny_model.L
 printfn "total_voxels: %d, filled voxels: %d" (voxels.Length) t
-let particles = Geometry.get_particles v_min v_max voxels t N
+let particles = Geometry.get_particles v_min v_max voxels t N 7
 printfn "particles.len: %d, matches voxels: %A" (particles.Length / 7) ((particles.Length / 7) = t)
 #time
 
 let fs = File.CreateText("descretized_volume.dat")
-let particles_count = particles.Length / 7
+let particles_model = new Model(particles, [||], [3;4])
+particles_model.Transform <- Matrix4.CreateScale(10.f)
+let L = particles_model.L
+let particles_count = particles.Length / L
 for i in 0..particles_count - 1 do
-    fs.WriteLine($"{particles[7*i+0]}  {particles[7*i+1]}  {particles[7*i+2]}")
+    fs.WriteLine($"{particles[L*i+0]}  {particles[L*i+1]}  {particles[L*i+2]}")
 fs.Close()
 
-let particles_model = new Model(particles, [|1u;1u;1u|])
-particles_model.Transform <- Matrix4.CreateScale(10.f)
 let game = new Particles(particles_model)
 game.Run()

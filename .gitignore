@@ -8,6 +8,7 @@ vertices/
 Content/
 output/
 BenchmarkDotNet.Artifacts/
+SE-zig-src/
 
 *.log
 *.txt

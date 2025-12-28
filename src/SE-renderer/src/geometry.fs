@@ -15,9 +15,41 @@ open System.Diagnostics
 
 type [<Struct>] Triangle = {n0:Vector3; n1:Vector3; n2:Vector3}
 
-type [<Struct>] Voxel = {c:Vector3; t:bool; data:float}
 
-type MeshIterator(vertices:array<float32>, indices:array<uint32>) =
+type Model(vertices: array<float32>, indices: array<uint32>, attribs:list<int>) =
+    let sum n =
+        let mutable s = 0
+        for i in 1..n do s <- s + attribs[i-1]
+        s
+    let f32 = sizeof<float32>
+    let mutable transform = Matrix4.Identity
+
+    new(vertices:array<float32>, indices:array<uint32>) = Model(vertices, indices, [3;3;4])
+
+    interface IEnumerable<Triangle> with
+        member this.GetEnumerator() = new MeshIterator(this)
+
+    interface System.Collections.IEnumerable with
+        member this.GetEnumerator() = null
+
+    member this.Vertices with get() = vertices
+    member this.Indices with get() = indices
+    member this.L with get() = List.sum attribs
+    member this.Stride with get() = (List.sum attribs) * f32
+    member this.Attrib0 with get() = (sum 0) * f32 
+    member this.Attrib1 with get() = (sum 1) * f32 
+    member this.Attrib2 with get() = (sum 2) * f32
+    member this.Attrib3 with get() = (sum 3) * f32
+    member this.Attrib4 with get() = (sum 4) * f32
+    member this.VerticesBufferSize with get() = vertices.Length * sizeof<float32>
+    member this.IndicesBufferSize with get() = indices.Length * sizeof<uint32>
+
+    member this.Transform with get() = transform and set(value) = transform <- value
+
+and MeshIterator(model:Model) =
+    let vertices = model.Vertices
+    let indices  = model.Indices
+    let L = model.L
     let indices_count = indices.Length / 3
     let mutable i = -1
     
@@ -27,9 +59,9 @@ type MeshIterator(vertices:array<float32>, indices:array<uint32>) =
             let i1 = int32 (indices[3 * i + 1])
             let i2 = int32 (indices[3 * i + 2])
 
-            let v0 = Vector3(vertices[10 * i0 + 0], vertices[10 * i0 + 1], vertices[10 * i0 + 2])
-            let v1 = Vector3(vertices[10 * i1 + 0], vertices[10 * i1 + 1], vertices[10 * i1 + 2])
-            let v2 = Vector3(vertices[10 * i2 + 0], vertices[10 * i2 + 1], vertices[10 * i2 + 2])
+            let v0 = Vector3(vertices[L*i0+0], vertices[L*i0+1], vertices[L*i0+2])
+            let v1 = Vector3(vertices[L*i1+0], vertices[L*i1+1], vertices[L*i1+2])
+            let v2 = Vector3(vertices[L*i2+0], vertices[L*i2+1], vertices[L*i2+2])
             {n0 = v0; n1 = v1; n2 = v2}
 
         member this.Dispose() = ()
@@ -43,58 +75,6 @@ type MeshIterator(vertices:array<float32>, indices:array<uint32>) =
         
         member this.Reset() =
             i <- -1
-
-type Model(vertices: array<float32>, indices: array<uint32>) =
-    let mutable transform = Matrix4.Identity
-
-    interface IEnumerable<Triangle> with
-        member this.GetEnumerator() = new MeshIterator(vertices, indices)
-
-    interface System.Collections.IEnumerable with
-        member this.GetEnumerator() = null
-
-    member this.Vertices with get() = vertices
-    member this.Indices with get() = indices
-    member this.Stride with get() = 10 * sizeof<float32>
-    member this.Attrib0 with get() = 0 * sizeof<float32>
-    member this.Attrib1 with get() = 3 * sizeof<float32>
-    member this.Attrib2 with get() = 6 * sizeof<float32>
-    member this.VerticesBufferSize with get() = vertices.Length * sizeof<float32>
-    member this.IndicesBufferSize with get() = indices.Length * sizeof<uint32>
-
-    member this.Transform with get() = transform and set(value) = transform <- value
-
-    // member this.Print() =
-    //     let v = vertices
-    //     let i = indices
-    //     let mutable j = 0
-    //     while j < 100 do
-    //         printfn "[%g, %g, %g], [%g, %g, %g]" v[j + 0] v[j + 1] v[j + 2] v[j + 3] v[j + 4] v[j + 5]
-    //         j <- j + 10
-
-    //     j <- 0
-    //     while j < 30 do
-    //         printfn "[%d, %d, %d]" i[j + 0] i[j + 1] i[j + 2]
-    //         j <- j + 3
-
-    // member this.SaveAsTxt(path:string) =
-    //     use fs = System.IO.File.CreateText(path)
-    //     fs.WriteLine("Vertices")
-    //     let mutable n = 0
-    //     for v in vertices do
-    //         if n = 10 then
-    //             fs.Write("\n")
-    //             n <- 0
-    //         fs.Write($"{v}, ")
-    //         n <- n + 1
-    //     fs.WriteLine("\nIndices")
-    //     n <- 0
-    //     for v in indices do
-    //         if n = 3 then
-    //             fs.Write("\n")
-    //             n <- 0
-    //         fs.Write($"{v}, ")
-    //         n <- n + 1
 
 
 module Geometry =
@@ -324,13 +304,13 @@ module Geometry =
         let normals =
             let n = Array.zeroCreate<float32> (vertices_count * 3)
             for i in 0..indices_count - 1 do
-                let i0 = int32 (indices[3 * i + 0])
-                let i1 = int32 (indices[3 * i + 1])
-                let i2 = int32 (indices[3 * i + 2])
+                let i0 = int32 (indices[3*i+0])
+                let i1 = int32 (indices[3*i+1])
+                let i2 = int32 (indices[3*i+2])
                 
-                let v0 = Vector3(positions[3 * i0 + 0], positions[3 * i0 + 1], positions[3 * i0 + 2])
-                let v1 = Vector3(positions[3 * i1 + 0], positions[3 * i1 + 1], positions[3 * i1 + 2])
-                let v2 = Vector3(positions[3 * i2 + 0], positions[3 * i2 + 1], positions[3 * i2 + 2])
+                let v0 = Vector3(positions[3*i0+0], positions[3*i0+1], positions[3*i0+2])
+                let v1 = Vector3(positions[3*i1+0], positions[3*i1+1], positions[3*i1+2])
+                let v2 = Vector3(positions[3*i2+0], positions[3*i2+1], positions[3*i2+2])
 
                 let e0 = v1 - v0
                 let e1 = v2 - v0
@@ -347,7 +327,7 @@ module Geometry =
                 n[3 * i2 + 2] <- n[3 * i2 + 2] + face_normal.Z                
 
             for i in 0..vertices_count - 1 do
-                let normal = Vector3.Normalize(Vector3(n[3 * i + 0], n[3 * i + 1], n[3 * i + 2]))
+                let normal = Vector3.Normalize(Vector3(n[3*i+0], n[3*i+1], n[3*i+2]))
                 n[3 * i + 0] <- normal.X                                                        
                 n[3 * i + 1] <- normal.Y                                                        
                 n[3 * i + 2] <- normal.Z                                                        
@@ -436,8 +416,9 @@ module Geometry =
     let inline is_clamped v1 v v2 =
         v > v1 && v < v2
 
-    /// gets the control volume that includes the model
-    let get_CV (vertices:array<float32>) =
+    /// gets the control volume that includes the includes the vertices
+    let bounds (vertices:array<float32>) stride =
+        let L = stride
         let mutable x_min = vertices[0]
         let mutable y_min = vertices[1]
         let mutable z_min = vertices[2]
@@ -446,110 +427,16 @@ module Geometry =
         let mutable y_max = y_min
         let mutable z_max = z_min
 
-        let vertices_count = vertices.Length / 10
+        let vertices_count = vertices.Length / L
         for i in 0..vertices_count - 1 do
-            x_min <- min x_min vertices[10 * i + 0]
-            y_min <- min y_min vertices[10 * i + 1]
-            z_min <- min z_min vertices[10 * i + 2]
-            x_max <- max x_max vertices[10 * i + 0]
-            y_max <- max y_max vertices[10 * i + 1]
-            z_max <- max z_max vertices[10 * i + 2]
+            x_min <- min x_min vertices[L * i + 0]
+            y_min <- min y_min vertices[L * i + 1]
+            z_min <- min z_min vertices[L * i + 2]
+            x_max <- max x_max vertices[L * i + 0]
+            y_max <- max y_max vertices[L * i + 1]
+            z_max <- max z_max vertices[L * i + 2]
 
         (Vector3(x_min,y_min,z_min), Vector3(x_max,y_max,z_max))        
-
-
-    /// gets a float32 array ready to be rendered from the shader 7-stride
-    let get_particles (v_min:Vector3) (v_max:Vector3) (voxels:bool array3d) t n =
-        let particles = Array.zeroCreate<float32> (t * 7)
-        let dx = (v_max.X - v_min.X) / float32(n)
-        let dy = (v_max.Y - v_min.Y) / float32(n)
-        let dz = (v_max.Z - v_min.Z) / float32(n)
-            
-        let mutable i = 0
-        for ix in 0..n-1 do
-            for iy in 0..n-1 do
-                for iz in 0..n-1 do
-                    let x = v_min.X + dx * float32(ix)
-                    let y = v_min.Y + dy * float32(iy)
-                    let z = v_min.Z + dz * float32(iz)
-                    if voxels[ix,iy,iz] then
-                        particles[i+0] <- x
-                        particles[i+1] <- y
-                        particles[i+2] <- z
-                        particles[i+3] <- float32(n) * (x - v_min.X) / dx
-                        particles[i+4] <- float32(n) * (y - v_min.Y) / dy
-                        particles[i+5] <- float32(n) * (z - v_min.Z) / dz
-                        particles[i+6] <- 1.f
-                        // printfn ("particle: %g %g %g") x y z
-                        i <- i + 7
-        particles
-
-    /// vertices the points of the model, n the resolution
-    [<Obsolete>]
-    let points_cloud (vertices:array<float32>) (indices:array<uint32>) (N:int) =
-        let v_min,v_max = get_CV vertices
-        let v_center = Vector3(v_min.X + (v_max.X - v_min.X) / 2.f, v_min.Y + (v_max.Y - v_min.Y) / 2.f, v_min.Z + (v_max.Z - v_min.Z) / 2.f)
-        let vertices_count = vertices.Length / 10
-        let inner_points = ResizeArray<Vector3>(pown N 8)
-        let outer_points = [| for i in 0..vertices_count - 1 -> Vector3(vertices[10*i+0], vertices[10*i+1], vertices[10*i+2]) |] |> Array.sortBy (fun x -> x.X)
-
-        let rec octree (v1:Vector3) (v2:Vector3) n =
-            for i in 1..2 do
-                let dx = (v2.X - v1.X) / 2.f
-                let x1 = if i = 1 then v1.X else v1.X + dx      
-                let x2 = if i = 1 then v1.X + dx else v2.X 
-                for j in 1..2 do
-                    let dy = (v2.Y - v1.Y) / 2.f
-                    let y1 = if i = 1 then v1.Y else v1.Y + dy      
-                    let y2 = if i = 1 then v1.Y + dy else v2.Y 
-                    for k in 1..2 do
-                        let dz = (v2.Z - v1.Z) / 2.f
-                        let z1 = if i = 1 then v1.Z else v1.Z + dz      
-                        let z2 = if i = 1 then v1.Z + dy else v2.Z 
-
-                        let x = (x2 - x1) / 2.f
-                        let y = (y2 - y1) / 2.f
-                        let z = (z2 - z1) / 2.f
-                        inner_points.Add(Vector3(x,y1,z))
-                        inner_points.Add(Vector3(x1,y,z))
-                        inner_points.Add(Vector3(x,y,z1))
-                        inner_points.Add(Vector3(x,y2,z))
-                        inner_points.Add(Vector3(x2,y,z))
-                        inner_points.Add(Vector3(x,y,z2))
-                        if n + 1 <= N then
-                            octree (Vector3(x1,y1,z1)) (Vector3(x2,y2,z2)) (n + 1) 
-        
-        octree v_min v_max 1
-
-        // let indices_to_be_removed = ResizeArray<int>(1000)
-        printfn "inner points generated: %d" (inner_points.Count)
-        let model = new Model(vertices, indices)
-        for mesh in (model :> IEnumerable<Triangle>) do
-            let X_min = min (min mesh.n0.X mesh.n1.X) mesh.n2.X
-            let Y_min = min (min mesh.n0.Y mesh.n1.Y) mesh.n2.Y
-            let Z_min = min (min mesh.n0.Z mesh.n1.Z) mesh.n2.Z
-            let X_max = max (max mesh.n0.X mesh.n1.X) mesh.n2.X
-            let Y_max = max (max mesh.n0.Y mesh.n1.Y) mesh.n2.Y
-            let Z_max = max (max mesh.n0.Z mesh.n1.Z) mesh.n2.Z
-
-            let mutable i = 0
-            while i < inner_points.Count do
-                let v_inner = inner_points[i]
-                if (is_clamped Z_min v_inner.Z Z_max) then 
-                    if (is_clamped Y_min v_inner.Y Y_max) then
-                        let x_center = v_center.X
-                        if abs(x_center - v_inner.X) > abs(x_center - (X_min + (X_max - X_min)/2.f)) then
-                            inner_points.RemoveAt(i)
-                            i <- i - 1                
-                i <- i + 1
-        inner_points            
-
-
-    let cube_intersects (n:float32) (c:Vector3) (t:Triangle) =
-        let ct (p:Vector3) =
-            let d = c - p
-            (d.X < n) && (d.Y < n) && (d.Z < n)
-        (ct t.n0) || (ct t.n1) || (ct t.n2)
 
         
     let inline triangle_center (t:Triangle) =
@@ -563,9 +450,13 @@ module Geometry =
         Vector3(tx_min + (tx_max - tx_min) / 2.f, ty_min + (ty_max - ty_min) / 2.f, tz_min + (tz_max - tz_min) / 2.f)
         
 
-    let volume (vertices:array<float32>) (indices:array<uint32>) (n:int) =
+    /// creates a volume as voxels bool, where n is the resolution
+    let as_voxels (model:Model) (n:int) =
+        let vertices = model.Vertices
+        let indices  = model.Indices
+        let stride   = model.L
         let voxels = Array3D.zeroCreate<bool> n n n
-        let v_min,v_max = get_CV vertices
+        let v_min,v_max = bounds vertices stride 
         let x_min = v_min.X
         let y_min = v_min.Y
         let z_min = v_min.Z
@@ -578,77 +469,175 @@ module Geometry =
         let n_size = (min (min dx dy) dz) / float32(n)
         let mutable total_filled_voxels = 0
 
-        for mesh in (new Model(vertices,indices) :> IEnumerable<Triangle>) do
+        let model = new Model(vertices,indices)
+        for mesh in (model :> IEnumerable<Triangle>) do
             let v_center = triangle_center mesh
-            let ix = (float32(n) * (v_center.X - v_min.X) / dx) |> int32  // normalize to [0..1] and convert to index [0..n]
-            let iy = (float32(n) * (v_center.Y - v_min.Y) / dy) |> int32
-            let iz = (float32(n) * (v_center.Z - v_min.Z) / dz) |> int32
+            let ix = (float32(n) * (v_center.X - x_min) / dx) |> int32  // normalize to [0..1] and convert to index [0..n]
+            let iy = (float32(n) * (v_center.Y - y_min) / dy) |> int32
+            let iz = (float32(n) * (v_center.Z - z_min) / dz) |> int32
             voxels[ix,iy,iz] <- true
 
         for ix in 0..n-1 do
             for iy in 0..n-1 do
                 let mutable fill = false
                 for iz in 0..n-1 do
-                    if voxels[ix,iy,iz] then fill <- not fill
-                    if fill then voxels[ix,iy,iz] <- true
-                    if voxels[ix,iy,iz] then total_filled_voxels <- total_filled_voxels + 1
+                    if voxels[ix,iy,iz] && not fill then
+                        fill <- true
+                        total_filled_voxels <- total_filled_voxels + 1
+                    elif voxels[ix,iy,iz] && fill then
+                        fill <- false
+                        total_filled_voxels <- total_filled_voxels + 1
+                    elif fill then
+                        voxels[ix,iy,iz] <- true
+                        total_filled_voxels <- total_filled_voxels + 1
+                    else
+                        voxels[ix,iy,iz] <- false
         (voxels,total_filled_voxels)                   
 
 
-    [<Obsolete>]
-    let voxelize (resolution:int) (vertices:array<float32>) (indices:array<uint32>) =
-        let mutable x_min = vertices[0]
-        let mutable y_min = vertices[1]
-        let mutable z_min = vertices[2]
-
-        let mutable x_max = x_min
-        let mutable y_max = y_min
-        let mutable z_max = z_min
-
-        for i in 0..10..vertices.Length - 10 do
-            x_min <- min x_min vertices[i + 0]
-            y_min <- min y_min vertices[i + 1]
-            z_min <- min z_min vertices[i + 2]
-            x_max <- max x_max vertices[i + 0]
-            y_max <- max y_max vertices[i + 1]
-            z_max <- max z_max vertices[i + 2]
-
-        let dx = x_max - x_min
-        let dy = y_max - y_min
-        let dz = z_max - z_min
-        let n = (min (min dx dy) dz) / float32(resolution)
-        let indices_count = indices.Length / 3
-        let voxels = Array.zeroCreate<Voxel> (resolution * resolution * resolution)        
-        let model = Model(vertices, indices)
-
-        for i in 0..resolution - 1 do
-            for j in 0..resolution - 1 do
-            let mutable voxel_state = false
-            for mesh in (model :> System.Collections.Generic.IEnumerable<Triangle>) do
-                let v0 = mesh.n0
-                let v1 = mesh.n1
-                let v2 = mesh.n2
-            // for i in 0..indices_count - 1 do
-            //     let i0 = int32 (indices[3 * i + 0])
-            //     let i1 = int32 (indices[3 * i + 1])
-            //     let i2 = int32 (indices[3 * i + 2])
-
-            //     let v0 = Vector3(vertices[10 * i0 + 0], vertices[10 * i0 + 1], vertices[10 * i0 + 2])
-            //     let v1 = Vector3(vertices[10 * i1 + 0], vertices[10 * i1 + 1], vertices[10 * i1 + 2])
-            //     let v2 = Vector3(vertices[10 * i2 + 0], vertices[10 * i2 + 1], vertices[10 * i2 + 2])
+    /// gets a float32 array ready to be rendered from the shader 7-stride
+    let get_particles (v_min:Vector3) (v_max:Vector3) (voxels:bool array3d) t n stride =
+        let particles = Array.zeroCreate<float32> (t * stride)
+        let x_min = v_min.X
+        let y_min = v_min.Y
+        let z_min = v_min.Z
+        let x_max = v_max.X
+        let y_max = v_max.Y
+        let z_max = v_max.Z
+        let dx = (x_max - x_min) / float32(n)
+        let dy = (y_max - y_min) / float32(n)
+        let dz = (z_max - z_min) / float32(n)
             
-                // if cube_intersects n c {n0 = v0; n1 = v1; n2 = v2} then voxel_state <- true
+        let mutable i = 0
+        for ix in 0..n-1 do
+            for iy in 0..n-1 do
+                for iz in 0..n-1 do
+                    let x = x_min + dx * float32(ix)
+                    let y = y_min + dy * float32(iy)
+                    let z = z_min + dz * float32(iz)
+                    if voxels[ix,iy,iz] then
+                        particles[i+0] <- x
+                        particles[i+1] <- y
+                        particles[i+2] <- z
+                        particles[i+3] <- (x - x_min) / (dx * float32(n))
+                        particles[i+4] <- (y - y_min) / (dy * float32(n))
+                        particles[i+5] <- (z - z_min) / (dz * float32(n))
+                        particles[i+6] <- 1.f
+                        i <- i + stride
+        particles
 
-                for k in 0..resolution - 1 do
-                    let x = float32(i) * n
-                    let y = float32(j) * n
-                    let z = float32(k) * n
-                    let c = Vector3(x,y,z)
+
+    // /// vertices the points of the model, n the resolution
+    // let cube_intersects (n:float32) (c:Vector3) (t:Triangle) =
+    //     let ct (p:Vector3) =
+    //         let d = c - p
+    //         (d.X < n) && (d.Y < n) && (d.Z < n)
+    //     (ct t.n0) || (ct t.n1) || (ct t.n2)
 
 
-                    voxels[i * resolution * resolution + j * resolution + k] <- {c = c; t = voxel_state; data = 0.0}
-        voxels
+    // [<Obsolete>]
+    // let voxelize (resolution:int) (vertices:array<float32>) (indices:array<uint32>) =
+    //     let mutable x_min = vertices[0]
+    //     let mutable y_min = vertices[1]
+    //     let mutable z_min = vertices[2]
+
+    //     let mutable x_max = x_min
+    //     let mutable y_max = y_min
+    //     let mutable z_max = z_min
+
+    //     for i in 0..10..vertices.Length - 10 do
+    //         x_min <- min x_min vertices[i + 0]
+    //         y_min <- min y_min vertices[i + 1]
+    //         z_min <- min z_min vertices[i + 2]
+    //         x_max <- max x_max vertices[i + 0]
+    //         y_max <- max y_max vertices[i + 1]
+    //         z_max <- max z_max vertices[i + 2]
+
+    //     let dx = x_max - x_min
+    //     let dy = y_max - y_min
+    //     let dz = z_max - z_min
+    //     let n = (min (min dx dy) dz) / float32(resolution)
+    //     let indices_count = indices.Length / 3
+    //     let voxels = Array.zeroCreate<Voxel> (resolution * resolution * resolution)        
+    //     let model = Model(vertices, indices)
+
+    //     for i in 0..resolution - 1 do
+    //         for j in 0..resolution - 1 do
+    //         let mutable voxel_state = false
+    //         for mesh in (model :> System.Collections.Generic.IEnumerable<Triangle>) do
+    //             let v0 = mesh.n0
+    //             let v1 = mesh.n1
+    //             let v2 = mesh.n2
+
+    //             for k in 0..resolution - 1 do
+    //                 let x = float32(i) * n
+    //                 let y = float32(j) * n
+    //                 let z = float32(k) * n
+    //                 let c = Vector3(x,y,z)
+
+    //                 voxels[i * resolution * resolution + j * resolution + k] <- {c = c; t = voxel_state; data = 0.0}
+    //     voxels
             
             
+    // [<Obsolete>]
+    // let points_cloud (vertices:array<float32>) (indices:array<uint32>) (N:int) =
+    //     let v_min,v_max = bounds vertices
+    //     let v_center = Vector3(v_min.X + (v_max.X - v_min.X) / 2.f, v_min.Y + (v_max.Y - v_min.Y) / 2.f, v_min.Z + (v_max.Z - v_min.Z) / 2.f)
+    //     let vertices_count = vertices.Length / 10
+    //     let inner_points = ResizeArray<Vector3>(pown N 8)
+    //     let outer_points = [| for i in 0..vertices_count - 1 -> Vector3(vertices[10*i+0], vertices[10*i+1], vertices[10*i+2]) |] |> Array.sortBy (fun x -> x.X)
+
+    //     let rec octree (v1:Vector3) (v2:Vector3) n =
+    //         for i in 1..2 do
+    //             let dx = (v2.X - v1.X) / 2.f
+    //             let x1 = if i = 1 then v1.X else v1.X + dx      
+    //             let x2 = if i = 1 then v1.X + dx else v2.X 
+    //             for j in 1..2 do
+    //                 let dy = (v2.Y - v1.Y) / 2.f
+    //                 let y1 = if i = 1 then v1.Y else v1.Y + dy      
+    //                 let y2 = if i = 1 then v1.Y + dy else v2.Y 
+    //                 for k in 1..2 do
+    //                     let dz = (v2.Z - v1.Z) / 2.f
+    //                     let z1 = if i = 1 then v1.Z else v1.Z + dz      
+    //                     let z2 = if i = 1 then v1.Z + dy else v2.Z 
+
+    //                     let x = (x2 - x1) / 2.f
+    //                     let y = (y2 - y1) / 2.f
+    //                     let z = (z2 - z1) / 2.f
+    //                     inner_points.Add(Vector3(x,y1,z))
+    //                     inner_points.Add(Vector3(x1,y,z))
+    //                     inner_points.Add(Vector3(x,y,z1))
+    //                     inner_points.Add(Vector3(x,y2,z))
+    //                     inner_points.Add(Vector3(x2,y,z))
+    //                     inner_points.Add(Vector3(x,y,z2))
+    //                     if n + 1 <= N then
+    //                         octree (Vector3(x1,y1,z1)) (Vector3(x2,y2,z2)) (n + 1) 
+        
+    //     octree v_min v_max 1
+
+    //     // let indices_to_be_removed = ResizeArray<int>(1000)
+    //     printfn "inner points generated: %d" (inner_points.Count)
+    //     let model = new Model(vertices, indices)
+    //     for mesh in (model :> IEnumerable<Triangle>) do
+    //         let X_min = min (min mesh.n0.X mesh.n1.X) mesh.n2.X
+    //         let Y_min = min (min mesh.n0.Y mesh.n1.Y) mesh.n2.Y
+    //         let Z_min = min (min mesh.n0.Z mesh.n1.Z) mesh.n2.Z
+    //         let X_max = max (max mesh.n0.X mesh.n1.X) mesh.n2.X
+    //         let Y_max = max (max mesh.n0.Y mesh.n1.Y) mesh.n2.Y
+    //         let Z_max = max (max mesh.n0.Z mesh.n1.Z) mesh.n2.Z
+
+    //         let mutable i = 0
+    //         while i < inner_points.Count do
+    //             let v_inner = inner_points[i]
+    //             if (is_clamped Z_min v_inner.Z Z_max) then 
+    //                 if (is_clamped Y_min v_inner.Y Y_max) then
+    //                     let x_center = v_center.X
+    //                     if abs(x_center - v_inner.X) > abs(x_center - (X_min + (X_max - X_min)/2.f)) then
+    //                         inner_points.RemoveAt(i)
+    //                         i <- i - 1                
+    //             i <- i + 1
+    //     inner_points            
+
+
             
 

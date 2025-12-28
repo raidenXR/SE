@@ -6,15 +6,20 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="benchmarks/benchmarks.fs" />
+    <!-- <Compile Include="benchmarks/benchmarks.fs" /> -->
+    <Compile Include="benchmarks/renderer.fs" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../SE-core/SE-core.fsproj" />
+    <ProjectReference Include="..\SE-core\SE-core.fsproj" />
+    <ProjectReference Include="..\SE-renderer\SE-renderer.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.15.2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="bun_zipper.ply" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
