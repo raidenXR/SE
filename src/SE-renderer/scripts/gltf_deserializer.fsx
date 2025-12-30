@@ -1,7 +1,7 @@
 #r "nuget: OpenTK, 4.9.4"
-#load "../src/gltfLoader.fs"
+#load "../src/gltfloader.fs"
 
-open GLTF
+open SE.Renderer.GLTF
 open System.Numerics
 open System.Text.Json
 
@@ -10,7 +10,7 @@ let _args = System.Environment.GetCommandLineArgs()
 let gltf_path = _args[2]
 let idx = gltf_path.LastIndexOf('.')
 let gltf_output = gltf_path[0..idx - 1] + "_deserialized.txt"
-let gltf_handle = GLTFLoader.Deserializer(gltf_path)
+let gltf_handle = new Deserializer(gltf_path)
 let gltf = gltf_handle.Root
 
 let fs = System.IO.File.CreateText(gltf_output)
@@ -25,7 +25,7 @@ for i,mesh in (Array.indexed gltf.meshes) do
         let n_accessor = gltf.accessors[primitive.attributes.NORMAL]
         let i_accessor = gltf.accessors[primitive.indices]
         let material = gltf.materials[primitive.material]
-        let mode = GLTF.Maps.mode (primitive.mode)
+        let mode = mode (primitive.mode)
 
         let p_bv = gltf.bufferViews[p_accessor.bufferView]
         let n_bv = gltf.bufferViews[n_accessor.bufferView]

@@ -1,5 +1,5 @@
 namespace SE.Renderer
-open ImGuiNET
+// open ImGuiNET
 open OpenTK.Graphics
 open OpenTK.Graphics.OpenGL4
 open OpenTK.Mathematics
@@ -451,11 +451,10 @@ module Geometry =
         
 
     /// creates a volume as voxels bool, where n is the resolution
-    let as_voxels (model:Model) (n:int) =
+    let assign_voxels (model:Model) (n:int) (voxels:bool array3d) =
         let vertices = model.Vertices
         let indices  = model.Indices
         let stride   = model.L
-        let voxels = Array3D.zeroCreate<bool> n n n
         let v_min,v_max = bounds vertices stride 
         let x_min = v_min.X
         let y_min = v_min.Y
@@ -469,13 +468,12 @@ module Geometry =
         let n_size = (min (min dx dy) dz) / float32(n)
         let mutable total_filled_voxels = 0
 
-        let model = new Model(vertices,indices)
         for mesh in (model :> IEnumerable<Triangle>) do
             let v_center = triangle_center mesh
             let ix = (float32(n) * (v_center.X - x_min)) / dx |> int32  // normalize to [0..1] and convert to index [0..n]
             let iy = (float32(n) * (v_center.Y - y_min)) / dy |> int32
             let iz = (float32(n) * (v_center.Z - z_min)) / dz |> int32
-            voxels[ix,iy,iz] <- true
+            voxels[Math.Clamp(ix,0,n-1), Math.Clamp(iy,0,n-1), Math.Clamp(iz,0,n-1)] <- true
 
         let hn = if n % 2 <> 0 then n / 2 else n / 2 + 1
 
@@ -504,12 +502,15 @@ module Geometry =
                     elif fill then
                         voxels[ix,iy,iz] <- true
                         total_filled_voxels <- total_filled_voxels + 1
-        (voxels,total_filled_voxels)                   
+        total_filled_voxels                 
 
 
-    /// gets a float32 array ready to be rendered from the shader 7-stride
-    let get_particles (v_min:Vector3) (v_max:Vector3) (voxels:bool array3d) t n stride =
-        let particles = Array.zeroCreate<float32> (t * stride)
+    let as_voxels (model:Model) (n:int) =
+        let voxels = Array3D.zeroCreate<bool> n n n
+        let t_filled = assign_voxels model n voxels
+        (voxels,t_filled)
+
+    let assign_particles (v_min:Vector3) (v_max:Vector3) (voxels:bool array3d) (particles:array<float32>) t n stride =
         let x_min = v_min.X
         let y_min = v_min.Y
         let z_min = v_min.Z
@@ -536,7 +537,114 @@ module Geometry =
                         particles[i+5] <- (z - z_min) / (dz * float32(n))
                         particles[i+6] <- 1.f
                         i <- i + stride
-        particles
 
-           
+    /// gets a float32 array ready to be rendered from the shader 7-stride
+    let get_particles (v_min:Vector3) (v_max:Vector3) (voxels:bool array3d) t n stride =
+        let particles = Array.zeroCreate<float32> (t * stride)
+        assign_particles v_min v_max voxels particles t n stride
+        particles           
+
+
+type VoxelizedVolume<'T>(model:Model, resolution:int, f:Vector3 -> 'T) as this =
+    let (V_min,V_max) = Geometry.bounds model.Vertices model.L
+    let n = resolution
+    // let (voxels,t) = Geometry.as_voxels model n 
+    let voxels = Array3D.zeroCreate<bool> n n n
+    // let offsets = Dictionary<struct(uint16*uint16),int>(n*n)
+    let offsets = Dictionary<int,int>(n*n)
+    // let values = ResizeArray<'T>(t)
+    let values = Array.zeroCreate<'T> (n*n*n)
+    let mutable t_filled = 0
+    let mutable v_min = V_min
+    let mutable v_max = V_max
+
+    let reset () =
+        offsets.Clear()
+        for ix in 0..n-1 do
+            for iy in 0..n-1 do
+                for iz in 0..n-1 do
+                    voxels[ix,iy,iz] <- false
+        let (V_min,V_max) = Geometry.bounds model.Vertices model.L
+        v_min <- V_min
+        v_max <- V_max
+
+    let init () =
+        reset ()
+        ignore (Geometry.assign_voxels model n voxels)
+        t_filled <- 0 
+        let mutable offset = 0
+        for ix in 0..n-1 do
+            for iy in 0..n-1 do
+                let mutable b = false
+                for iz in 0..n-1 do
+                    if not voxels[ix,iy,iz] then
+                        offset <- offset + 1
+                    if voxels[ix,iy,iz] then
+                        // let dx = uint16 ix
+                        // let dy = uint16 iy
+                        // offsets.Add(struct(dx,dy), offset)o
+                        if not b then 
+                            let key = (iy <<< 16) ||| ix
+                            offsets.Add(key, offset)
+                            b <- true
+                        // if t_filled >= values.Count then
+                        //     values.Add((f (this.Point(ix,iy,iz))))
+                        // else
+                        //     values[t_filled] <- f (this.Point(ix,iy,iz))
+                        let idx = n*n*ix + n*iy + iz
+                        if idx > values.Length then printfn "idx: %d, values_len: %d, capacity: %d" idx values.Length t_filled 
+                        values[idx] <- f (this.Point(ix,iy,iz))
+                        t_filled <- t_filled + 1
+
+    do
+        init ()
+                                          
+    member this.VoxelArray with get() = voxels
+
+    member this.T_filled with get() = t_filled
+
+    member this.Voxel(ix:int, iy:int, iz:int) = voxels[ix,iy,iz]
+    
+    member this.Point(ix:int, iy:int, iz:int) =
+        let x_min = v_min.X
+        let y_min = v_min.Y
+        let z_min = v_min.Z
+        let x_max = v_max.X
+        let y_max = v_max.Y
+        let z_max = v_max.Z
+        let dx = (x_max - x_min) / float32(n)
+        let dy = (y_max - y_min) / float32(n)
+        let dz = (z_max - z_min) / float32(n)
+        let x = x_min + dx * float32(ix)
+        let y = y_min + dy * float32(iy)
+        let z = z_min + dz * float32(iz)
+        Vector3(x,y,z)        
+
+    member this.Value(ix:int, iy:int, iz:int) =
+        if not voxels[ix,iy,iz] then failwith "this index is false in voxels"
+        // let dx = uint16 ix
+        // let dy = uint16 iy
+        // let offset = offsets[struct(dx,dy)]
+        let key = (iy <<< 16) ||| ix
+        // let idx = n*n*ix + n*iy + iz - offsets[key]
+        // let idx = offsets[key] + iz
+        // if idx > t_filled then Console.WriteLine("idx > t_filled, {0}, {1}", idx, t_filled)
+        // if idx < 0 then Console.WriteLine("idx < 0, {0}", idx)
+        let idx = n*n*ix + n*iy + iz
+        values[idx]
+
+    member this.Recompute(f: Vector3 -> 'T) =
+        init ()        
+
+    // member this.ApplyFn(f: Vector3 -> 'T) =
+    //     let mutable i = 0
+    //     for ix in 0..n-1 do
+    //         for iy in 0..n-1 do
+    //             for iz in 0..n-1 do
+    //                 if voxels[ix,iy,iz] then
+    //                     if i >= values.Count then
+    //                         values.Add((f (this.Point(ix,iy,iz))))
+    //                     else
+    //                         values[i] <- f (this.Point(ix,iy,iz))
+    //                     i <- i + 1
 
