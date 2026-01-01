@@ -9,6 +9,7 @@ open OpenTK.Windowing.GraphicsLibraryFramework
 open System
 open System.ComponentModel
 open System.Diagnostics
+open FSharp.NativeInterop
 
 // open Dear_ImGui_Sample.Backends
 
@@ -282,7 +283,7 @@ type TestGame(ob_model:Model, game_window_settings:GameWindowSettings, native_wi
         let sensitivity = 0.2f
 
         match gltf with
-        | Some g -> g.UpdateAnimation(ob_model, e.Time * 16.)
+        | Some g when g.Root.animations <> null -> g.UpdateAnimation(ob_model, e.Time * 16.)
         | None -> ()
         update ()
 
@@ -326,10 +327,14 @@ type TestGame(ob_model:Model, game_window_settings:GameWindowSettings, native_wi
     // static member DebugProcCallback = DebugProc(CubeGame.Window_DebugProc) 
 
 
-type GltfWithParticles(_gltf:GLTF.Deserializer, ob_model:Model, game_window_settings:GameWindowSettings, native_window_settings:NativeWindowSettings) =
+type [<Struct>] Vertex = {pos:Vector3; color:Vector4} 
+
+type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:Model, game_window_settings:GameWindowSettings, native_window_settings:NativeWindowSettings) =
     inherit GameWindow(game_window_settings, native_window_settings)
     
     let mutable animation_active = true
+    let mutable render_ob_model = true
+    let mutable render_ob_model_prev = false
     let mutable current_space = false
     let mutable prev_space = false
     
@@ -337,8 +342,7 @@ type GltfWithParticles(_gltf:GLTF.Deserializer, ob_model:Model, game_window_sett
     let mutable vao1 = 0
     let mutable shader1: Shader = null
     let N = 50
-    let voxelized_volume = VoxelizedVolume<Vector4>(ob_model, N, (fun v -> Vector4(Vector3.Normalize(v), 1.f)))
-    let particles_buffer = Array.zeroCreate<float32> (N * N * N * 7)
+    let voxelized_volume = VoxelizedVolume<Vertex>(ob_model, N, (fun v -> {pos=v; color=Vector4(Vector3.Normalize(v), 1.f)}))
 
     let mutable vbo2 = 0
     let mutable vao2 = 0
@@ -357,7 +361,7 @@ type GltfWithParticles(_gltf:GLTF.Deserializer, ob_model:Model, game_window_sett
     
         vbo1 <- GL.GenBuffer()
         GL.BindBuffer (BufferTarget.ArrayBuffer, vbo1)
-        GL.BufferData (BufferTarget.ArrayBuffer, voxelized_volume.T_filled * sizeof<float32>, particles_buffer, BufferUsageHint.DynamicDraw)
+        GL.BufferData (BufferTarget.ArrayBuffer, voxelized_volume.T_filled * sizeof<Vertex>, voxelized_volume.Values, BufferUsageHint.DynamicDraw)
         
         vao1 <- GL.GenVertexArray()
         GL.BindVertexArray(vao1)
@@ -388,31 +392,16 @@ type GltfWithParticles(_gltf:GLTF.Deserializer, ob_model:Model, game_window_sett
         GL.BufferData(BufferTarget.ElementArrayBuffer, ob_model.IndicesBufferSize, ob_model.Indices, BufferUsageHint.StaticDraw)
         
     let update_particles (e:FrameEventArgs) =
-        voxelized_volume.Recompute(fun v -> Vector4(Vector3.Normalize(v), 1.0f))
-        // let (v_min,v_max) = Geometry.bounds ob_model.Vertices 7
-        // Geometry.assign_particles v_min v_max (voxelized_volume.VoxelArray) particles_buffer (voxelized_volume.T_filled) N 7
-        let mutable n = 0
-        for ix in 0..N-1 do
-            for iy in 0..N-1 do
-                for iz in 0..N-1 do
-                    if voxelized_volume.Voxel(ix,iy,iz) then
-                        let v = voxelized_volume.Point(ix,iy,iz)
-                        let c = voxelized_volume.Value(ix,iy,iz)
-                        particles_buffer[n+0] <- v.X
-                        particles_buffer[n+1] <- v.Y
-                        particles_buffer[n+2] <- v.Z
-                        particles_buffer[n+3] <- c.X
-                        particles_buffer[n+4] <- c.Y
-                        particles_buffer[n+5] <- c.Z
-                        particles_buffer[n+6] <- c.W
-                        n <- n + 7
-        for i in voxelized_volume.T_filled..particles_buffer.Length-1 do
-            particles_buffer[i] <- 0.f
+        use buffer = fixed voxelized_volume.Values
+        let ptr = NativePtr.toVoidPtr buffer
+        let span = Span<float32>(ptr,voxelized_volume.T_filled * 7)
+        let (v_min,v_max) = Geometry.bounds ob_model.Vertices N ob_model.L
+        Geometry.assign_particles(v_min, v_max, voxelized_volume.VoxelArray, span, N, 7)
 
         shader1.Use()        
     
         GL.BindBuffer (BufferTarget.ArrayBuffer, vbo1)
-        GL.BufferData (BufferTarget.ArrayBuffer, voxelized_volume.T_filled * sizeof<float32>, particles_buffer, BufferUsageHint.DynamicDraw)
+        GL.BufferData (BufferTarget.ArrayBuffer, voxelized_volume.T_filled * sizeof<Vertex>, voxelized_volume.Values, BufferUsageHint.DynamicDraw)
         
         GL.BindVertexArray(vao1)
         GL.EnableVertexAttribArray(0)
@@ -421,7 +410,8 @@ type GltfWithParticles(_gltf:GLTF.Deserializer, ob_model:Model, game_window_sett
         GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, 7, 3)
         
     let update_gltf (e:FrameEventArgs) =
-        gltf.UpdateAnimation(ob_model, e.Time * 16.)
+        if gltf.IsSome && gltf.Value.Root.animations <> null then 
+            gltf.Value.UpdateAnimation(ob_model, e.Time * 16.)
 
         shader2.Use()        
     
@@ -447,7 +437,7 @@ type GltfWithParticles(_gltf:GLTF.Deserializer, ob_model:Model, game_window_sett
         shader1.SetMatrix4("model", ob_model.Transform)
 
         GL.BindVertexArray(vao1)
-        GL.DrawArrays(PrimitiveType.Points, 0, voxelized_volume.T_filled)
+        GL.DrawArrays(PrimitiveType.Points, 0, voxelized_volume.T_filled * 7)
 
     let render_gltf () =
         shader2.Use()
@@ -489,7 +479,7 @@ type GltfWithParticles(_gltf:GLTF.Deserializer, ob_model:Model, game_window_sett
         GL.DrawElements(PrimitiveType.Triangles, ob_model.Indices.Length, DrawElementsType.UnsignedInt, 0)
 
         
-    new(_gltf:GLTF.Deserializer, model:Model) = new GltfWithParticles(_gltf, model, GameWindowSettings.Default, NativeWindowSettings(ClientSize = Vector2i(800, 600), Title = "opetk-window", Flags = ContextFlags.ForwardCompatible))
+    new(_gltf:option<GLTF.Deserializer>, model:Model) = new GltfWithParticles(_gltf, model, GameWindowSettings.Default, NativeWindowSettings(ClientSize = Vector2i(800, 600), Title = "opetk-window", Flags = ContextFlags.ForwardCompatible))
     
     override this.OnLoad() =
         base.OnLoad()
@@ -509,7 +499,8 @@ type GltfWithParticles(_gltf:GLTF.Deserializer, ob_model:Model, game_window_sett
         base.OnRenderFrame(e)
         GL.Clear(ClearBufferMask.ColorBufferBit ||| ClearBufferMask.DepthBufferBit)
 
-        render_gltf ()
+        if render_ob_model then 
+            render_gltf ()
         render_particles ()
         
         this.SwapBuffers()
@@ -539,8 +530,10 @@ type GltfWithParticles(_gltf:GLTF.Deserializer, ob_model:Model, game_window_sett
         if input.IsKeyDown(Keys.Space) then camera.Position <- camera.Position + camera.Up * camera_speed * (float32 e.Time)
         if input.IsKeyDown(Keys.LeftShift) then camera.Position <- camera.Position - camera.Up * camera_speed * (float32 e.Time)
         if input.IsKeyDown(Keys.Space) && not prev_space then animation_active <- not animation_active
+        if input.IsKeyDown(Keys.K) && not render_ob_model_prev then render_ob_model <- not render_ob_model
 
         prev_space <- input.IsKeyDown(Keys.Space)
+        render_ob_model_prev <- input.IsKeyDown(Keys.K)
                 
         let mouse = this.MouseState
         if first_move then
@@ -561,5 +554,5 @@ type GltfWithParticles(_gltf:GLTF.Deserializer, ob_model:Model, game_window_sett
         GL.Viewport(0, 0, size_x, size_y)
 
     member this.OnClosed() =
-        gltf.Dispose()
+        if gltf.IsSome then gltf.Value.Dispose()
         

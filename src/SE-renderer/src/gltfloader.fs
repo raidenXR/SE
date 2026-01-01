@@ -468,8 +468,12 @@ module GLTF =
             for mesh in root.meshes do
                 let mutable base_vertex = 0u
                 for primitive in mesh.primitives do
-                    let material = root.materials[primitive.material]
-                    let material_color = material.pbrMetallicRoughness.baseColorFactor
+                    let material_color = 
+                        if root.materials <> null then
+                            let material = root.materials[primitive.material]
+                            material.pbrMetallicRoughness.baseColorFactor
+                        else
+                            [|0.53f; 0.55f; 0.53f; 1.0f|]
                     let p_accessor = root.accessors[primitive.attributes.POSITION]
                     let n_accessor = root.accessors[primitive.attributes.NORMAL]
                     let i_accessor = root.accessors[primitive.indices]
@@ -538,8 +542,12 @@ module GLTF =
                     let mesh = root.meshes[root.nodes[channel.target.node].mesh]
                     let mutable pn = 0
                     for primitive in mesh.primitives do
-                        let material = root.materials[primitive.material]
-                        let material_color = material.pbrMetallicRoughness.baseColorFactor
+                        let material_color = 
+                            if root.materials <> null then
+                                let material = root.materials[primitive.material]
+                                material.pbrMetallicRoughness.baseColorFactor
+                            else
+                                [|0.53f; 0.55f; 0.53f; 1.0f|]
                         let p_accessor = root.accessors[primitive.attributes.POSITION]
                         let n_accessor = root.accessors[primitive.attributes.NORMAL]
                         let i_accessor = root.accessors[primitive.indices]
