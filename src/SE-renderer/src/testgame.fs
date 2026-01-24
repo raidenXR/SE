@@ -110,7 +110,7 @@ type Particles(ob_model:Model, game_window_settings:GameWindowSettings, native_w
         | None -> ()
         
 
-type TestGame(ob_model:Model, game_window_settings:GameWindowSettings, native_window_settings:NativeWindowSettings) =
+type TestGame(ob_model:ValueModel, game_window_settings:GameWindowSettings, native_window_settings:NativeWindowSettings) =
     inherit GameWindow(game_window_settings, native_window_settings)
 
     let mutable vbo = 0
@@ -127,7 +127,8 @@ type TestGame(ob_model:Model, game_window_settings:GameWindowSettings, native_wi
         shader.Use()        
     
         GL.BindBuffer (BufferTarget.ArrayBuffer, vbo)
-        GL.BufferData (BufferTarget.ArrayBuffer, ob_model.VerticesBufferSize, ob_model.Vertices, BufferUsageHint.StaticDraw)
+        GL.BufferData (BufferTarget.ArrayBuffer, ob_model.vertices.BufferSize, ob_model.vertices.ToInt(), BufferUsageHint.StaticDraw)
+        // GL.BufferData (BufferTarget.ArrayBuffer, ob_model.VerticesBufferSize, ob_model.Vertices, BufferUsageHint.StaticDraw)
         
         GL.BindVertexArray(vao)
         GL.EnableVertexAttribArray(0)
@@ -138,7 +139,8 @@ type TestGame(ob_model:Model, game_window_settings:GameWindowSettings, native_wi
         GL.VertexAttribPointer(2, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, ob_model.Stride, ob_model.Attrib2)
 
         GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo)
-        GL.BufferData(BufferTarget.ElementArrayBuffer, ob_model.IndicesBufferSize, ob_model.Indices, BufferUsageHint.StaticDraw)
+        GL.BufferData(BufferTarget.ElementArrayBuffer, ob_model.indices.BufferSize, ob_model.indices.ToInt(), BufferUsageHint.StaticDraw)
+        // GL.BufferData(BufferTarget.ElementArrayBuffer, ob_model.IndicesBufferSize, ob_model.Indices, BufferUsageHint.StaticDraw)
         
         
         
@@ -166,7 +168,7 @@ type TestGame(ob_model:Model, game_window_settings:GameWindowSettings, native_wi
             | _ -> printfn $"[default] [{source}] {message}"
 
 
-    new(model:Model) = new TestGame(model, GameWindowSettings.Default, NativeWindowSettings(ClientSize = Vector2i(800, 600), Title = "opetk-window", Flags = ContextFlags.ForwardCompatible))
+    new(model:ValueModel) = new TestGame(model, GameWindowSettings.Default, NativeWindowSettings(ClientSize = Vector2i(800, 600), Title = "opetk-window", Flags = ContextFlags.ForwardCompatible))
 
     member this.GltfRoot with get() = gltf and set(value) = gltf <- value
 
@@ -182,7 +184,8 @@ type TestGame(ob_model:Model, game_window_settings:GameWindowSettings, native_wi
         
             vbo <- GL.GenBuffer()
             GL.BindBuffer (BufferTarget.ArrayBuffer, vbo)
-            GL.BufferData (BufferTarget.ArrayBuffer, ob_model.VerticesBufferSize, ob_model.Vertices, BufferUsageHint.StaticDraw)
+            GL.BufferData (BufferTarget.ArrayBuffer, ob_model.vertices.BufferSize, ob_model.vertices.ToInt(), BufferUsageHint.StaticDraw)
+            // GL.BufferData (BufferTarget.ArrayBuffer, ob_model.VerticesBufferSize, ob_model.Vertices, BufferUsageHint.StaticDraw)
             
             vao <- GL.GenVertexArray()
             GL.BindVertexArray(vao)
@@ -195,7 +198,8 @@ type TestGame(ob_model:Model, game_window_settings:GameWindowSettings, native_wi
 
             ebo <- GL.GenBuffer()
             GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo)
-            GL.BufferData(BufferTarget.ElementArrayBuffer, ob_model.IndicesBufferSize, ob_model.Indices, BufferUsageHint.StaticDraw)
+            GL.BufferData(BufferTarget.ElementArrayBuffer, ob_model.indices.BufferSize, ob_model.indices.ToInt(), BufferUsageHint.StaticDraw)
+            // GL.BufferData(BufferTarget.ElementArrayBuffer, ob_model.IndicesBufferSize, ob_model.Indices, BufferUsageHint.StaticDraw)
             
         camera <- Camera(Vector3.UnitZ * 3f, 800f / 600f)
         this.CursorState <- CursorState.Grabbed
@@ -224,7 +228,8 @@ type TestGame(ob_model:Model, game_window_settings:GameWindowSettings, native_wi
         shader.Use()
         shader.SetMatrix4("view", camera.GetViewMatrix())
         shader.SetMatrix4("projection", camera.GetProjectionMatrix())
-        shader.SetMatrix4("model", ob_model.Transform)
+        shader.SetMatrix4("model", Matrix4.CreateScale(10.f))
+        // shader.SetMatrix4("model", ob_model.Transform)
         shader.SetVector3("viewPos", camera.Position)
 
         shader.SetVector3("material.ambient", Vector3(1.0f, 0.5f, 0.31f))
@@ -283,7 +288,8 @@ type TestGame(ob_model:Model, game_window_settings:GameWindowSettings, native_wi
         let sensitivity = 0.2f
 
         match gltf with
-        | Some g when g.Root.animations <> null -> g.UpdateAnimation(ob_model, e.Time * 16.)
+        | Some g when g.Root.animations <> null -> g.UpdateAnimation_unmanaged(ob_model, e.Time * 16.)
+        // | Some g when g.Root.animations <> null -> g.UpdateAnimation(ob_model, e.Time * 16.)
         | None -> ()
         update ()
 
@@ -329,7 +335,7 @@ type TestGame(ob_model:Model, game_window_settings:GameWindowSettings, native_wi
 
 type [<Struct>] Vertex = {pos:Vector3; color:Vector4} 
 
-type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:Model, game_window_settings:GameWindowSettings, native_window_settings:NativeWindowSettings) =
+type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:ValueModel, game_window_settings:GameWindowSettings, native_window_settings:NativeWindowSettings) =
     inherit GameWindow(game_window_settings, native_window_settings)
     
     let mutable animation_active = true
@@ -341,8 +347,11 @@ type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:Model, game_win
     let mutable vbo1 = 0
     let mutable vao1 = 0
     let mutable shader1: Shader = null
-    let N = 50
-    let voxelized_volume = VoxelizedVolume<Vertex>(ob_model, N, (fun v -> {pos=v; color=Vector4(Vector3.Normalize(v), 1.f)}))
+    let N = 80
+    let voxels = Array3D.zeroCreate N N N
+    let voxels_particles = new NativeArray<float32>(N * N * N * 7)
+    let particles = new ValueModel(voxels_particles, new NativeArray<uint32>(10), [3;4])
+    // let voxelized_volume = VoxelizedVolume<Vertex>(ob_model, N, (fun v -> {pos=v; color=Vector4(Vector3.Normalize(v), 1.f)}))
 
     let mutable vbo2 = 0
     let mutable vao2 = 0
@@ -355,13 +364,17 @@ type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:Model, game_win
     let mutable last_pos = Vector2.Zero
     let mutable wireframe_on = false
 
+    do
+        Geometry.assign_particles_unmanaged ob_model particles voxels N 
+
     let load_particles () =
         shader1 <- new Shader("shaders/particles.vert", "shaders/particles.frag")
         shader1.Use()        
     
         vbo1 <- GL.GenBuffer()
         GL.BindBuffer (BufferTarget.ArrayBuffer, vbo1)
-        GL.BufferData (BufferTarget.ArrayBuffer, voxelized_volume.T_filled * sizeof<Vertex>, voxelized_volume.Values, BufferUsageHint.DynamicDraw)
+        GL.BufferData (BufferTarget.ArrayBuffer, particles.vertices.BufferSize, voxels_particles.ToInt(), BufferUsageHint.DynamicDraw)
+        // GL.BufferData (BufferTarget.ArrayBuffer, voxelized_volume.T_filled * sizeof<Vertex>, voxelized_volume.Values, BufferUsageHint.DynamicDraw)
         
         vao1 <- GL.GenVertexArray()
         GL.BindVertexArray(vao1)
@@ -376,7 +389,7 @@ type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:Model, game_win
     
         vbo2 <- GL.GenBuffer()
         GL.BindBuffer (BufferTarget.ArrayBuffer, vbo2)
-        GL.BufferData (BufferTarget.ArrayBuffer, ob_model.VerticesBufferSize, ob_model.Vertices, BufferUsageHint.StaticDraw)
+        GL.BufferData (BufferTarget.ArrayBuffer, ob_model.vertices.BufferSize, ob_model.vertices.ToInt(), BufferUsageHint.StaticDraw)
         
         vao2 <- GL.GenVertexArray()
         GL.BindVertexArray(vao2)
@@ -389,19 +402,21 @@ type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:Model, game_win
 
         ebo2 <- GL.GenBuffer()
         GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo2)
-        GL.BufferData(BufferTarget.ElementArrayBuffer, ob_model.IndicesBufferSize, ob_model.Indices, BufferUsageHint.StaticDraw)
+        GL.BufferData(BufferTarget.ElementArrayBuffer, ob_model.indices.BufferSize, ob_model.indices.ToInt(), BufferUsageHint.StaticDraw)
         
     let update_particles (e:FrameEventArgs) =
-        use buffer = fixed voxelized_volume.Values
-        let ptr = NativePtr.toVoidPtr buffer
-        let span = Span<float32>(ptr,voxelized_volume.T_filled * 7)
-        let (v_min,v_max) = Geometry.bounds ob_model.Vertices N ob_model.L
-        Geometry.assign_particles(v_min, v_max, voxelized_volume.VoxelArray, span, N, 7)
+        Geometry.assign_particles_unmanaged ob_model particles voxels N
+        // use buffer = fixed voxelized_volume.Values
+        // let ptr = NativePtr.toVoidPtr buffer
+        // let span = Span<float32>(ptr,voxelized_volume.T_filled * 7)
+        // let (v_min,v_max) = Geometry.bounds ob_model.Vertices N ob_model.L
+        // Geometry.assign_particles(v_min, v_max, voxelized_volume.VoxelArray, span, N, 7)
 
         shader1.Use()        
     
         GL.BindBuffer (BufferTarget.ArrayBuffer, vbo1)
-        GL.BufferData (BufferTarget.ArrayBuffer, voxelized_volume.T_filled * sizeof<Vertex>, voxelized_volume.Values, BufferUsageHint.DynamicDraw)
+        GL.BufferData (BufferTarget.ArrayBuffer, particles.vertices.BufferSize, voxels_particles.ToInt(), BufferUsageHint.DynamicDraw)
+        // GL.BufferData (BufferTarget.ArrayBuffer, voxelized_volume.T_filled * sizeof<Vertex>, voxelized_volume.Values, BufferUsageHint.DynamicDraw)
         
         GL.BindVertexArray(vao1)
         GL.EnableVertexAttribArray(0)
@@ -411,12 +426,14 @@ type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:Model, game_win
         
     let update_gltf (e:FrameEventArgs) =
         if gltf.IsSome && gltf.Value.Root.animations <> null then 
-            gltf.Value.UpdateAnimation(ob_model, e.Time * 16.)
+            gltf.Value.UpdateAnimation_unmanaged(ob_model, e.Time * 16.)
+            // gltf.Value.UpdateAnimation(ob_model, e.Time * 16.)
 
         shader2.Use()        
     
         GL.BindBuffer (BufferTarget.ArrayBuffer, vbo2)
-        GL.BufferData (BufferTarget.ArrayBuffer, ob_model.VerticesBufferSize, ob_model.Vertices, BufferUsageHint.StaticDraw)
+        GL.BufferData (BufferTarget.ArrayBuffer, ob_model.vertices.BufferSize, ob_model.vertices.ToInt(), BufferUsageHint.DynamicDraw)
+        // GL.BufferData (BufferTarget.ArrayBuffer, ob_model.VerticesBufferSize, ob_model.Vertices, BufferUsageHint.StaticDraw)
         
         GL.BindVertexArray(vao2)
         GL.EnableVertexAttribArray(0)
@@ -427,23 +444,27 @@ type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:Model, game_win
         GL.VertexAttribPointer(2, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, ob_model.Stride, ob_model.Attrib2)
 
         GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo2)
-        GL.BufferData(BufferTarget.ElementArrayBuffer, ob_model.IndicesBufferSize, ob_model.Indices, BufferUsageHint.StaticDraw)
+        GL.BufferData(BufferTarget.ElementArrayBuffer, ob_model.indices.BufferSize, ob_model.indices.ToInt(), BufferUsageHint.DynamicDraw)
+        // GL.BufferData(BufferTarget.ElementArrayBuffer, ob_model.IndicesBufferSize, ob_model.Indices, BufferUsageHint.StaticDraw)
     
 
     let render_particles () =
         shader1.Use()
         shader1.SetMatrix4("view", camera.GetViewMatrix())
         shader1.SetMatrix4("projection", camera.GetProjectionMatrix())
-        shader1.SetMatrix4("model", ob_model.Transform)
+        shader1.SetMatrix4("model", Matrix4.CreateScale(10.f))
+        // shader1.SetMatrix4("model", ob_model.Transform)
 
         GL.BindVertexArray(vao1)
-        GL.DrawArrays(PrimitiveType.Points, 0, voxelized_volume.T_filled * 7)
+        GL.DrawArrays(PrimitiveType.Points, 0, particles.vertices.BufferSize)
+        // GL.DrawArrays(PrimitiveType.Points, 0, voxelized_volume.T_filled * 7)
 
     let render_gltf () =
         shader2.Use()
         shader2.SetMatrix4("view", camera.GetViewMatrix())
         shader2.SetMatrix4("projection", camera.GetProjectionMatrix())
-        shader2.SetMatrix4("model", ob_model.Transform)
+        shader2.SetMatrix4("model", Matrix4.CreateScale(10.f))
+        // shader2.SetMatrix4("model", ob_model.Transform)
         shader2.SetVector3("viewPos", camera.Position)
 
         shader2.SetVector3("material.ambient", Vector3(1.0f, 0.5f, 0.31f))
@@ -479,7 +500,7 @@ type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:Model, game_win
         GL.DrawElements(PrimitiveType.Triangles, ob_model.Indices.Length, DrawElementsType.UnsignedInt, 0)
 
         
-    new(_gltf:option<GLTF.Deserializer>, model:Model) = new GltfWithParticles(_gltf, model, GameWindowSettings.Default, NativeWindowSettings(ClientSize = Vector2i(800, 600), Title = "opetk-window", Flags = ContextFlags.ForwardCompatible))
+    new(_gltf:option<GLTF.Deserializer>, model:ValueModel) = new GltfWithParticles(_gltf, model, GameWindowSettings.Default, NativeWindowSettings(ClientSize = Vector2i(800, 600), Title = "opetk-window", Flags = ContextFlags.ForwardCompatible))
     
     override this.OnLoad() =
         base.OnLoad()
@@ -555,4 +576,12 @@ type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:Model, game_win
 
     member this.OnClosed() =
         if gltf.IsSome then gltf.Value.Dispose()
+
+
+    override this.Dispose() =
+        base.Dispose()
+        ob_model.Dispose()
+        particles.Dispose()
+
+    
         

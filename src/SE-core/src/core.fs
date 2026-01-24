@@ -33,8 +33,10 @@ type Phase =
     | PostLoad
     | PreUpdate
     | OnUpdate
+    | OnRender
     | OnValidate
     | PostUpdate
+    | PostRender
     | PreStore
     | OnStore
     | OnExit
@@ -201,10 +203,20 @@ type Components<'T>(_ids:array<Entity>, _items:array<'T>) =
             ids[i] <- ids[i + 1]
             items[i] <- items[i + 1]
 
+    let backward_slice n l =
+        for i=n to count-l-1 do
+            ids[i] <- ids[i+l]
+            items[i] <- items[i+l]
+
     let forward n = 
         for i = count - 1 to n do
             ids[i + 1] <- ids[i]
             items[i + 1] <- items[i]
+
+    let forward_slice n l = 
+        for i = count-l-1 to n do
+            ids[i + l] <- ids[i]
+            items[i + l] <- items[i]
 
     let remove (id:Entity) =
         let mutable i = -1
@@ -215,6 +227,17 @@ type Components<'T>(_ids:array<Entity>, _items:array<'T>) =
             idx_prev <- -1
             id_prev <- 0x00u
             id_current <- 0x00u
+
+    let remove_slice (q:Entities) =
+        let mutable i = -1
+        if contains q[0] &i then
+            backward_slice i q.Count
+            count <- count - 1
+            idx_current <- -1
+            idx_prev <- -1
+            id_prev <- 0x00u
+            id_current <- 0x00u            
+        
 
     let clear () = count <- 0        
 
@@ -689,6 +712,10 @@ module Relation =
         let relations = from_storage<'T>()
         relations.Get(e, kind)
 
+    let getIfHas<'T> (kind:RelationKind) (e:Entity) :ValueOption<Entity> =
+        let relations = from_storage<'T>()
+        if relations.Has(e,kind) then ValueSome(relations.Get(e,kind)) else ValueNone
+
     /// gets relations of kind for the specified type 'T
     let relations<'T> (kind:RelationKind) =
         let relations = from_storage<'T>()
@@ -847,8 +874,10 @@ module Systems =
     let post_load   = ResizeArray<System>()
     let pre_update  = ResizeArray<System>()
     let on_update   = ResizeArray<System>()
+    let on_render   = ResizeArray<System>()
     let on_validate = ResizeArray<System>()
     let post_update = ResizeArray<System>()
+    let post_render = ResizeArray<System>()
     let pre_store   = ResizeArray<System>()
     let on_store    = ResizeArray<System>()
     let on_exit     = ResizeArray<System>()
@@ -858,20 +887,24 @@ module Systems =
     let add (phase:Phase) (types:Types) (fn:Entities -> unit) =
         // Queries.build types
         match phase with
-        | OnLoad -> on_load.Add (types,fn)
-        | PostLoad -> post_load.Add (types,fn)
+        | OnLoad    -> on_load.Add (types,fn)
+        | PostLoad  -> post_load.Add (types,fn)
         | PreUpdate -> pre_update.Add (types,fn)
         | Phase.OnUpdate -> on_update.Add (types,fn)
+        | OnRender   -> on_render.Add (types,fn)
         | OnValidate -> on_validate.Add (types,fn)
         | PostUpdate -> post_update.Add (types,fn)
-        | PreStore -> pre_update.Add (types,fn)
-        | OnStore -> on_store.Add (types,fn)
-        | OnExit -> on_exit.Add (types,fn)
-        | Free -> ()
+        | PostRender -> post_render.Add (types,fn)
+        | PreStore   -> pre_update.Add (types,fn)
+        | OnStore    -> on_store.Add (types,fn)
+        | OnExit     -> on_exit.Add (types,fn)
+        | Free       -> ()
 
 
     let quit () =
         running <- false
+
+    let isRunning () = running
 
     
     let progress () =
@@ -880,8 +913,10 @@ module Systems =
         while running do
             for (types,fn) in pre_update do fn (Queries.get types)  
             for (types,fn) in on_update do fn (Queries.get types)  
+            for (types,fn) in on_render do fn (Queries.get types)  
             for (types,fn) in on_validate do fn (Queries.get types)  
             for (types,fn) in post_update do fn (Queries.get types)  
+            for (types,fn) in post_render do fn (Queries.get types)  
         for (types,fn) in pre_store do fn (Queries.get types)  
         for (types,fn) in on_store do fn (Queries.get types)  
         for (types,fn) in on_exit do fn (Queries.get types)
@@ -894,8 +929,10 @@ module Systems =
         while running do
             for (types,fn) in pre_update do fn (Queries.get types)  
             for (types,fn) in on_update do fn (Queries.get types)  
+            for (types,fn) in on_render do fn (Queries.get types)  
             for (types,fn) in on_validate do fn (Queries.get types)  
             for (types,fn) in post_update do fn (Queries.get types)  
+            for (types,fn) in post_render do fn (Queries.get types)  
             // for debugging and testing keep it like that to prevent eternal loop
             // keep it a single loop
             if i <= 0 then quit ()

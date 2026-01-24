@@ -9,7 +9,9 @@
   <ItemGroup>
     <Compile Include="src/geometry.fs" />
     <Compile Include="src/common.fs" />
+    <Compile Include="src/window.fs" />
     <Compile Include="src/gltfloader.fs" />
+    <Compile Include="src/render_helpers.fs" />
     <Compile Include="src/testgame.fs" />
   </ItemGroup>
 
@@ -23,6 +25,10 @@
     <None Include="shaders/**" CopyToOutputDirectory="PreserveNewest" />
     <None Include="resources/**" CopyToOutputDirectory="PreserveNewest" />
     <None Include="models/**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SE-core\SE-core.fsproj" />
   </ItemGroup>
 
 </Project>
