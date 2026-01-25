@@ -10,6 +10,8 @@ open System.IO
 open SE.Renderer
 
 printfn "NativeArray.size: %d" (sizeof<NativeArray<float32>>)
+printfn "NativeArray2D.size: %d" (sizeof<NativeArray2D<float32>>)
+printfn "NativeArray3D.size: %d" (sizeof<NativeArray3D<float32>>)
 printfn "ValueModel.size: %d" (sizeof<ValueModel>)
 printfn "ValueAnimation.size: %d" (sizeof<ValueAnimation>)
 

@@ -1,4 +1,5 @@
 #r "../bin/Debug/net9.0/SE-renderer.dll"
+#r "../bin/Debug/net9.0/DearImGuiSample.dll"
 #r "nuget: OpenTK, 4.9.4"
 
 open System

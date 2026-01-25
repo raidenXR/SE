@@ -144,10 +144,24 @@ module Helpers =
         GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, ob_model.L, ob_model.Attrib0)
         GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, ob_model.L, ob_model.Attrib1)
 
+    let updatePrim_sliced (ob_model:ValueModel) (t_filled:int) (prim:GLPrim) =
+        GL.BindBuffer (BufferTarget.ArrayBuffer, prim.vbo)
+        GL.BufferData (BufferTarget.ArrayBuffer, ob_model.Stride * t_filled, ob_model.vertices.ToInt(), BufferUsageHint.DynamicDraw)
+        
+        GL.BindVertexArray(prim.vao)
+        GL.EnableVertexAttribArray(0)
+        GL.EnableVertexAttribArray(1)            
+        GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, ob_model.L, ob_model.Attrib0)
+        GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, ob_model.L, ob_model.Attrib1)
+
     let drawPrim (ob_model:ValueModel) (prim:GLPrim) =
         GL.BindVertexArray(prim.vao)
         GL.DrawArrays(PrimitiveType.Points, 0, ob_model.Vertices.Length)
 
+
+    let drawPrim_sliced (t_filled:int) (prim:GLPrim) =
+        GL.BindVertexArray(prim.vao)
+        GL.DrawArrays(PrimitiveType.Points, 0, t_filled)
 
     let update_animation_managed (gltf:GLTF.Deserializer, model:Model, v:byref<ValueAnimation>, time:float) =
         let root = gltf.Root

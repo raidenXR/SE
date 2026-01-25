@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="src/unsafe.fs" />
     <Compile Include="src/geometry.fs" />
     <Compile Include="src/common.fs" />
     <Compile Include="src/window.fs" />
@@ -29,6 +30,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SE-core\SE-core.fsproj" />
+    <ProjectReference Include="..\..\..\ImGui.NET_OpenTK_Sample\DeaImGuiSample\DearImGuiSample.csproj" />
   </ItemGroup>
 
 </Project>

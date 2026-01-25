@@ -1,5 +1,5 @@
 namespace SE.Renderer
-open ImGuiNET
+// open ImGuiNET
 open OpenTK.Graphics
 open OpenTK.Graphics.OpenGL4
 open OpenTK.Mathematics
@@ -60,7 +60,7 @@ type Particles(ob_model:Model, game_window_settings:GameWindowSettings, native_w
         shader.Use()
         shader.SetMatrix4("view", camera.GetViewMatrix())
         shader.SetMatrix4("projection", camera.GetProjectionMatrix())
-        shader.SetMatrix4("model", ob_model.Transform)
+        shader.SetMatrix4("model", Matrix4.CreateScale(10.f))
 
         GL.BindVertexArray(vao)
         GL.DrawArrays(PrimitiveType.Points, 0, ob_model.Vertices.Length)
@@ -204,10 +204,10 @@ type TestGame(ob_model:ValueModel, game_window_settings:GameWindowSettings, nati
         camera <- Camera(Vector3.UnitZ * 3f, 800f / 600f)
         this.CursorState <- CursorState.Grabbed
 
-        // let debug_proc = DebugProc(Window_DebugProc)
-        // GL.DebugMessageCallback(CubeGame.DebugProcCallback, IntPtr.Zero)
-        // GL.Enable(EnableCap.DebugOutput)
-        // GL.Enable(EnableCap.DebugOutputSynchronous)
+        let debug_proc = DebugProc(Window_DebugProc)
+        GL.DebugMessageCallback(Window_DebugProc, IntPtr.Zero)
+        GL.Enable(EnableCap.DebugOutput)
+        GL.Enable(EnableCap.DebugOutputSynchronous)
         // ignore (ImGui.CreateContext())
         // let io = ImGui.GetIO()
         // io.ConfigFlags <- io.ConfigFlags ||| ImGuiConfigFlags.NavEnableKeyboard ||| ImGuiConfigFlags.NavEnableGamepad ||| ImGuiConfigFlags.DockingEnable ||| ImGuiConfigFlags.ViewportsEnable

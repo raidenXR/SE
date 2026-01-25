@@ -2,7 +2,8 @@ namespace SE.Renderer
 // open ImGuiNET
 open OpenTK.Graphics
 open OpenTK.Graphics.OpenGL4
-open OpenTK.Mathematics
+// open OpenTK.Mathematics
+open System.Numerics
 open OpenTK.Windowing.Common
 open OpenTK.Windowing.Desktop
 open OpenTK.Windowing.GraphicsLibraryFramework
@@ -23,6 +24,8 @@ module S =
         for i in 1..(min n l.Length) do s <- s + l[i-1]
         s
 
+type [<Struct>] CVBounds = {x1:float32; y1:float32; z1:float32; x2:float32; y2:float32; z2:float32}
+
 type [<Struct>] Triangle = {n0:Vector3; n1:Vector3; n2:Vector3}
 
 type [<Struct>] GLMesh = {vao:int; vbo:int; ebo:int}
@@ -38,65 +41,6 @@ type [<Struct>] ValueAnimation = {
     mutable is_active: bool
     mutable dt: float
 }
-
-type [<Struct>] NativeArray<'T when 'T:unmanaged> =
-    val mutable private ptr: voidptr
-    val mutable private len: int
-    val mutable private is_disposed: bool
-
-    new(n:int) = {ptr = NativeMemory.AllocZeroed(unativeint(n * sizeof<'T>)); len = n; is_disposed = false}
-
-    new(source:array<'T>) =
-        let n = source.Length
-        let size = n * sizeof<'T>
-        use pta = fixed source
-        let ptr = NativeMemory.AllocZeroed(unativeint size)
-        System.Buffer.MemoryCopy(NativePtr.toVoidPtr pta, ptr, size, size)
-        {
-            ptr = ptr
-            len = n
-            is_disposed = false
-        }
-
-    /// Unfortunately slow copy from ResizeArray
-    new(source:ResizeArray<'T>) =
-        let n = source.Count
-        let size = n * sizeof<'T>
-        let ptr = NativeMemory.AllocZeroed(unativeint size)
-        let pta = NativePtr.ofVoidPtr<'T> ptr
-        for i in 0..n-1 do
-            NativePtr.set pta i source[i]
-        {
-            ptr = ptr
-            len = n
-            is_disposed = false
-        }
-
-    interface IDisposable with
-        member this.Dispose() =
-            if not this.is_disposed then
-                NativeMemory.Free(this.ptr)
-            this.is_disposed <- true
-
-    // member this.Item
-    //     with [<MethodImpl(MethodImplOptions.AggressiveInlining)>] get(idx) = NativePtr.get this.ptr idx
-    //     and [<MethodImpl(MethodImplOptions.AggressiveInlining)>] set(idx) (value) = NativePtr.set this.ptr idx value
-
-    member this.Length with get() = this.len
-
-    member this.BufferSize with get() = this.len * sizeof<'T>
-
-    member this.Ptr with get() = this.ptr
-
-    member this.ToInt() = this.ptr |> NativePtr.ofVoidPtr<'T> |> NativePtr.toNativeInt 
-
-    member this.Dispose() =
-        if not this.is_disposed then
-            NativeMemory.Free(this.ptr)
-        this.is_disposed <- true
-
-    member this.AsSpan() = Span<'T>(this.ptr, this.len)
-
 
 type [<Struct>] ValueModel =
     val mutable vertices: NativeArray<float32>
@@ -161,7 +105,7 @@ type Model(vertices: array<float32>, indices: array<uint32>, attribs:list<int>) 
         for i in 1..n do s <- s + attribs[i-1]
         s
     let f32 = sizeof<float32>
-    let mutable transform = Matrix4.Identity
+    // let mutable transform = Matrix4.Identity
 
     new(vertices:array<float32>, indices:array<uint32>) = Model(vertices, indices, [3;3;4])
 
@@ -183,7 +127,7 @@ type Model(vertices: array<float32>, indices: array<uint32>, attribs:list<int>) 
     member this.VerticesBufferSize with get() = vertices.Length * sizeof<float32>
     member this.IndicesBufferSize with get() = indices.Length * sizeof<uint32>
 
-    member this.Transform with get() = transform and set(value) = transform <- value
+    // member this.Transform with get() = transform and set(value) = transform <- value
 
 and MeshIterator(model:Model) =
     let vertices = model.Vertices
@@ -664,6 +608,21 @@ module Geometry =
         // (Vector3(x_min-dx, y_min-dy, z_min-dz), Vector3(x_max+dx, y_max+dy, z_max+dz))        
         (Vector3(x_min, y_min, z_min), Vector3(x_max, y_max, z_max))        
 
+    /// calculates the bounds of a ControlVolume (CV) with SIMD intrisics
+    let bounds_SIMD (vertices:ReadOnlySpan<float32>) L =
+        let vertices_count = vertices.Length / L
+        let p = &MemoryMarshal.GetReference(vertices)
+        let mutable v_min = Unsafe.As<float32,Vector3>(&p)
+        let mutable v_max = Unsafe.As<float32,Vector3>(&p)
+
+        for i in 0..vertices_count-1 do
+            let v = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, i*L))
+            v_min <- Vector3.Min(v, v_min)
+            v_max <- Vector3.Max(v, v_max)
+            
+        struct(v_min, v_max) 
+        
+
         
     let inline triangle_center (t:Triangle) =
         let tx_min = min (min t.n0.X t.n1.X) t.n2.X
@@ -674,6 +633,12 @@ module Geometry =
         let tz_max = max (max t.n0.Z t.n1.Z) t.n2.Z
 
         Vector3(tx_min + (tx_max - tx_min) / 2.f, ty_min + (ty_max - ty_min) / 2.f, tz_min + (tz_max - tz_min) / 2.f)
+        
+
+    let inline triangle_center_SIMD (a:inref<Vector3>) (b:inref<Vector3>) (c:inref<Vector3>) =
+        let v_min = Vector3.Min(a, Vector3.Min(b,c))
+        let v_max = Vector3.Max(a, Vector3.Max(b,c))
+        v_min + (v_max - v_min) / 2.f
         
 
     let assign_voxels_from_valuemodel (model:ValueModel) (n:int) (voxels:bool array3d) =
@@ -799,6 +764,47 @@ module Geometry =
         total_filled_voxels                 
 
 
+    /// creates a volume as voxels bool, where n is the resolution
+    let assign_voxels_SIMD (model:ValueModel) (N:int) (voxels:byref<NativeArray3D<bool>>) =
+        let indices_count = model.indices.Length / 3
+        let indices  = model.indices.Ptr |> NativePtr.ofVoidPtr<uint32>
+        let p = &MemoryMarshal.GetReference(model.Vertices)
+        let L = model.L
+        let struct(v_min,v_max) = bounds_SIMD (model.Vertices) L 
+        let dv = v_max - v_min
+        let n = float32 N
+        let mutable t_filled = 0
+
+        for i in 0..indices_count-1 do
+            let i0 = int32 (indices[3*i+0])
+            let i1 = int32 (indices[3*i+1])
+            let i2 = int32 (indices[3*i+2])
+
+            let v0 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i0))
+            let v1 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i1))
+            let v2 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i2))
+            
+            let v_center = triangle_center_SIMD &v0 &v1 &v2
+            let v_index = n * (v_center - v_min) / dv
+            let idx = Vector3.Clamp(v_index, Vector3.Zero, Vector3(n-1.f)) // normalize to [0..1] and convert to index [0..n]
+            
+            voxels[int32(idx.X), int32(idx.Y), int32(idx.Z)] <- true
+
+        // VECTORIZE THIS PART !!! OR NOT ... ??
+        let hn = if N % 2 <> 0 then N / 2 else N / 2 + 1
+        for ix in 0..N-1 do
+            for iy in 0..N-1 do       
+                for iz in 1..hn-1 do
+                    voxels[ix,iy,iz] <- voxels[ix,iy,iz-1] || voxels[ix,iy,iz]
+                    t_filled <- t_filled + if voxels[ix,iy,iz] then 1 else 0
+
+                for iz=N-2 downto hn do
+                    voxels[ix,iy,iz] <- voxels[ix,iy,iz+1] || voxels[ix,iy,iz]
+                    t_filled <- t_filled + if voxels[ix,iy,iz] then 1 else 0
+        
+        t_filled
+
+
     let as_voxels (model:Model) (n:int) =
         let voxels = Array3D.zeroCreate<bool> n n n
         let t_filled = assign_voxels model n voxels
@@ -840,6 +846,22 @@ module Geometry =
                         particles[i+5] <- (z - z_min) / (dz * float32(n))
                         particles[i+6] <- 1.f
                         i <- i + stride
+
+    let assign_particles_SIMD (v_min:Vector3, v_max:Vector3, voxels:inref<NativeArray3D<bool>>, particles:Span<float32>, N:int, L:int) =
+        let n = float32 N
+        let dv = (v_max - v_min) / n            
+        let p = &&MemoryMarshal.GetReference(particles)
+        let mutable i = 0
+        for ix in 0..N-1 do
+            for iy in 0..N-1 do
+                for iz in 0..N-1 do
+                    if voxels[ix,iy,iz] then
+                        let v = v_min + dv * Vector3(float32(ix), float32(iy), float32(iz))
+                        let c = (v - v_min) / (dv * n)
+                        Unsafe.Write<Vector3>(~~(p ++ i),v)
+                        Unsafe.Write<Vector4>(~~(p ++ (i+3)), Vector4(c,1.f))
+                        i <- i + L
+
 
     /// gets a float32 array ready to be rendered from the shader 7-stride
     let get_particles (v_min:Vector3) (v_max:Vector3) (voxels:bool array3d) t n stride =

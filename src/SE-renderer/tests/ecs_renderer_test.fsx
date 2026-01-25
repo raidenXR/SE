@@ -23,6 +23,7 @@ type HasParticles = struct end
 
 type [<Struct>] AnimationActive = {animation_active:bool; prev_key:bool}
 type [<Struct>] WireFrameActice = {wireframe_active:bool; prev_key:bool}
+type [<Struct>] SliceLen = {count:int}
 
 type [<Struct>] State = {
     mutable wireframe_on:bool
@@ -33,8 +34,9 @@ type [<Struct>] State = {
 let path = "../models/animated_object.gltf"
 let shaders = new System.Collections.Generic.Dictionary<string,Shader>()
 let gltf = new GLTF.Deserializer(path)
-let N = 80
-let voxels = Array3D.zeroCreate<bool> N N N
+let N = 100
+// let voxels = Array3D.zeroCreate<bool> N N N
+let mutable voxels = new NativeArray3D<bool>(N,N,N)
 let particles_array = new NativeArray<float32>(N * N * N * 7)
 
 let mutable camera: Camera = null
@@ -48,6 +50,7 @@ let mutable animation_prev = false
 
 system OnExit [] (fun _ ->
     gltf.Dispose()
+    voxels.Dispose()
 )
  
 
@@ -68,9 +71,12 @@ let load_geometry () =
     let mesh = Helpers.createMesh ob_model
 
     // create particles
-    let (v_min,v_max) = Geometry.bounds (vertices.AsSpan()) N ob_model.L
-    let t_filled = Geometry.assign_voxels_from_valuemodel ob_model N voxels
-    Geometry.assign_particles(v_min, v_max, voxels, particles_array.AsSpan(), N, 7)
+    // let (v_min,v_max) = Geometry.bounds (vertices.AsSpan()) N ob_model.L
+    // let t_filled = Geometry.assign_voxels_from_valuemodel ob_model N voxels
+    // Geometry.assign_particles(v_min, v_max, voxels, particles_array.AsSpan(), N, 7)
+    let struct(v_min,v_max) = Geometry.bounds_SIMD ob_model.Vertices ob_model.L
+    let t_filled = Geometry.assign_voxels_SIMD ob_model N &voxels
+    Geometry.assign_particles_SIMD(v_min,v_max, &voxels, particles_array.AsSpan(), N, 7)
     
     let pt_model = new ValueModel(particles_array, new NativeArray<uint32>(0), [3;4])
     let prim = Helpers.createPrim pt_model
@@ -103,6 +109,7 @@ let load_geometry () =
         entity()
         |> Entity.set pt_model
         |> Entity.set prim
+        |> Entity.set {count = t_filled}
         |> Entity.set (Matrix4.CreateScale(10.0f))
 
     // create relation between a and b -> paticles depend on model
@@ -162,6 +169,7 @@ let render_particles () =
     let models = Components.get<ValueModel>()
     let meshes = Components.get<GLPrim>()
     let transforms = Components.get<Matrix4>()
+    let counts = Components.get<SliceLen>()
     
     let particles = shaders["particles_shader"]
     particles.Use()
@@ -172,8 +180,9 @@ let render_particles () =
         let mesh = meshes[e]
         let model = models[e]
         let t = transforms[e]
+        let l = counts[e].count * 7
         particles.SetMatrix4("model", t)
-        Helpers.drawPrim model mesh
+        Helpers.drawPrim_sliced l mesh
 
 
 let render_geometry () =
@@ -188,6 +197,7 @@ let update_animation () =
     let models = Components.get<ValueModel>()
     let meshes = Components.get<GLMesh>()
     let prims  = Components.get<GLPrim>()
+    let counts = Components.get<SliceLen>()
 
     let time = window.ElapsedTime * 16.
         
@@ -204,11 +214,16 @@ let update_animation () =
         let particles_ent = Relation.get<HasParticles> Out model_ent
         let particles_model = models[particles_ent]
         let particles_prim  = prims[particles_ent]
+        let particels_len   = &counts[particles_ent]
         
-        let (v_min,v_max) = Geometry.bounds model.Vertices N model.L
-        let t_filled = Geometry.assign_voxels_from_valuemodel model N voxels
-        Geometry.assign_particles(v_min, v_max, voxels, particles_model.Vertices, N, 7)
-        Helpers.updatePrim particles_model particles_prim
+        // let (v_min,v_max) = Geometry.bounds model.Vertices N model.L
+        // let t_filled = Geometry.assign_voxels_from_valuemodel model N voxels
+        // Geometry.assign_particles(v_min, v_max, voxels, particles_model.Vertices, N, 7)
+        let struct(v_min,v_max) = Geometry.bounds_SIMD model.Vertices model.L
+        let t_filled = Geometry.assign_voxels_SIMD model N &voxels
+        particels_len <- {count = t_filled}
+        Geometry.assign_particles_SIMD(v_min,v_max, &voxels, particles_model.vertices.AsSpan(), N, 7)
+        Helpers.updatePrim_sliced particles_model t_filled particles_prim
 
 
 let update_keys () =
