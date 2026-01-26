@@ -2,6 +2,10 @@
 
 open System
 open System.Collections.Generic
+open System.Numerics
+open System.Runtime.CompilerServices
+open System.Runtime.InteropServices
+open FSharp.NativeInterop
 
 type Entity = uint32
 
@@ -455,7 +459,38 @@ type Relations<'T>() =
         count <- count + 1
 
     let clear () = count <- 0
+
+
+    let has_linear (ids:Span<Entity>) (id:Entity) (i:byref<int>) =
+        let count = ids.Length
+        let mutable j = 0
+        let mutable r = false
+        while j < count && not r do
+            r <- ids[j] = id
+            j <- if r then j else j + 1
+        i <- i + j
+        r
+
+    let has_linear_SIMD (ids:Span<Entity>) (id:Entity) (k:byref<int>) =
+        let size_t = Vector<Entity>.Count
+        let count = ids.Length / size_t
+        let p = &MemoryMarshal.GetReference(ids)
+        // let p = &ids.GetPinnableReference()
+
+        let d = Vector<Entity>(id)
+        let mutable i = 0
+        let mutable r = false
+        while i < count && not r do
+            let v = Unsafe.As<Entity,Vector<Entity>>(&Unsafe.Add(&p, i*size_t))
+            r <- Vector.EqualsAny(v,d)
+            i <- if r then i else i + 1
+        i <- i * size_t
+        // if i >= ids.Length then failwith $"ids.len: {ids.Length}, and idx: {i}"
+        match has_linear (ids.Slice(i)) id &i with
+        | true  -> k <- i; true
+        | false -> k <- -1; false 
         
+
 
     /// linear search for relation - caches the result
     let has (kind:RelationKind) (id:Entity) =
@@ -470,14 +505,11 @@ type Relations<'T>() =
                 cache (idx_current + 1)
                 true
             else
-                let mutable i = 0
-                let mutable r = false
-                while i < count && not r do
-                    if lhs_ids[i] = id then
-                        r <- true
-                        cache i
-                    i <- i + 1
-                r
+                let mutable i = -1
+                match has_linear_SIMD (Span(lhs_ids, 0, count)) id &i with
+                | true -> cache i; true
+                | false -> false
+        
         | In -> 
             if idx_current >= 1 && idx_current - 1 < count && rhs_ids[idx_current - 1] = id then
                 cache (idx_current - 1)
@@ -488,14 +520,11 @@ type Relations<'T>() =
                 cache (idx_current + 1)
                 true
             else
-                let mutable i = 0
-                let mutable r = false
-                while i < count && not r do
-                    if rhs_ids[i] = id then
-                        r <- true
-                        cache i
-                    i <- i + 1
-                r       
+                let mutable i = -1
+                match has_linear_SIMD (Span(rhs_ids, 0, count)) id &i with
+                | true -> cache i; true
+                | false -> false
+
 
     /// linear search for pairs - caches the result
     let contains (a:Entity) (b:Entity) =
