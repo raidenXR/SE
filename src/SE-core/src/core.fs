@@ -110,7 +110,14 @@ type Components<'T>(_ids:array<Entity>, _items:array<'T>) =
 
     let rec binary_search a b id (idx:byref<int>) =
         let m = a + (b - a) / 2
-        if id < ids[m] && (b - a > 4) then binary_search a m id &idx
+        if id = ids[m] then
+            idx <- m
+            idx_prev <- idx_current
+            idx_current <- m
+            id_prev <- id_current
+            id_current <- id
+            true
+        elif id < ids[m] && (b - a > 4) then binary_search a m id &idx
         elif id > ids[m] && (b - a > 4) then binary_search m b id &idx
         else linear_search a b id &idx
                 
@@ -241,11 +248,6 @@ type Components<'T>(_ids:array<Entity>, _items:array<'T>) =
 
     let clear () = count <- 0        
 
-    // let sliceEqual a b =
-    //     let va = System.Numerics.Vector<Entity>(a, 0)
-    //     let vb = System.Numerics.Vector<Entity>(b, 0)
-    //     let ln = System.Numerics.Vector<Entity>().Length
-    //     va = vb
 
     new() = new Components<'T>(null,null)
 
@@ -314,35 +316,18 @@ type Components<'T>(_ids:array<Entity>, _items:array<'T>) =
                 let mutable i = -1
                 match contains id &i with
                 | false -> 
+                    // #if DEBUG
                     let s = $"0x{id:X6}"
                     Console.ForegroundColor <- ConsoleColor.Red
                     printfn $"Component<{typeof<'T>.Name}> Does not contain this Entity: {s}"
                     // printEntities ()
                     Console.ForegroundColor <- ConsoleColor.White
                     failwith "components[idx] failed"
+                    // #endif
                     &items[0]
                 | true -> 
                     &items[i]
-        // and set(id:Entity) value = 
-        //     if id_current = id && idx_current > -1 then
-        //         items[idx_current] <- value
-        //     else
-        //         let mutable i = -1
-        //         match contains id &i with
-        //         | false -> 
-        //             let s = $"0x{id:X6}"
-        //             Console.ForegroundColor <- ConsoleColor.Red
-        //             printfn $"Component<{typeof<'T>.Name}> Does not contain this Entity: {s}"
-        //             printEntities ()
-        //             Console.ForegroundColor <- ConsoleColor.White
-        //             failwith ""
-        //         | true -> 
-        //             // id_prev <- id_current
-        //             // idx_prev <- idx_current
-        //             // id_current <- id
-        //             // idx_current <- i
-        //             items[i] <- value
-                    
+                   
 
     member this.Entities with get() = Entities(ids, 0, count)
 
@@ -354,29 +339,27 @@ type Components<'T>(_ids:array<Entity>, _items:array<'T>) =
 
     /// assumes the entities are continuous
     member this.AsSpan(q:Entities) =
-        if q.Count = 0 || count < q.Count  then Span(items,0,0)
+        if q.Count = 0 || count < q.Count then Span(items,0,0)
         else
             let q_count = q.Count
             let a = q[0]
             let n = q[q_count - 1]
-            let mutable i = 0
-            let mutable b = contains q[0] &i
-            if b then
-                let a_span = Span(ids, i, q_count)
-                let b_span = Span(q.Array, q.Offset, q.Count)
-                b <- a_span.SequenceEqual(b_span)
-            if b then Span(items, i, q_count) else Span(items, 0, 0)
+            let mutable i = -1
+            match contains q[0] &i with
+            | true -> if n = ids[i + q_count - 1] then Span(items,i,q_count) else Span(items,0,0)
+            | false -> Span(items,i,0)
+            // let mutable b = contains q[0] &i
+            // b <- b && (n = ids[i + q_count - 1])     // skip the SequenceEquals for performance,  NOT ROBUST !!!
+            // if b then
+            //     let a_span = Span(ids, i, q_count)
+            //     let b_span = Span(q.Array, q.Offset, q.Count)
+            //     b <- a_span.SequenceEqual(b_span)
+            // if b then Span(items, i, q_count) else Span(items, 0, 0)
 
 
 /// Components manager
 module Components =
     let mutable components_table = new Dictionary<Type,IComponents>()
-
-    // obsolete
-    // let assign<'T> () =
-    //     if not (components_table.ContainsKey(typedefof<'T>)) then
-    //         let pool = Components<'T>()
-    //         components_table.Add(typedefof<'T>, pool :> IComponents)        
 
     /// check is storage for 'T is available and return instance.
     /// If storage is not available, create a new storage for type 'T
@@ -426,9 +409,9 @@ module Components =
 
 type IRelations =
     abstract Count: int
-    abstract Remove: struct(Entity * Entity) -> unit
+    abstract Remove: Entity * Entity -> unit
     abstract Clear: unit -> unit
-    abstract Contains: struct(Entity * Entity) -> bool
+    abstract Contains: Entity * Entity -> bool
     abstract Has: RelationKind * Entity -> bool
     abstract Get: RelationKind * Entity -> Entity
 
@@ -436,178 +419,106 @@ type IRelations =
 type Relations<'T>() =
     let mutable count = 0
     let mutable capacity = 16
-    let mutable pairs = Array.zeroCreate<struct(Entity * Entity)> capacity
     let mutable items = Array.zeroCreate<'T> capacity
     let mutable lhs_ids = Array.zeroCreate<Entity> capacity
     let mutable rhs_ids = Array.zeroCreate<Entity> capacity
 
     // cache current
     let mutable idx_current = -1
-    let mutable lhs_current = 0x00u
-    let mutable rhs_current = 0x00u
-    let mutable pair_current = struct(0x00u,0x00u)
+    let mutable lhs_current: Entity = 0x00u
+    let mutable rhs_current: Entity = 0x00u
 
     // cache previous
     let mutable idx_prev = -1
-    let mutable lhs_prev = 0x00u
-    let mutable rhs_prev = 0x00u
-    let mutable pair_prev = struct(0x00u,0x00u)
+    let mutable lhs_prev: Entity = 0x00u
+    let mutable rhs_prev: Entity = 0x00u
 
     
     let cache (i:int) = 
         idx_prev <- idx_current
-        pair_prev <- pair_current
         lhs_prev <- lhs_current
         rhs_prev <- rhs_current
         idx_current <- i
-        pair_current <- pairs[i]
         lhs_current <- lhs_ids[i]
         rhs_current <- rhs_ids[i]
 
     let resize () =  
         capacity <- capacity * 2
-        Array.Resize(&pairs, capacity)
         Array.Resize(&items, capacity)
         Array.Resize(&rhs_ids, capacity)
         Array.Resize(&lhs_ids, capacity)
 
     let append (a:Entity) (b:Entity) (value:'T) =        
-        pairs[count] <- struct(a,b)
         items[count] <- value
         lhs_ids[count] <- a
         rhs_ids[count] <- b
         count <- count + 1
 
-    let remove (pair:struct(Entity * Entity)) =
-        let mutable i = 0
-        let mutable n = 0
-        let mutable r = false
-        if idx_current >= 1 && idx_current - 1 < count && pairs[idx_current - 1] = pair then
-            r <- true
-            n <- idx_current - 1
-            idx_current <- -1
-        elif pair_current = pair && idx_current >= 0 then        
-            r <- true
-            n <- idx_current
-            idx_current <- -1
-        elif idx_current >= 0 && idx_current + 1 < count && pairs[idx_current + 1] = pair then
-            r <- true
-            n <- idx_current + 1
-            idx_current <- -1
-        while i < count && not r do
-            if pairs[i] = pair then
-                r <- true
-                n <- i
-            i <- i + 1
-        if r then
-            pairs[n] <- pairs[count - 1]
-            items[n] <- items[count - 1]
-            lhs_ids[n] <- lhs_ids[count - 1]
-            rhs_ids[n] <- rhs_ids[count - 1]
-            count <- count - 1
-
     let clear () = count <- 0
         
-    let contains (a:Entity) (b:Entity) =
-        let mutable i = 0
-        let mutable r = false
-        let pair = struct(a,b)
-        if idx_current >= 1 && idx_current - 1 < count && pairs[idx_current - 1] = pair then
-            r <- true
-            cache (idx_current - 1)
-        elif pair_current = pair && idx_current >= 0 then
-            r <- true
-        elif idx_current >= 0 && idx_current + 1 < count && pairs[idx_current + 1] = pair then
-            r <- true
-            cache (idx_current + 1)
-        while i < count && not r do
-            if pairs[i] = struct(a,b) then
-                r <- true
-                cache i
-            i <- i + 1
-        r
 
+    /// linear search for relation - caches the result
     let has (kind:RelationKind) (id:Entity) =
-        let mutable i = 0
-        let mutable r = false
         match kind with
         | Out ->
             if idx_current >= 1 && idx_current - 1 < count && lhs_ids[idx_current - 1] = id then
-                r <- true            
                 cache (idx_current - 1)
-            elif lhs_current = id then r <- true
+                true            
+            elif lhs_current = id then
+                true
             elif idx_current >= 0 && idx_current + 1 < count && lhs_ids[idx_current + 1] = id then
-                r <- true
                 cache (idx_current + 1)
-            while i < count && not r do
-                let struct(lhs,rhs) = pairs[i]
-                if lhs = id then
-                    r <- true
-                    cache i
-                i <- i + 1
+                true
+            else
+                let mutable i = 0
+                let mutable r = false
+                while i < count && not r do
+                    if lhs_ids[i] = id then
+                        r <- true
+                        cache i
+                    i <- i + 1
+                r
         | In -> 
             if idx_current >= 1 && idx_current - 1 < count && rhs_ids[idx_current - 1] = id then
-                r <- true            
                 cache (idx_current - 1)
-            elif rhs_current = id then r <- true
+                true            
+            elif rhs_current = id then
+                true
             elif idx_current >= 0 && idx_current + 1 < count && rhs_ids[idx_current + 1] = id then
-                r <- true
                 cache (idx_current + 1)
-            while i < count && not r do
-                let struct(lhs,rhs) = pairs[i]
-                if rhs = id then
-                    r <- true
-                    cache i
-                i <- i + 1
-        r       
+                true
+            else
+                let mutable i = 0
+                let mutable r = false
+                while i < count && not r do
+                    if rhs_ids[i] = id then
+                        r <- true
+                        cache i
+                    i <- i + 1
+                r       
+
+    /// linear search for pairs - caches the result
+    let contains (a:Entity) (b:Entity) =
+        (has Out a) && (rhs_current = b)
+        
+    let remove (a:Entity) (b:Entity) =
+        if contains a b then
+            items[idx_current] <- items[count - 1]
+            lhs_ids[idx_current] <- lhs_ids[count - 1]
+            rhs_ids[idx_current] <- rhs_ids[count - 1]
+            count <- count - 1        
+            idx_current <- -1
 
     let get (kind:RelationKind) (id:Entity) =
-        let mutable i = 0
-        let mutable r = false
-        match kind with
-        | Out ->
-            let mutable e = rhs_ids[0]
-            if idx_current >= 1 && idx_current - 1 < count && lhs_ids[idx_current - 1] = id then
-                r <- true            
-                e <- rhs_ids[idx_current - 1]
-                cache (idx_current - 1)
-            elif lhs_current = id then 
-                r <- true
-                e <- rhs_current
-            elif idx_current >= 0 && idx_current + 1 < count && lhs_ids[idx_current + 1] = id then
-                r <- true
-                e <- rhs_ids[idx_current + 1]
-                cache (idx_current + 1)
-            while i < count && not r do
-                let struct(lhs,rhs) = pairs[i]
-                if lhs = id then
-                    r <- true
-                    e <- rhs                    
-                    cache i
-                i <- i + 1
-            if r then e else failwith $"0x{0:X6}: no Out relation exists"
-        | In ->
-            let mutable e = lhs_ids[0]
-            if idx_current >= 1 && idx_current - 1 < count && rhs_ids[idx_current - 1] = id then
-                r <- true            
-                e <- lhs_ids[idx_current - 1]
-                cache (idx_current - 1)
-            elif rhs_current = id then 
-                r <- true
-                e <- lhs_current
-            elif idx_current >= 0 && idx_current + 1 < count && rhs_ids[idx_current + 1] = id then
-                r <- true
-                e <- lhs_ids[idx_current + 1]
-                cache (idx_current + 1)
-            while i < count && not r do
-                let struct(lhs,rhs) = pairs[i]
-                if rhs = id then
-                    r <- true
-                    e <- lhs
-                    cache i
-                i <- i + 1
-            if r then e else failwith $"0x{0:X6}: no In relation exists"
-        
+        if has kind id then
+            match kind with
+            | Out -> rhs_current
+            | In  -> lhs_current
+        else
+            match kind with
+            | Out -> failwith $"0x{0:X6}: no Out relation exists"
+            | In  -> failwith $"0x{0:X6}: no In relation exists"            
+               
 
     let relations (kind:RelationKind) =
         match kind with
@@ -617,11 +528,9 @@ type Relations<'T>() =
 
     interface IRelations with
         member this.Count with get() = count
-        member this.Remove (pair:struct(Entity * Entity)) = remove pair        
+        member this.Remove (a:Entity, b:Entity) = remove a b        
         member this.Clear () = clear ()
-        member this.Contains (pair:struct(Entity * Entity)) =
-            let struct(lhs,rhs) = pair
-            contains lhs rhs        
+        member this.Contains (a:Entity, b:Entity) = contains a b        
         member this.Has (kind:RelationKind, e:Entity) = has kind e
         member this.Get (kind:RelationKind, e:Entity) = get kind e
         
@@ -631,40 +540,22 @@ type Relations<'T>() =
         append a b value
 
     member this.Count () = count
-    member this.Remove (relation:struct(Entity * Entity)) = remove relation
+    member this.Remove (a:Entity, b:Entity) = remove a b
     member this.Clear () = clear ()
     member this.Has (e:Entity, kind:RelationKind) = has kind e
     member this.Get (e:Entity, kind:RelationKind) = get kind e
     member this.Relations (kind:RelationKind) = relations kind
-    member this.Contains (pair:struct(Entity * Entity)) =
-        let struct(a,b) = pair
-        contains a b
+    member this.Contains (a:Entity, b:Entity) = contains a b        
         
-    member this.Item with get(pair:struct(Entity * Entity)) =
-        let mutable i = 0
-        let mutable r = false
-        let mutable v = items[0]        
-        if idx_current >= 1 && idx_current - 1 < count && pairs[idx_current - 1] = pair then
-            v <- items[idx_current - 1]
-            r <- true
-            cache (idx_current - 1)
-        elif pair_current = pair && idx_current >= 0 then
-            v <- items[idx_current]
-            r <- true
-        elif idx_current >= 0 && idx_current + 1 < count && pairs[idx_current + 1] = pair then
-            v <- items[idx_current + 1]
-            r <- true
-            cache (idx_current + 1)
-        while i < count && not r do
-            if pairs[i] = pair then 
-                r <- true
-                v <- items[i]
-            i <- i + 1
-        if r then v else failwith "relations does not contain this pair"
+    member this.Item with get(a:Entity, b:Entity) =
+        match contains a b with
+        | true  -> items[idx_current]            
+        | false -> failwith "relations does not contain this pair"
         
     member this.PrintContent () =
         for i in 0..count - 1 do
-            let struct(lhs,rhs) = pairs[i]
+            let lhs = lhs_ids[i]
+            let rhs = rhs_ids[i]
             let s_lhs = $"0x{lhs:X6}"
             let s_rhs = $"0x{rhs:X6}"
             printfn "(%s, %s): %A" s_lhs s_rhs items[i] 
@@ -689,18 +580,18 @@ module Relation =
     /// remove the relation of (a,b)
     let destroy<'T> (a:Entity) (b:Entity) = 
         let relations = from_storage<'T>()
-        relations.Remove (struct(a, b))
+        relations.Remove(a,b)
 
     /// checks whether a relation between a and b exists.
     /// Whether it is (a,b) or (b,a)
     let exists<'T> (a:Entity) (b:Entity) =
         let relations = from_storage<'T>()
-        relations.Contains(struct(a,b)) || relations.Contains(struct(b,a))
+        relations.Contains(a,b) || relations.Contains(b,a)
 
     /// returns the relation component for the pair (a,b) if it exists
     let value<'T> (a:Entity) (b:Entity) =
         let relations = from_storage<'T>()
-        relations[struct(a,b)]        
+        relations[a,b]        
 
     /// ckecks whether the entity is assigned in any relation of kind
     let has<'T> (kind:RelationKind) (e:Entity) =
@@ -712,7 +603,8 @@ module Relation =
         let relations = from_storage<'T>()
         relations.Get(e, kind)
 
-    let getIfHas<'T> (kind:RelationKind) (e:Entity) :ValueOption<Entity> =
+    /// returns the entity that the target entity has a relation with, otherwise return ValueNone
+    let getIf<'T> (kind:RelationKind) (e:Entity) :ValueOption<Entity> =
         let relations = from_storage<'T>()
         if relations.Has(e,kind) then ValueSome(relations.Get(e,kind)) else ValueNone
 

@@ -351,7 +351,6 @@ type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:ValueModel, gam
     let voxels = Array3D.zeroCreate N N N
     let voxels_particles = new NativeArray<float32>(N * N * N * 7)
     let particles = new ValueModel(voxels_particles, new NativeArray<uint32>(10), [3;4])
-    // let voxelized_volume = VoxelizedVolume<Vertex>(ob_model, N, (fun v -> {pos=v; color=Vector4(Vector3.Normalize(v), 1.f)}))
 
     let mutable vbo2 = 0
     let mutable vao2 = 0
@@ -374,7 +373,6 @@ type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:ValueModel, gam
         vbo1 <- GL.GenBuffer()
         GL.BindBuffer (BufferTarget.ArrayBuffer, vbo1)
         GL.BufferData (BufferTarget.ArrayBuffer, particles.vertices.BufferSize, voxels_particles.ToInt(), BufferUsageHint.DynamicDraw)
-        // GL.BufferData (BufferTarget.ArrayBuffer, voxelized_volume.T_filled * sizeof<Vertex>, voxelized_volume.Values, BufferUsageHint.DynamicDraw)
         
         vao1 <- GL.GenVertexArray()
         GL.BindVertexArray(vao1)
@@ -406,17 +404,11 @@ type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:ValueModel, gam
         
     let update_particles (e:FrameEventArgs) =
         Geometry.assign_particles_unmanaged ob_model particles voxels N
-        // use buffer = fixed voxelized_volume.Values
-        // let ptr = NativePtr.toVoidPtr buffer
-        // let span = Span<float32>(ptr,voxelized_volume.T_filled * 7)
-        // let (v_min,v_max) = Geometry.bounds ob_model.Vertices N ob_model.L
-        // Geometry.assign_particles(v_min, v_max, voxelized_volume.VoxelArray, span, N, 7)
 
         shader1.Use()        
     
         GL.BindBuffer (BufferTarget.ArrayBuffer, vbo1)
         GL.BufferData (BufferTarget.ArrayBuffer, particles.vertices.BufferSize, voxels_particles.ToInt(), BufferUsageHint.DynamicDraw)
-        // GL.BufferData (BufferTarget.ArrayBuffer, voxelized_volume.T_filled * sizeof<Vertex>, voxelized_volume.Values, BufferUsageHint.DynamicDraw)
         
         GL.BindVertexArray(vao1)
         GL.EnableVertexAttribArray(0)
@@ -433,7 +425,6 @@ type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:ValueModel, gam
     
         GL.BindBuffer (BufferTarget.ArrayBuffer, vbo2)
         GL.BufferData (BufferTarget.ArrayBuffer, ob_model.vertices.BufferSize, ob_model.vertices.ToInt(), BufferUsageHint.DynamicDraw)
-        // GL.BufferData (BufferTarget.ArrayBuffer, ob_model.VerticesBufferSize, ob_model.Vertices, BufferUsageHint.StaticDraw)
         
         GL.BindVertexArray(vao2)
         GL.EnableVertexAttribArray(0)
@@ -445,7 +436,6 @@ type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:ValueModel, gam
 
         GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo2)
         GL.BufferData(BufferTarget.ElementArrayBuffer, ob_model.indices.BufferSize, ob_model.indices.ToInt(), BufferUsageHint.DynamicDraw)
-        // GL.BufferData(BufferTarget.ElementArrayBuffer, ob_model.IndicesBufferSize, ob_model.Indices, BufferUsageHint.StaticDraw)
     
 
     let render_particles () =
@@ -453,18 +443,15 @@ type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:ValueModel, gam
         shader1.SetMatrix4("view", camera.GetViewMatrix())
         shader1.SetMatrix4("projection", camera.GetProjectionMatrix())
         shader1.SetMatrix4("model", Matrix4.CreateScale(10.f))
-        // shader1.SetMatrix4("model", ob_model.Transform)
 
         GL.BindVertexArray(vao1)
         GL.DrawArrays(PrimitiveType.Points, 0, particles.vertices.BufferSize)
-        // GL.DrawArrays(PrimitiveType.Points, 0, voxelized_volume.T_filled * 7)
 
     let render_gltf () =
         shader2.Use()
         shader2.SetMatrix4("view", camera.GetViewMatrix())
         shader2.SetMatrix4("projection", camera.GetProjectionMatrix())
         shader2.SetMatrix4("model", Matrix4.CreateScale(10.f))
-        // shader2.SetMatrix4("model", ob_model.Transform)
         shader2.SetVector3("viewPos", camera.Position)
 
         shader2.SetVector3("material.ambient", Vector3(1.0f, 0.5f, 0.31f))

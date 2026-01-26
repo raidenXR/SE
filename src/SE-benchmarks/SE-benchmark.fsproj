@@ -6,8 +6,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- <Compile Include="benchmarks/benchmarks.fs" /> -->
-    <Compile Include="benchmarks/renderer.fs" />
+    <Compile Include="benchmarks/benchmarks.fs" />
+    <!-- <Compile Include="benchmarks/renderer.fs" /> -->
   </ItemGroup>
 
   <ItemGroup>

@@ -14,6 +14,8 @@ type [<Struct>] Rotation = Rotation of float
 type [<Struct>] Temperature = Temperature of float
 type [<Struct>] TemperaturT = {temp:float}
 
+type [<Struct>] ValueFlag = struct end
+
 
 [<SimpleJob>]
 type Benchmarks() =
@@ -23,121 +25,175 @@ type Benchmarks() =
         Components.clearAll ()
         Entity.reset()
         for i in 0.._size - 1 do
-            entity ()
-            |> Entity.set (300.0)
-            |> Entity.set {temp = 300.0}
-            |> Entity.set (Temperature 300.0)
-            |> ignore
+            let A = 
+                entity()
+                |> Entity.set (300.0)
+                |> Entity.set {temp = 300.0}
+                |> Entity.set (Temperature 300.0)
+                |> Entity.add<ValueFlag>
+
+            let B =
+                entity()
+                |> Entity.set (Vector3.UnitY)
+
+            relate A B (ValueFlag())
 
     
     // [<Params(100, 1000)>]
     // member val size = 0 with get, set
-
+    
     [<Benchmark>]
-    member this.RegularArray () =
-        let r = Random.Shared.NextDouble() * 10.0 - 5.0
-        for i in 0..float_array.Length - 1 do
-            float_array[i] <- float_array[i] + r 
-
-    [<Benchmark>]
-    member this.ComputePrimitive () =
-        let r = Random.Shared.NextDouble() * 10.0 - 5.0
+    member this.components_as_span () =
         let components = Components.get<float>()
-        let entries = components.Entries
-        let entities = components.Entities
-        for e in entities do
-            let x = &components[e]
-            x <- x + r
-
+        let idx_a = Random.Shared.Next(0, components.Count / 2)
+        let idx_b = Random.Shared.Next(2 + components.Count / 2, components.Count - 6) + 5
+        let e = components.Entities.Slice(idx_a, idx_b - idx_a)
+        let s = components.AsSpan(e)
+        ()
+    
     [<Benchmark>]
-    member this.ComputePrimitiveiSequential () =
-        let r = Random.Shared.NextDouble() * 10.0 - 5.0
+    member this.components_contains () =
         let components = Components.get<float>()
-        let entries = components.Entries
-        let entities = components.Entities
-        for i in 0..entries.Length - 1 do
-            let x = &entries[i]
-            x <- x + r
+        let idx = Random.Shared.Next(components.Count)
+        let e  = components.Entities[idx]        
+        components.Contains(e) |> ignore        
+
+    [<Benchmark>]
+    member this.components_get_item () =
+        let components = Components.get<float>()
+        let idx = Random.Shared.Next(components.Count)
+        let e  = components.Entities[idx]        
+        components[e] |> ignore        
+
+    [<Benchmark>]
+    member this.relation_has_out () =
+        let components = Components.get<float>()
+        let idx = Random.Shared.Next(components.Count)
+        let e  = components.Entities[idx]
+        Relation.has<ValueFlag> Out e |> ignore
+        
+    [<Benchmark>]
+    member this.relation_has_in () =
+        let components = Components.get<Vector3>()
+        let idx = Random.Shared.Next(components.Count)
+        let e  = components.Entities[idx]
+        Relation.has<ValueFlag> In e |> ignore
+        
+    [<Benchmark>]
+    member this.relation_get_item () =
+        let components_a = Components.get<float>()
+        let components_b = Components.get<Vector3>()
+        let count = min components_a.Count components_b.Count
+        let idx = Random.Shared.Next(count)
+        let a  = components_a.Entities[idx]
+        let b  = components_b.Entities[idx]
+        Relation.value<ValueFlag> a b |> ignore
+        
+    // [<Benchmark>]
+    // member this.RegularArray () =
+    //     let r = Random.Shared.NextDouble() * 10.0 - 5.0
+    //     for i in 0..float_array.Length - 1 do
+    //         float_array[i] <- float_array[i] + r 
+
+    // [<Benchmark>]
+    // member this.ComputePrimitive () =
+    //     let r = Random.Shared.NextDouble() * 10.0 - 5.0
+    //     let components = Components.get<float>()
+    //     let entries = components.Entries
+    //     let entities = components.Entities
+    //     for e in entities do
+    //         let x = &components[e]
+    //         x <- x + r
+
+    // [<Benchmark>]
+    // member this.ComputePrimitiveiSequential () =
+    //     let r = Random.Shared.NextDouble() * 10.0 - 5.0
+    //     let components = Components.get<float>()
+    //     let entries = components.Entries
+    //     let entities = components.Entities
+    //     for i in 0..entries.Length - 1 do
+    //         let x = &entries[i]
+    //         x <- x + r
             
-    [<Benchmark>]
-    member this.ComputeRecord () =
-        let r = Random.Shared.NextDouble() * 10.0 - 5.0
-        let components = Components.get<TemperaturT>()
-        let entries = components.Entries
-        let entities = components.Entities
-        for e in entities do
-            let x = &components[e]
-            x <- {temp = x.temp + r}
+    // [<Benchmark>]
+    // member this.ComputeRecord () =
+    //     let r = Random.Shared.NextDouble() * 10.0 - 5.0
+    //     let components = Components.get<TemperaturT>()
+    //     let entries = components.Entries
+    //     let entities = components.Entities
+    //     for e in entities do
+    //         let x = &components[e]
+    //         x <- {temp = x.temp + r}
 
-    [<Benchmark>]
-    member this.ComputeRecordSequential () =
-        let r = Random.Shared.NextDouble() * 10.0 - 5.0
-        let components = Components.get<TemperaturT>()
-        let entries = components.Entries
-        let entities = components.Entities
-        for i in 0..entries.Length - 1 do
-            let x = &entries[i]
-            x <- {temp = x.temp + r}
+    // [<Benchmark>]
+    // member this.ComputeRecordSequential () =
+    //     let r = Random.Shared.NextDouble() * 10.0 - 5.0
+    //     let components = Components.get<TemperaturT>()
+    //     let entries = components.Entries
+    //     let entities = components.Entities
+    //     for i in 0..entries.Length - 1 do
+    //         let x = &entries[i]
+    //         x <- {temp = x.temp + r}
 
-    [<Benchmark>]
-    member this.ComputeDURead () =
-        let r = Random.Shared.NextDouble() * 10.0 - 5.0
-        let components = Components.get<Temperature>()
-        for e in components.Entities do
-            let (Temperature x) = components[e]
-            ignore x        
+    // [<Benchmark>]
+    // member this.ComputeDURead () =
+    //     let r = Random.Shared.NextDouble() * 10.0 - 5.0
+    //     let components = Components.get<Temperature>()
+    //     for e in components.Entities do
+    //         let (Temperature x) = components[e]
+    //         ignore x        
 
-    [<Benchmark>]
-    member this.ComputeDU () =
-        let r = Random.Shared.NextDouble() * 10.0 - 5.0
-        let components = Components.get<Temperature>()
-        let entries = components.Entries
-        let entities = components.Entities
-        for e in entities do
-            let x = &components[e]
-            let (Temperature t) = x
-            x <- Temperature (t + r)
+    // [<Benchmark>]
+    // member this.ComputeDU () =
+    //     let r = Random.Shared.NextDouble() * 10.0 - 5.0
+    //     let components = Components.get<Temperature>()
+    //     let entries = components.Entries
+    //     let entities = components.Entities
+    //     for e in entities do
+    //         let x = &components[e]
+    //         let (Temperature t) = x
+    //         x <- Temperature (t + r)
             
-    [<Benchmark>]
-    member this.ComputeDUSequential () =
-        let r = Random.Shared.NextDouble() * 10.0 - 5.0
-        let components = Components.get<Temperature>()
-        let entries = components.Entries
-        let entities = components.Entities
-        for i in 0..entries.Length - 1 do
-            let x = &entries[i]
-            let (Temperature t) = x
-            x <- Temperature (t + r)
+    // [<Benchmark>]
+    // member this.ComputeDUSequential () =
+    //     let r = Random.Shared.NextDouble() * 10.0 - 5.0
+    //     let components = Components.get<Temperature>()
+    //     let entries = components.Entries
+    //     let entities = components.Entities
+    //     for i in 0..entries.Length - 1 do
+    //         let x = &entries[i]
+    //         let (Temperature t) = x
+    //         x <- Temperature (t + r)
 
-    [<Benchmark>]
-    member this.CreateEntities () =
-        for i in 0.._size - 1 do
-            entity ()
-            |> Entity.add<Position>
-            |> Entity.add<Velocity>
-            |> Entity.add<Temperature>
-            |> ignore      
+    // [<Benchmark>]
+    // member this.CreateEntities () =
+    //     for i in 0.._size - 1 do
+    //         entity ()
+    //         |> Entity.add<Position>
+    //         |> Entity.add<Velocity>
+    //         |> Entity.add<Temperature>
+    //         |> ignore      
             
 
-    [<Benchmark>]
-    member this.SetEntities () =
-        for i in 0.._size - 1 do
-            entity ()
-            |> Entity.set (Position (Vector3(0.0f, 0.4f, 0.5f)))
-            |> Entity.set (Velocity (Vector3(5f, 6f, 7f)))
-            |> Entity.set (Temperature 90.0)
-            |> ignore      
+    // [<Benchmark>]
+    // member this.SetEntities () =
+    //     for i in 0.._size - 1 do
+    //         entity ()
+    //         |> Entity.set (Position (Vector3(0.0f, 0.4f, 0.5f)))
+    //         |> Entity.set (Velocity (Vector3(5f, 6f, 7f)))
+    //         |> Entity.set (Temperature 90.0)
+    //         |> ignore      
 
-    [<Benchmark>]
-    member this.RunContains () =
-        let tempT = Components.get<TemperaturT>()
-        let ids = tempT.Entities
-        let r = Random.Shared
-        for i in 0.._size - 1 do
-            let e = ids[r.Next(ids.Count - 1)]
-            let mutable k = -1
-            let b = tempT.Contains(e)
-            ()
+    // [<Benchmark>]
+    // member this.RunContains () =
+    //     let tempT = Components.get<TemperaturT>()
+    //     let ids = tempT.Entities
+    //     let r = Random.Shared
+    //     for i in 0.._size - 1 do
+    //         let e = ids[r.Next(ids.Count - 1)]
+    //         let mutable k = -1
+    //         let b = tempT.Contains(e)
+    //         ()
 
 
     // [<Benchmark>]
@@ -171,57 +227,7 @@ type Benchmarks() =
     //     let q2 = query [typeof<Rotation>]
     //     () // return unit
         
-[<SimpleJob>]
-type NumericsBenchmarks() =
-    let r = Random.Shared
-    let vv_0 = [|for i in 1..10 -> 0.5 + r.NextDouble()|]
-    let mv_0 = [|for i in 1..100 -> 0.5 + r.NextDouble()|]
-    let vv_1 = [|for i in 1..20 -> 0.5 + r.NextDouble()|]
-    let mv_1 = [|for i in 1..400 -> 0.5 + r.NextDouble()|]
-    let vv_2 = [|for i in 1..30 -> 0.5 + r.NextDouble()|]
-    let mv_2 = [|for i in 1..900 -> 0.5 + r.NextDouble()|]
-    let vv_4 = [|for i in 1..100 -> 0.5 + r.NextDouble()|]
-    let mv_4 = [|for i in 1..10000 -> 0.5 + r.NextDouble()|]
-    let vv_5 = [|for i in 1..1000 -> 0.5 + r.NextDouble()|]
-    let mv_5 = [|for i in 1..1000000 -> 0.5 + r.NextDouble()|]
-
-    [<Benchmark>]
-    member this.GE100 () =
-        use m = new Matrix(10,10,mv_0)
-        use v = new Vector(vv_0)
-        use x = Solvers.GaussElimination m v
-        ignore x
-        
-    [<Benchmark>]
-    member this.GE400 () =
-        use m = new Matrix(20,20,mv_1)
-        use v = new Vector(vv_1)
-        use x = Solvers.GaussElimination m v
-        ignore x
-
-
-    [<Benchmark>]
-    member this.GE900 () =
-        use m = new Matrix(30,30,mv_2)
-        use v = new Vector(vv_2)
-        use x = Solvers.GaussElimination m v
-        ignore x
-
-    [<Benchmark>]
-    member this.GE10000 () =
-        use m = new Matrix(100,100,mv_4)
-        use v = new Vector(vv_4)
-        use x = Solvers.GaussElimination m v
-        ignore x
-
-    [<Benchmark>]
-    member this.GE1000000 () =
-        use m = new Matrix(1000,1000,mv_5)
-        use v = new Vector(vv_5)
-        use x = Solvers.GaussElimination m v
-        ignore x
-
-BenchmarkRunner.Run<NumericsBenchmarks>() |> ignore
+BenchmarkRunner.Run<Benchmarks>() |> ignore
 
 
 

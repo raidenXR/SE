@@ -24,8 +24,6 @@ module S =
         for i in 1..(min n l.Length) do s <- s + l[i-1]
         s
 
-type [<Struct>] CVBounds = {x1:float32; y1:float32; z1:float32; x2:float32; y2:float32; z2:float32}
-
 type [<Struct>] Triangle = {n0:Vector3; n1:Vector3; n2:Vector3}
 
 type [<Struct>] GLMesh = {vao:int; vbo:int; ebo:int}
@@ -52,7 +50,6 @@ type [<Struct>] ValueModel =
     val mutable private attrib2: int    
     val mutable private attrib3: int    
     val mutable private attrib4: int    
-    // val mutable private transform: Matrix4
     val mutable private is_disposed: bool
 
     new(vertices:NativeArray<float32>, indices:NativeArray<uint32>, attribs:list<int>) =
@@ -87,10 +84,6 @@ type [<Struct>] ValueModel =
     member this.Attrib2 with get() = this.attrib2
     member this.Attrib3 with get() = this.attrib3
     member this.Attrib4 with get() = this.attrib4
-    // member this.VerticesBufferSize with get() = this.vertices.Length * sizeof<float32>
-    // member this.IndicesBufferSize with get() = this.indices.Length * sizeof<uint32>
-
-    // member this.Transform with get() = this.transform and set(value) = this.transform <- value
     
     member this.Dispose() =
         if not this.is_disposed then
@@ -105,7 +98,6 @@ type Model(vertices: array<float32>, indices: array<uint32>, attribs:list<int>) 
         for i in 1..n do s <- s + attribs[i-1]
         s
     let f32 = sizeof<float32>
-    // let mutable transform = Matrix4.Identity
 
     new(vertices:array<float32>, indices:array<uint32>) = Model(vertices, indices, [3;3;4])
 
@@ -127,7 +119,6 @@ type Model(vertices: array<float32>, indices: array<uint32>, attribs:list<int>) 
     member this.VerticesBufferSize with get() = vertices.Length * sizeof<float32>
     member this.IndicesBufferSize with get() = indices.Length * sizeof<uint32>
 
-    // member this.Transform with get() = transform and set(value) = transform <- value
 
 and MeshIterator(model:Model) =
     let vertices = model.Vertices
@@ -347,7 +338,7 @@ module Geometry =
         let indices = cube_indices
         (vertices,indices)
 
-    let cube_unmanged () =
+    let cube_unmanaged () =
         let vertices = new NativeArray<float32>(cube_positions.Length + cube_normals.Length + cube_colors.Length)
         let v = vertices.AsSpan()
         let vertices_count = cube_positions.Length / 3
@@ -874,102 +865,5 @@ module Geometry =
         assign_particles(v_min, v_max, voxels, particles.Vertices, N, particles.L)          
 
 
-type VoxelizedVolume<'T>(model:Model, resolution:int, f:Vector3 -> 'T) as this =
-    let n = resolution
-    let (voxels,t) = Geometry.as_voxels model n 
-    let (V_min,V_max) = Geometry.bounds model.Vertices resolution model.L
-    let offsets = Dictionary<int,int>(n*n)
-    // let values = ResizeArray<'T>(t)
-    let values = Array.zeroCreate<'T> (n*n*n)
-    let mutable t_filled = t
-    let mutable v_min = V_min
-    let mutable v_max = V_max
 
-    let reset () =
-        offsets.Clear()
-        for ix in 0..n-1 do
-            for iy in 0..n-1 do
-                for iz in 0..n-1 do
-                    voxels[ix,iy,iz] <- false
-        let (V_min,V_max) = Geometry.bounds model.Vertices resolution model.L
-        v_min <- V_min
-        v_max <- V_max
-
-    let init () =
-        reset ()
-        ignore (Geometry.assign_voxels model n voxels)
-        t_filled <- 0 
-        let mutable offset = 0
-        for ix in 0..n-1 do
-            for iy in 0..n-1 do
-                let mutable b = false
-                for iz in 0..n-1 do
-                    if not voxels[ix,iy,iz] then
-                        offset <- offset + 1
-                    if voxels[ix,iy,iz] then
-                        if not b then 
-                            let key = (iy <<< 16) ||| ix
-                            offsets.Add(key, offset)
-                            b <- true
-                        // if t_filled >= values.Count then
-                        //     values.Add((f (this.Point(ix,iy,iz))))
-                        // else
-                        //     values[t_filled] <- f (this.Point(ix,iy,iz))
-                        let idx = t_filled
-                        values[idx] <- f (this.Point(ix,iy,iz))
-                        t_filled <- t_filled + 1
-
-                                          
-    member this.VoxelArray with get() = voxels
-
-    member this.Values with get() = values
-
-    member this.T_filled with get() = t_filled
-
-    member this.Voxel(ix:int, iy:int, iz:int) = voxels[ix,iy,iz]
-    
-    member this.Point(ix:int, iy:int, iz:int) =
-        let x_min = v_min.X
-        let y_min = v_min.Y
-        let z_min = v_min.Z
-        let x_max = v_max.X
-        let y_max = v_max.Y
-        let z_max = v_max.Z
-        let dx = (x_max - x_min) / float32(n)
-        let dy = (y_max - y_min) / float32(n)
-        let dz = (z_max - z_min) / float32(n)
-        let x = x_min + dx * float32(ix)
-        let y = y_min + dy * float32(iy)
-        let z = z_min + dz * float32(iz)
-        Vector3(x,y,z)        
-
-    member this.Value(ix:int, iy:int, iz:int) =
-        if not voxels[ix,iy,iz] then failwith "this index is false in voxels"
-        // let key = (iy <<< 16) ||| ix
-        // let idx = n*n*ix + n*iy + iz - offsets[key]
-        let idx = n*n*ix + n*iy + iz
-        values[idx]
-
-    member this.Recompute() =
-        let x_min = v_min.X
-        let y_min = v_min.Y
-        let z_min = v_min.Z
-        let x_max = v_max.X
-        let y_max = v_max.Y
-        let z_max = v_max.Z
-        let dx = (x_max - x_min) / float32(n)
-        let dy = (y_max - y_min) / float32(n)
-        let dz = (z_max - z_min) / float32(n)
-        t_filled <- Geometry.assign_voxels model n voxels        
-
-        let mutable idx = 0
-        for ix in 0..n-1 do
-            for iy in 0..n-1 do
-                for iz in 0..n-1 do
-                    if voxels[ix,iy,iz] then
-                        let x = x_min + dx * float32(ix)
-                        let y = y_min + dy * float32(iy)
-                        let z = z_min + dz * float32(iz)
-                        values[idx] <- f(Vector3(x,y,z))
-                        idx <- idx + 1
 
