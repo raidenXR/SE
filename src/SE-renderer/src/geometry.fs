@@ -34,9 +34,9 @@ type [<Struct>] ValueAnimation = {
     /// the index to the animation or GLTF.Root.animations array
     idx: int
     /// the curretn key-frame used on the animation
-    mutable kf: int
     mutable is_reversed: bool
     mutable is_active: bool
+    mutable is_looped: bool
     mutable dt: float
 }
 
@@ -758,10 +758,11 @@ module Geometry =
     /// creates a volume as voxels bool, where n is the resolution
     let assign_voxels_SIMD (model:ValueModel) (N:int) (voxels:byref<NativeArray3D<bool>>) =
         let indices_count = model.indices.Length / 3
-        let indices  = model.indices.Ptr |> NativePtr.ofVoidPtr<uint32>
-        let p = &MemoryMarshal.GetReference(model.Vertices)
+        let indices  = model.Indices
+        let vertices = model.Vertices
+        let p = &MemoryMarshal.GetReference(vertices)
         let L = model.L
-        let struct(v_min,v_max) = bounds_SIMD (model.Vertices) L 
+        let struct(v_min,v_max) = bounds_SIMD vertices L 
         let dv = v_max - v_min
         let n = float32 N
         let mutable t_filled = 0
@@ -782,7 +783,8 @@ module Geometry =
             voxels[int32(idx.X), int32(idx.Y), int32(idx.Z)] <- true
 
         // VECTORIZE THIS PART !!! OR NOT ... ??
-        let hn = if N % 2 <> 0 then N / 2 else N / 2 + 1
+        // let hn = if N % 2 <> 0 then N / 2 else N / 2 + 1
+        let hn = N / 2
         for ix in 0..N-1 do
             for iy in 0..N-1 do       
                 for iz in 1..hn-1 do

@@ -2,11 +2,11 @@ namespace SE.Renderer
 // open ImGuiNET
 open OpenTK.Graphics
 open OpenTK.Graphics.OpenGL4
-open OpenTK.Mathematics
 open OpenTK.Windowing.Common
 open OpenTK.Windowing.Desktop
 open OpenTK.Windowing.GraphicsLibraryFramework
 open System
+open System.Numerics
 open System.Collections.Generic
 open System.ComponentModel
 open System.Diagnostics
@@ -163,132 +163,113 @@ module Helpers =
         GL.BindVertexArray(prim.vao)
         GL.DrawArrays(PrimitiveType.Points, 0, t_filled)
 
-    let update_animation_managed (gltf:GLTF.Deserializer, model:Model, v:byref<ValueAnimation>, time:float) =
+
+    let default_color = [|0.53f; 0.55f; 0.53f; 1.0f|]
+
+    let update_animation (gltf:GLTF.Deserializer, model:ValueModel, v_animation:byref<ValueAnimation>, time:float) =
         let root = gltf.Root
         let vertices = model.Vertices
         let indices  = model.Indices
-        if abs(v.dt - time) > 200 then v.is_reversed <- not v.is_reversed
-        v.dt <- if abs(v.dt - time) > 200 then v.dt - 200. else v.dt + time
-        v.kf <- if v.is_reversed then int v.dt else int (200. - v.dt)
+        let p = &MemoryMarshal.GetReference(vertices)
+        let ptr = &&p
+        let L = model.L
+
+        let mutable _t = Matrix4x4.Identity
+        let mutable _r = Matrix4x4.Identity
+        let mutable _s = Matrix4x4.Identity
         
-        let animation = root.animations[v.idx]
-        let mutable t = System.Numerics.Matrix4x4.Identity
-        let mutable r = System.Numerics.Matrix4x4.Identity
-        let mutable s = System.Numerics.Matrix4x4.Identity
+        let animation = root.animations[v_animation.idx]
+
         for channel in animation.channels do
             let i_accessor = root.accessors[animation.samplers[channel.sampler].input]
             let o_accessor = root.accessors[animation.samplers[channel.sampler].output]
             let i_bv = root.bufferViews[i_accessor.bufferView]
             let o_bv = root.bufferViews[o_accessor.bufferView]
             let i_span = gltf.AsSpan<float32>(i_bv.byteOffset + i_accessor.byteOffset, i_accessor.count)
-            if v.kf > o_accessor.count - 1 then v.kf <- 0
+            let t_first = float(i_span[0])
+            let t_last  = float(i_span[i_span.Length - 1])
 
+            v_animation.dt <- v_animation.dt + if v_animation.is_reversed then -time else time
+
+            if v_animation.is_looped then
+                if v_animation.dt > t_last then
+                    v_animation.dt <- t_last                
+                    v_animation.is_reversed <- not v_animation.is_reversed
+                
+                elif v_animation.dt < t_first then
+                    v_animation.dt <- t_first
+                    v_animation.is_reversed <- not v_animation.is_reversed           
+            
+            let dt = float32(v_animation.dt)
+            let mutable kf = 0  // key_frame  and i_span == time_span
+            let interpolation_value =
+                let mutable r = false
+                while not r do
+                    r <- (i_span[kf] <= dt && dt <= i_span[kf+1]) || (kf + 1 >= i_span.Length - 1)
+                    kf <- if r then kf else kf + 1                
+                (dt - i_span[kf]) / (i_span[kf+1] - i_span[kf])                 
+            
             match channel.target.path with
             | "translation" ->
-                let o_span = gltf.AsSpan<System.Numerics.Vector3>(o_bv.byteOffset + o_accessor.byteOffset, o_accessor.count) 
-                t <- System.Numerics.Matrix4x4.CreateTranslation(o_span[v.kf])
+                let o_span = gltf.AsSpan<Vector3>(o_bv.byteOffset + o_accessor.byteOffset, o_accessor.count) 
+                let t = o_span[kf] + interpolation_value * (o_span[kf+1] - o_span[kf])
+                _t <- Matrix4x4.CreateTranslation(t)
             | "rotation" ->
-                let o_span = gltf.AsSpan<System.Numerics.Quaternion>(o_bv.byteOffset + o_accessor.byteOffset, o_accessor.count) 
-                r <- System.Numerics.Matrix4x4.CreateFromQuaternion(o_span[v.kf])
+                let o_span = gltf.AsSpan<Quaternion>(o_bv.byteOffset + o_accessor.byteOffset, o_accessor.count) 
+                let r = o_span[kf] + Quaternion.Multiply(o_span[kf+1] - o_span[kf], interpolation_value)
+                _r <- Matrix4x4.CreateFromQuaternion(r)
             | "scale" ->
-                let o_span = gltf.AsSpan<System.Numerics.Vector3>(o_bv.byteOffset + o_accessor.byteOffset, o_accessor.count) 
-                s <- System.Numerics.Matrix4x4.CreateScale(o_span[v.kf])
+                let o_span = gltf.AsSpan<Vector3>(o_bv.byteOffset + o_accessor.byteOffset, o_accessor.count) 
+                let s = o_span[kf] + interpolation_value * (o_span[kf+1] - o_span[kf])
+                _s <- Matrix4x4.CreateScale(s)
             | _ -> failwith $"{channel.target.path} is not implemented"
 
-            let m_transform = t * r * s
-
+            let m_transform = _t * _r * _s
             let mesh = root.meshes[root.nodes[channel.target.node].mesh]
+
             let mutable pn = 0
             for primitive in mesh.primitives do
                 let material_color = 
-                    if root.materials <> null then
-                        let material = root.materials[primitive.material]
-                        material.pbrMetallicRoughness.baseColorFactor
-                    else
-                        [|0.53f; 0.55f; 0.53f; 1.0f|]
+                    match root.materials with
+                    | null -> default_color 
+                    | _ -> root.materials[primitive.material].pbrMetallicRoughness.baseColorFactor
                 let p_accessor = root.accessors[primitive.attributes.POSITION]
                 let n_accessor = root.accessors[primitive.attributes.NORMAL]
                 let i_accessor = root.accessors[primitive.indices]
                 let p_bv = root.bufferViews[p_accessor.bufferView]
-                let n_bv = root.bufferViews[n_accessor.bufferView]
-                let i_bv = root.bufferViews[i_accessor.bufferView]
-                let p_span = gltf.AsSpan<System.Numerics.Vector3>(p_bv.byteOffset + p_accessor.byteOffset, p_accessor.count)
-                let n_span = gltf.AsSpan<System.Numerics.Vector3>(n_bv.byteOffset + n_accessor.byteOffset, n_accessor.count)
-                let i_span = gltf.AsSpan<uint16>(i_bv.byteOffset + i_accessor.byteOffset, i_accessor.count)
+                let p_span = gltf.AsSpan<Vector3>(p_bv.byteOffset + p_accessor.byteOffset, p_accessor.count)
                 let vertices_count = p_accessor.count
 
                 let L = model.L
                 for i in 0..vertices_count - 1 do
-                    let p = System.Numerics.Vector3.Transform(p_span[i], m_transform)
-                    vertices[pn+0] <- p.X
-                    vertices[pn+1] <- p.Y
-                    vertices[pn+2] <- p.Z                    
+                    let v_transformed = Vector3.Transform(p_span[i], m_transform)
+                    Unsafe.Write<Vector3>(~~(ptr ++ pn), v_transformed)
                     pn <- pn + L
 
-
-
-    let update_animation (gltf:GLTF.Deserializer, model:ValueModel, v:byref<ValueAnimation>, time:float) =
-        let root = gltf.Root
-        let vertices = model.Vertices
-        let indices  = model.Indices
-        if abs(v.dt - time) > 200 then v.is_reversed <- not v.is_reversed
-        v.dt <- if abs(v.dt - time) > 200 then v.dt - 200. else v.dt + time
-        v.kf <- if v.is_reversed then int v.dt else int (200. - v.dt)
+        // recompute the normals
+        let v_offset = sizeof<Vector3> / sizeof<float32>
+        let indices_count = indices.Length / 3
+        for i in 0..indices_count - 1 do
+            let i0 = int32 (indices[3*i+0])
+            let i1 = int32 (indices[3*i+1])
+            let i2 = int32 (indices[3*i+2])
         
-        let animation = root.animations[v.idx]
-        let mutable t = System.Numerics.Matrix4x4.Identity
-        let mutable r = System.Numerics.Matrix4x4.Identity
-        let mutable s = System.Numerics.Matrix4x4.Identity
-        for channel in animation.channels do
-            let i_accessor = root.accessors[animation.samplers[channel.sampler].input]
-            let o_accessor = root.accessors[animation.samplers[channel.sampler].output]
-            let i_bv = root.bufferViews[i_accessor.bufferView]
-            let o_bv = root.bufferViews[o_accessor.bufferView]
-            let i_span = gltf.AsSpan<float32>(i_bv.byteOffset + i_accessor.byteOffset, i_accessor.count)
-            v.kf <- if v.kf < 0 then 0 else v.kf
-            v.kf <- if v.kf > o_accessor.count - 1 then 0 else v.kf
+            let v0 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i0))
+            let v1 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i1))
+            let v2 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i2))
 
-            match channel.target.path with
-            | "translation" ->
-                let o_span = gltf.AsSpan<System.Numerics.Vector3>(o_bv.byteOffset + o_accessor.byteOffset, o_accessor.count) 
-                t <- System.Numerics.Matrix4x4.CreateTranslation(o_span[v.kf])
-            | "rotation" ->
-                let o_span = gltf.AsSpan<System.Numerics.Quaternion>(o_bv.byteOffset + o_accessor.byteOffset, o_accessor.count) 
-                r <- System.Numerics.Matrix4x4.CreateFromQuaternion(o_span[v.kf])
-            | "scale" ->
-                let o_span = gltf.AsSpan<System.Numerics.Vector3>(o_bv.byteOffset + o_accessor.byteOffset, o_accessor.count) 
-                s <- System.Numerics.Matrix4x4.CreateScale(o_span[v.kf])
-            | _ -> failwith $"{channel.target.path} is not implemented"
+            let e0 = v1 - v0
+            let e1 = v2 - v0
+            let face_normal = Vector3.Cross(e0, e1)
+        
+            Unsafe.Write<Vector3>(~~(ptr ++ (L*i0 + v_offset)), face_normal + Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i0 + v_offset)))
+            Unsafe.Write<Vector3>(~~(ptr ++ (L*i1 + v_offset)), face_normal + Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i1 + v_offset)))
+            Unsafe.Write<Vector3>(~~(ptr ++ (L*i2 + v_offset)), face_normal + Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i2 + v_offset)))
 
-            let m_transform = t * r * s
+        let vertices_count = vertices.Length / L
+        for i in 0..vertices_count - 1 do
+            let normal = Vector3.Normalize(Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i + v_offset)))
+            Unsafe.Write<Vector3>(~~(ptr ++ (L*i + v_offset)), normal)
 
-            let mesh = root.meshes[root.nodes[channel.target.node].mesh]
-            let mutable pn = 0
-            for primitive in mesh.primitives do
-                let material_color = 
-                    if root.materials <> null then
-                        let material = root.materials[primitive.material]
-                        material.pbrMetallicRoughness.baseColorFactor
-                    else
-                        [|0.53f; 0.55f; 0.53f; 1.0f|]
-                let p_accessor = root.accessors[primitive.attributes.POSITION]
-                let n_accessor = root.accessors[primitive.attributes.NORMAL]
-                let i_accessor = root.accessors[primitive.indices]
-                let p_bv = root.bufferViews[p_accessor.bufferView]
-                let n_bv = root.bufferViews[n_accessor.bufferView]
-                let i_bv = root.bufferViews[i_accessor.bufferView]
-                let p_span = gltf.AsSpan<System.Numerics.Vector3>(p_bv.byteOffset + p_accessor.byteOffset, p_accessor.count)
-                let n_span = gltf.AsSpan<System.Numerics.Vector3>(n_bv.byteOffset + n_accessor.byteOffset, n_accessor.count)
-                let i_span = gltf.AsSpan<uint16>(i_bv.byteOffset + i_accessor.byteOffset, i_accessor.count)
-                let vertices_count = p_accessor.count
-
-                let L = model.L
-                for i in 0..vertices_count - 1 do
-                    let p = System.Numerics.Vector3.Transform(p_span[i], m_transform)
-                    vertices[pn+0] <- p.X
-                    vertices[pn+1] <- p.Y
-                    vertices[pn+2] <- p.Z                    
-                    pn <- pn + L
-
-
+            
 

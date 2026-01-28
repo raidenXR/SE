@@ -15,6 +15,8 @@ module UnsafeOps =
 
     let inline ( ++ ) (ptr:nativeptr<_>) offset = NativePtr.add ptr offset
 
+    let inline stackalloc<'T when 'T:unmanaged> (n:int) = NativePtr.stackalloc<'T> n
+
     type nativeptr<'T when 'T: unmanaged> with
         member this.Item with inline get(idx) = NativePtr.get this idx and inline set(idx) value = NativePtr.set this idx value  
 

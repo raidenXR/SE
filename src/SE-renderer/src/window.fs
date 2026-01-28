@@ -40,7 +40,7 @@ type SE_Window(settings:NativeWindowSettings) =
 
     member this.RenderFrame with get() = window_render_frame
 
-    member this.ElapsedTime with get() = elapsed
+    member val ElapsedTime = 0. with get,set
 
     member this.Load() =
         let TIME_PERIOD = 8
@@ -73,12 +73,9 @@ type SE_Window(settings:NativeWindowSettings) =
         _watchUpdate.Start()
     
 
-    member this.Update() =
+    member this.Update(render_fn:unit -> unit) =
         let updatePeriod = if UpdateFrequency = 0. then 0. else 1. / UpdateFrequency
         elapsed <- _watchUpdate.Elapsed.TotalSeconds    
-
-        // window_update_frame <- false
-        // window_render_frame <- false
 
         if elapsed > updatePeriod then
             _watchUpdate.Restart()
@@ -88,11 +85,8 @@ type SE_Window(settings:NativeWindowSettings) =
             NativeWindow.ProcessWindowEvents(base.IsEventDriven)
 
             UpdateTime <- elapsed
-            // window_update_frame <- true
-            // window_render_frame <- true
-            // update_frame_event.Trigger(new FrameEventArgs(elapsed))
-            // render_frame_event.Trigger(new FrameEventArgs(elapsed))
-            for fn in this.UpdateRenderLoopList do fn()
+            this.ElapsedTime <- elapsed
+            render_fn ()
 
             let MaxSlowUpdates = 80
             let SlowUpdatesThreshold = 45

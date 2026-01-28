@@ -35,7 +35,6 @@ let path = "../models/animated_object.gltf"
 let shaders = new System.Collections.Generic.Dictionary<string,Shader>()
 let gltf = new GLTF.Deserializer(path)
 let N = 100
-// let voxels = Array3D.zeroCreate<bool> N N N
 let mutable voxels = new NativeArray3D<bool>(N,N,N)
 let particles_array = new NativeArray<float32>(N * N * N * 7)
 
@@ -47,7 +46,7 @@ let mutable wireframe_prev = false
 let mutable animation_on = true
 let mutable animation_prev = false
 
-
+// clear on exit
 system OnExit [] (fun _ ->
     gltf.Dispose()
     voxels.Dispose()
@@ -58,22 +57,23 @@ let settings = GameWindowSettings.Default
 let n_settings = NativeWindowSettings(ClientSize = Vector2i(800, 600), Title = "opetk-window", Flags = ContextFlags.ForwardCompatible)
 let window = new SE_Window(n_settings)
 
-let state_ent () =
+
+// create a state instance"
+system OnLoad [] (fun _ ->
     state <- entity()
     state
     |> Entity.set {wireframe_on=false; first_move=true; last_pos=Vector2()}
     |> ignore
+)
 
 
-let load_geometry () =
+// create entities on load
+system OnLoad [] (fun _ -> 
     let struct(vertices,indices) = gltf.ReadMesh_unmanaged(0)
     let ob_model = new ValueModel(vertices, indices, [3;3;4])
     let mesh = Helpers.createMesh ob_model
 
     // create particles
-    // let (v_min,v_max) = Geometry.bounds (vertices.AsSpan()) N ob_model.L
-    // let t_filled = Geometry.assign_voxels_from_valuemodel ob_model N voxels
-    // Geometry.assign_particles(v_min, v_max, voxels, particles_array.AsSpan(), N, 7)
     let struct(v_min,v_max) = Geometry.bounds_SIMD ob_model.Vertices ob_model.L
     let t_filled = Geometry.assign_voxels_SIMD ob_model N &voxels
     Geometry.assign_particles_SIMD(v_min,v_max, &voxels, particles_array.AsSpan(), N, 7)
@@ -102,7 +102,7 @@ let load_geometry () =
 
     let animation =
         entity()
-        |> Entity.set {idx = 0; kf = 0; dt = 0.; is_reversed = false; is_active = true}
+        |> Entity.set {idx = 0; dt = 0.; is_reversed = false; is_active = true; is_looped = true}
         |> Entity.set {animation_active = true; prev_key = false}
 
     let particles = 
@@ -115,6 +115,10 @@ let load_geometry () =
     // create relation between a and b -> paticles depend on model
     relate model particles (HasParticles()) 
     relate model animation (HasAnimation())
+)
+
+// load the window
+system OnLoad [] (fun _ -> window.Load())
 
 
 let render_ply () =
@@ -185,48 +189,40 @@ let render_particles () =
         Helpers.drawPrim_sliced l mesh
 
 
-let render_geometry () =
-    GL.Clear(ClearBufferMask.ColorBufferBit ||| ClearBufferMask.DepthBufferBit)
-    render_ply ()
-    render_particles ()
-    window.Context.SwapBuffers()
-
-
-let update_animation () =
+// Update animations system
+system OnUpdate [typeof<ValueAnimation>] (fun q -> 
     let animts = Components.get<ValueAnimation>()
     let models = Components.get<ValueModel>()
     let meshes = Components.get<GLMesh>()
     let prims  = Components.get<GLPrim>()
     let counts = Components.get<SliceLen>()
 
-    let time = window.ElapsedTime * 16.
+    if animation_on then       
+        let time = window.ElapsedTime * 0.4   // the animation is too fast, slow it down a bit
         
-    for e in animts.Entities do
-        let anim = &animts[e]
-        let model_ent = Relation.get<HasAnimation> In e
-        let model = models[model_ent]
-        let mesh = meshes[model_ent]
+        for e in animts.Entities do
+            let anim = &animts[e]
+            let model_ent = Relation.get<HasAnimation> In e
+            let model = models[model_ent]
+            let mesh = meshes[model_ent]
 
-        Helpers.update_animation(gltf, model, &anim, time)
-        Helpers.updateMesh model mesh
+            Helpers.update_animation(gltf, model, &anim, time)
+            Helpers.updateMesh model mesh
         
-        // get particles related to ob_model
-        let particles_ent = Relation.get<HasParticles> Out model_ent
-        let particles_model = models[particles_ent]
-        let particles_prim  = prims[particles_ent]
-        let particels_len   = &counts[particles_ent]
+            let particles_ent = Relation.get<HasParticles> Out model_ent
+            let particles_model = models[particles_ent]
+            let particles_prim  = prims[particles_ent]
+            let particels_len   = &counts[particles_ent]
         
-        // let (v_min,v_max) = Geometry.bounds model.Vertices N model.L
-        // let t_filled = Geometry.assign_voxels_from_valuemodel model N voxels
-        // Geometry.assign_particles(v_min, v_max, voxels, particles_model.Vertices, N, 7)
-        let struct(v_min,v_max) = Geometry.bounds_SIMD model.Vertices model.L
-        let t_filled = Geometry.assign_voxels_SIMD model N &voxels
-        particels_len <- {count = t_filled}
-        Geometry.assign_particles_SIMD(v_min,v_max, &voxels, particles_model.vertices.AsSpan(), N, 7)
-        Helpers.updatePrim_sliced particles_model t_filled particles_prim
+            let struct(v_min,v_max) = Geometry.bounds_SIMD model.Vertices model.L
+            let t_filled = Geometry.assign_voxels_SIMD model N &voxels
+            particels_len <- {count = t_filled}
+            Geometry.assign_particles_SIMD(v_min,v_max, &voxels, particles_model.vertices.AsSpan(), N, 7)
+            Helpers.updatePrim_sliced particles_model t_filled particles_prim
+)
 
-
-let update_keys () =
+// update the keys input
+system OnUpdate [] (fun _ ->
     let e = window.ElapsedTime
     let input = window.KeyboardState
 
@@ -268,9 +264,21 @@ let update_keys () =
         s.last_pos <- Vector2(mouse.X, mouse.Y)
         camera.Yaw <- camera.Yaw + dx * sensitivity
         camera.Pitch <- camera.Pitch - dy * sensitivity
+)
+
+// invoke when window renders frame
+system OnRender [typeof<ValueModel>] (fun q -> 
+    window.Update(fun _ ->
+        GL.Clear(ClearBufferMask.ColorBufferBit ||| ClearBufferMask.DepthBufferBit)
+        render_ply ()
+        render_particles ()
+        window.Context.SwapBuffers()
+    )
+)
 
 
-let clear_all () =
+// clear all resources
+system OnExit [] (fun _ ->
     let models = Components.get<ValueModel>().Entries
     for model in models do
         model.Dispose()
@@ -290,30 +298,8 @@ let clear_all () =
         shader.Dispose()
 
     window.Dispose()
-
+)
     
-// system OnLoad [] (fun _ -> state_ent())
-// system OnLoad [] (fun _ -> load_geometry())
-// system OnLoad [] (fun _ -> window.Load())
+Systems.progress()
 
-// system OnUpdate [] (fun _ -> window.Update())
-// system OnUpdate [] (fun _ -> update_frame())
 
-// system OnRender [] (fun _ -> render_geometry())
-
-// system OnExit [] (fun _ -> clear_all())
-
-// Systems.progress()
-
-window.UpdateRenderLoopList <- [
-    update_keys
-    (fun _ -> if animation_on then update_animation())
-    render_geometry
-]
-
-state_ent()
-load_geometry()
-window.Load()
-while (Systems.isRunning()) do
-    window.Update()
-clear_all()

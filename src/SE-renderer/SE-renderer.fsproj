@@ -30,7 +30,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SE-core\SE-core.fsproj" />
-    <ProjectReference Include="..\..\..\ImGui.NET_OpenTK_Sample\DeaImGuiSample\DearImGuiSample.csproj" />
   </ItemGroup>
 
 </Project>
