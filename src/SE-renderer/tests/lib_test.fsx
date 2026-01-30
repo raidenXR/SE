@@ -1,19 +1,19 @@
-#r "../bin/Debug/net9.0/SE-renderer.dll"
-#r "nuget: OpenTK, 4.9.4"
+// #r "../bin/Debug/net9.0/SE-renderer.dll"
+// #r "nuget: OpenTK, 4.9.4"
+#load "../src/unsafe.fs"
+// #load "../src/geometry.fs"
 
 open System
 open SE.Renderer
-open OpenTK.Mathematics
 open System.IO
-
-
+open FSharp.NativeInterop
 open SE.Renderer
 
 printfn "NativeArray.size: %d" (sizeof<NativeArray<float32>>)
 printfn "NativeArray2D.size: %d" (sizeof<NativeArray2D<float32>>)
 printfn "NativeArray3D.size: %d" (sizeof<NativeArray3D<float32>>)
-printfn "ValueModel.size: %d" (sizeof<ValueModel>)
-printfn "ValueAnimation.size: %d" (sizeof<ValueAnimation>)
+// printfn "ValueModel.size: %d" (sizeof<ValueModel>)
+// printfn "ValueAnimation.size: %d" (sizeof<ValueAnimation>)
 
 let A = [|for i in 1..100 -> float32 i|]
 let V = new NativeArray<float32>(A)
@@ -29,7 +29,10 @@ let check_equality (a:array<_>) (b:NativeArray<_>) =
 check_equality A V
 V.Dispose()
 
-
+do
+    let values = NativeArrayPool.Shared.Rent<float>(100)
+    printfn "values.len: %d" (values.Length)
+    NativeArrayPool.Shared.Return<float>(values)
 
 
 

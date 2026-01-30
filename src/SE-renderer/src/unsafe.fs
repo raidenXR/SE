@@ -180,6 +180,144 @@ type [<Struct>] NativeArray3D<'T when 'T:unmanaged> =
                 NativePtr.set p idx value
 
 
+// ***********************************************************
+// USE REGULAR ARRAYPOOL INSTEAD !!!!!
+// ***********************************************************
+// [<AllowNullLiteral>]
+// type NativeArrayPool() as x =
+//     let default_max_array_length = 1024 * 1024
+//     let default_max_number_of_buckets = 50
+//     let hash_map = new Collections.Generic.Dictionary<nativeint,nativeint>()
+
+//     let min_array_len = 0x10
+//     let max_array_len = 0x40000000    
+
+//     let mutable is_initialized = false
+//     let mutable _buckets: array<Bucket> = null
+
+//     let null_ptr = ~~(NativePtr.nullPtr<int>)
+//     let null_buffer = struct(nativeint 0, 0)
+
+//     let alloc n =
+//         let ptr = NativeMemory.Alloc(unativeint n) |> NativePtr.ofVoidPtr<int> |> NativePtr.toNativeInt
+//         struct(ptr,n)
+   
+//     let selectBucketIndex bufferSize =
+//         let x = (bufferSize - 1 ||| 15) - 3
+//         int32 (log (float x))
+
+//     let getMaxSizeForBucket binIndex =
+//         let max_size = 16 <<< binIndex
+//         assert (max_size >= 0)
+//         max_size
+
+//     let fst' (t:struct(nativeint * int)) =
+//         let struct(a,_) = t
+//         NativePtr.toVoidPtr (NativePtr.ofNativeInt<int> a)
+
+//     let snd' (t:struct(nativeint * int)) =
+//         let struct(_,b) = t
+//         b
+
+//     do
+//         let pool_id = x.GetHashCode()
+//         let max_buckets = selectBucketIndex max_array_len
+//         _buckets <- Array.zeroCreate<Bucket> (max_buckets + 1)
+//         for i in 0.._buckets.Length-1 do
+//             _buckets[i] <- Bucket(getMaxSizeForBucket(i), default_max_array_length, pool_id)
+//         is_initialized <- true
+        
+
+//     [<DefaultValue>] static val mutable private shared: NativeArrayPool
+
+//     static member Shared with get() =
+//         match NativeArrayPool.shared with
+//         | null ->
+//             NativeArrayPool.shared <- new NativeArrayPool()
+//             NativeArrayPool.shared
+//         | _ -> NativeArrayPool.shared
+        
+
+//     member this.Rent<'T>(_minimumLength:int) =
+//         let minimumLength = _minimumLength * sizeof<'T>
+//         if minimumLength = 0 then
+//             Span<'T>(null_ptr, 0)
+//         else
+//             let mutable buffer = null_buffer
+//             let mutable r = false
+//             let index = selectBucketIndex(minimumLength)
+//             if index < _buckets.Length then
+//                 let max_buckets_to_try = 2
+//                 let mutable i = index
+
+//                 while i < _buckets.Length && i <> index + max_buckets_to_try && not r do
+//                     let struct(ptr,len) = _buckets[i].Rent()
+//                     r <- r || len > 0
+//                     buffer <- if r then struct(ptr,len) else buffer
+//                     i <- i + 1
+//             if r then
+//                 Span(fst' buffer, snd' buffer)
+//             else
+//                 let p = alloc _buckets[index].BufferLength
+//                 Span(fst' p, snd' p)
+
+//     member this.Return<'T>(span:Span<'T>) =
+//         let len = span.Length * sizeof<'T>
+//         if len = 0 then
+//             ()
+
+//         let bucket = selectBucketIndex (len)
+//         let have_bucket = bucket < _buckets.Length
+//         if have_bucket then
+//             let ptr = &&MemoryMarshal.GetReference(span)
+//             let p = NativePtr.toNativeInt ptr
+//             _buckets[bucket].Return(struct(p,len))
 
         
+// /// Used for internal need of NativeArrayPool
+// and Bucket(bufferLength:int, numberOfBuffers:int, pool_id:int) = 
+//     let buffer_len = bufferLength
+//     let buffers = Array.zeroCreate<struct(nativeint * int)> numberOfBuffers
+//     let mutable index = 0
+
+//     let null_buffer = struct(nativeint 0, 0)
+
+//     let alloc n =
+//         let ptr = NativeMemory.Alloc(unativeint n) |> NativePtr.ofVoidPtr<int> |> NativePtr.toNativeInt
+//         struct(ptr,n)
+   
+//     // new() = Bucket(128,)
+
+//     member this.BufferLength = bufferLength
+
+//     member this.Rent() =
+//         let mutable buffer = null_buffer
+//         let mutable allocate_buffer = false
         
+//         if index < buffer_len then
+//             buffer <- buffers[index] 
+//             buffers[index] <- null_buffer
+//             index <- index + 1
+//             allocate_buffer <- buffer = null_buffer
+
+//         if allocate_buffer then
+//             buffer <- alloc buffer_len
+
+//         buffer
+                
+                
+//     member this.Return(_array:struct(nativeint * int)) =
+//         let struct(ptr,len) = _array
+//         if len <> buffer_len then failwith "Error: not from pool"
+
+//         let returned = index <> 0
+//         if returned then
+//             index <- index - 1
+//             buffers[index] <- _array
+
+//         if not returned then
+//             ()  // if log is enabled
+//
+
+
+

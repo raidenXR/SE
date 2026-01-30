@@ -612,7 +612,12 @@ module Geometry =
             v_max <- Vector3.Max(v, v_max)
             
         struct(v_min, v_max) 
-        
+
+
+    let bounds_union (v1_min:Vector3) (v1_max:Vector3) (v2_min:Vector3) (v2_max:Vector3) =
+        let v_min = Vector3.Min(v1_min, v2_min)
+        let v_max = Vector3.Max(v1_max, v2_max)
+        struct(v_min,v_max)        
 
         
     let inline triangle_center (t:Triangle) =
@@ -764,7 +769,7 @@ module Geometry =
         let L = model.L
         let struct(v_min,v_max) = bounds_SIMD vertices L 
         let dv = v_max - v_min
-        let n = float32 N
+        let n = float32 (N - 1)
         let mutable t_filled = 0
 
         for i in 0..indices_count-1 do
@@ -777,11 +782,9 @@ module Geometry =
             let v2 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i2))
             
             let v_center = triangle_center_SIMD &v0 &v1 &v2
-            let v_index = n * (v_center - v_min) / dv
-            let idx = Vector3.Clamp(v_index, Vector3.Zero, Vector3(n-1.f)) // normalize to [0..1] and convert to index [0..n]
-            
+            let idx = Vector3.Clamp(n * (v_center - v_min) / dv, Vector3.Zero, Vector3(n))
             voxels[int32(idx.X), int32(idx.Y), int32(idx.Z)] <- true
-
+            
         // VECTORIZE THIS PART !!! OR NOT ... ??
         // let hn = if N % 2 <> 0 then N / 2 else N / 2 + 1
         let hn = N / 2

@@ -416,6 +416,7 @@ module GLTF =
         else IsEmpty
 
 
+    [<AllowNullLiteral>]
     type Deserializer(path:string) =
         let mutable is_reversed = false
         let mutable kf_current = 0

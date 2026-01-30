@@ -14,6 +14,8 @@ open OpenTK.Windowing.Desktop
 open OpenTK.Windowing.GraphicsLibraryFramework
 
 open System
+open System.Runtime.InteropServices
+open System.Runtime.CompilerServices
 open FSharp.NativeInterop
 open SE.Core
 open SE.Renderer
@@ -45,6 +47,8 @@ let mutable wireframe_on = false
 let mutable wireframe_prev = false
 let mutable animation_on = true
 let mutable animation_prev = false
+let mutable particles_on = true
+let mutable particles_prev = false
 
 // clear on exit
 system OnExit [] (fun _ ->
@@ -96,7 +100,7 @@ system OnLoad [] (fun _ ->
         entity()
         |> Entity.set ob_model
         |> Entity.set mesh
-        |> Entity.set (Matrix4.CreateScale(10.0f))
+        |> Entity.set (Matrix4.Identity)
         |> Entity.set {wireframe_active = true; prev_key = false}
         |> Entity.add<HasAnimation>
 
@@ -109,8 +113,8 @@ system OnLoad [] (fun _ ->
         entity()
         |> Entity.set pt_model
         |> Entity.set prim
-        |> Entity.set {count = t_filled}
-        |> Entity.set (Matrix4.CreateScale(10.0f))
+        |> Entity.set {count = t_filled * 7}
+        |> Entity.set (Matrix4.Identity)
 
     // create relation between a and b -> paticles depend on model
     relate model particles (HasParticles()) 
@@ -162,63 +166,45 @@ let render_ply () =
     shader.SetFloat("spotLight.outerCutOff", MathF.Cos(MathHelper.DegreesToRadians(17.5f)))
 
     for e in meshes.Entities do
-        let model = models[e]
-        let mesh = meshes[e]
-        let t = transforms[e]
-        shader.SetMatrix4("model", t)
-        Helpers.drawMesh model mesh
+        shader.SetMatrix4("model", transforms[e])
+        Helpers.drawMesh models[e] meshes[e]
   
 
 let render_particles () =
     let models = Components.get<ValueModel>()
-    let meshes = Components.get<GLPrim>()
+    let prims = Components.get<GLPrim>()
     let transforms = Components.get<Matrix4>()
-    let counts = Components.get<SliceLen>()
+    let lens = Components.get<SliceLen>()
     
-    let particles = shaders["particles_shader"]
-    particles.Use()
-    particles.SetMatrix4("view", camera.GetViewMatrix())
-    particles.SetMatrix4("projection", camera.GetProjectionMatrix())
+    if particles_on then 
+        let particles = shaders["particles_shader"]
+        particles.Use()
+        particles.SetMatrix4("view", camera.GetViewMatrix())
+        particles.SetMatrix4("projection", camera.GetProjectionMatrix())
 
-    for e in meshes.Entities do
-        let mesh = meshes[e]
-        let model = models[e]
-        let t = transforms[e]
-        let l = counts[e].count * 7
-        particles.SetMatrix4("model", t)
-        Helpers.drawPrim_sliced l mesh
+        for e in prims.Entities do
+            particles.SetMatrix4("model", transforms[e])
+            Helpers.drawPrim_sliced (lens[e].count) prims[e]
 
 
 // Update animations system
 system OnUpdate [typeof<ValueAnimation>] (fun q -> 
     let animts = Components.get<ValueAnimation>()
-    let models = Components.get<ValueModel>()
-    let meshes = Components.get<GLMesh>()
-    let prims  = Components.get<GLPrim>()
-    let counts = Components.get<SliceLen>()
+    let transforms = Components.get<Matrix4>()
 
     if animation_on then       
         let time = window.ElapsedTime * 0.4   // the animation is too fast, slow it down a bit
         
-        for e in animts.Entities do
+        for e in q do
             let anim = &animts[e]
-            let model_ent = Relation.get<HasAnimation> In e
-            let model = models[model_ent]
-            let mesh = meshes[model_ent]
+            let m_ent = Relation.get<HasAnimation> In e
+            let p_ent = Relation.get<HasParticles> Out m_ent
 
-            Helpers.update_animation(gltf, model, &anim, time)
-            Helpers.updateMesh model mesh
+            let mutable animation_m = Helpers.animationTransform gltf time &anim
+            let a_transform = Unsafe.As<System.Numerics.Matrix4x4, Matrix4>(&animation_m)  // cast to Matrix4
         
-            let particles_ent = Relation.get<HasParticles> Out model_ent
-            let particles_model = models[particles_ent]
-            let particles_prim  = prims[particles_ent]
-            let particels_len   = &counts[particles_ent]
-        
-            let struct(v_min,v_max) = Geometry.bounds_SIMD model.Vertices model.L
-            let t_filled = Geometry.assign_voxels_SIMD model N &voxels
-            particels_len <- {count = t_filled}
-            Geometry.assign_particles_SIMD(v_min,v_max, &voxels, particles_model.vertices.AsSpan(), N, 7)
-            Helpers.updatePrim_sliced particles_model t_filled particles_prim
+            transforms[m_ent] <- a_transform * Matrix4.CreateScale(10.f)
+            transforms[p_ent] <- a_transform * Matrix4.CreateScale(10.f)
 )
 
 // update the keys input
@@ -243,6 +229,12 @@ system OnUpdate [] (fun _ ->
         animation_on <- not animation_on        
     elif not (input.IsKeyDown(Keys.K)) then
         animation_prev <- false
+
+    if input.IsKeyDown(Keys.P) && not particles_prev then
+        particles_prev <- true
+        particles_on <- not particles_on
+    elif not (input.IsKeyDown(Keys.P)) then
+        particles_prev <- false
 
     if input.IsKeyDown(Keys.Escape) then
         window.Close()
