@@ -1,5 +1,5 @@
 #r "../bin/Debug/net9.0/SE-renderer.dll"
-#r "../bin/Debug/net9.0/DearImGuiSample.dll"
+// #r "../bin/Debug/net10.0/DearImGuiSample.dll"
 #r "nuget: OpenTK, 4.9.4"
 
 open System
@@ -25,7 +25,7 @@ let model =
         let struct(vertices,indices) = Geometry.load_ply_unmanaged (args[2], 0.55f, 0.55f, 0.53f, 1.0f)
         new ValueModel(vertices,indices,[3;3;4])
     | _ ->
-        let struct(vertices,indices) = Geometry.cube_unmanged()
+        let struct(vertices,indices) = Geometry.cube_unmanaged()
         new ValueModel(vertices,indices, [3;3;4])
     // | GLTF.IsEmpty ->          
     //     let (vertices,indices) = Geometry.cube ()

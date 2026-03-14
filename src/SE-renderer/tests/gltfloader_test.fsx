@@ -1,4 +1,4 @@
-#r "../bin/Debug/net9.0/SE-renderer.dll"
+#r "../bin/Debug/net10.0/SE-renderer.dll"
 #r "nuget: OpenTK, 4.9.4"
 
 open SE.Renderer
@@ -20,16 +20,15 @@ let model =
         gltf <- Some (new GLTF.Deserializer(path))
         let struct(vertices,indices) = gltf.Value.ReadMesh_unmanaged(0)
         new ValueModel(vertices,indices, [3;3;4])
-    // | GLTF.IsPly ->
-    //     let (vertices,indices) = Geometry.load_ply (args[2], 0.55f, 0.55f, 0.53f, 1.0f)
-    //     let _model = Model(vertices,indices)
-    //     _model.Transform <- Matrix4.CreateScale(10.0f)
-    //     _model
-    // | GLTF.IsEmpty ->          
-    //     let (vertices,indices) = Geometry.cube ()
-    //     Model(vertices,indices)
+    | GLTF.IsPly ->
+        let struct(vertices,indices) = Geometry.load_ply_unmanaged (args[2], 0.55f, 0.55f, 0.53f, 1.0f)
+        let _model = new ValueModel(vertices,indices,[3;3;4])
+        _model
+    | GLTF.IsEmpty ->          
+        let struct(vertices,indices) = Geometry.cube_unmanaged()
+        new ValueModel(vertices,indices, [3;3;4])
     | _ ->
-        let struct(vertices,indices) = Geometry.cube_unmanged()
+        let struct(vertices,indices) = Geometry.cube_unmanaged()
         new ValueModel(vertices,indices, [3;3;4])
 
 let game = new GltfWithParticles(gltf,model)

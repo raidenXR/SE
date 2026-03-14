@@ -99,6 +99,11 @@ type Shader(vertex_path:string, fragment_path:string) =
     member this.SetVector4(name:string, data:Vector4) =
         GL.UseProgram(handle)
         GL.Uniform4(uniform_locations[name], data)
+
+    /// copies a buffer object to a shader
+    member this.SetBufferObject(data:nativeint, size:int) =
+        GL.UseProgram(handle)
+        GL.BufferData(BufferTarget.UniformBuffer, size, data, BufferUsageHint.DynamicCopy)
         
     member this.Uniforms() = uniform_locations.Keys
 
@@ -186,4 +191,43 @@ type Texture(gl_handle:int) =
     member this.Use(_unit:TextureUnit) =
         GL.ActiveTexture(_unit)
         GL.BindTexture(TextureTarget.Texture2D, this.Handle)
+        
+
+module Shaders =
+    let shaders_map = new System.Collections.Generic.Dictionary<string,Shader>()
+
+    let load (shaders:list<string*string*string>) =
+        for (tag,vs,fs) in shaders do
+            shaders_map.Add(tag, new Shader(vs,fs))
+
+    let unload () =
+        for pair in shaders_map do
+            pair.Value.Dispose()
+        shaders_map.Clear()            
+
+    let init (tag:string, vs_path:string, fs_path:string) =
+        let shader = new Shader(vs_path, fs_path)
+        shaders_map.Add(tag, shader)
+        shader
+
+    let deinit (tag:string) =
+        let mutable shader: Shader = null
+        match shaders_map.TryGetValue(tag, &shader) with
+        | true  -> shader.Dispose()
+        | false -> ()
+
+    let get (tag:string) =
+        shaders_map[tag]
+    
+
+module NativeBuffer =
+    let append<'T when 'T:unmanaged> (idx:byref<int>) (data:'T) (buffer:NativeArray<byte>) =
+        let size = sizeof<'T>
+        if size + idx >= buffer.Length then raise (new ArgumentOutOfRangeException())
+        let mutable d = data
+        let a = ~~(&&d)
+        let b = ~~(cast<byte> buffer.Ptr ++ idx)
+        Buffer.MemoryCopy(a, b, size, size)
+        idx <- idx + size
+        buffer
         

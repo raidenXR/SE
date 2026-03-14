@@ -1,4 +1,4 @@
-#r "../bin/Debug/net9.0/SE-renderer.dll"
+#r "../bin/Debug/net10.0/SE-renderer.dll"
 #r "nuget: OpenTK, 4.9.4"
 
 #load "../../SE-core/src/core.fs"
@@ -33,12 +33,18 @@ type [<Struct>] State = {
     mutable last_pos:Vector2
 }
 
+type [<Struct>] DiscretizedVolume = {
+    cv: CVBounds
+    voxels: NativeArray3D<bool>
+    t_filled: int
+    m_transform: Matrix4
+}
+
 let path = "../models/animated_object.gltf"
-let shaders = new System.Collections.Generic.Dictionary<string,Shader>()
-let gltf = new GLTF.Deserializer(path)
+// let path = "../models/bun_zipper.ply"
+let gltf: option<GLTF.Deserializer> = Some (new GLTF.Deserializer(path))
+// let gltf: option<GLTF.Deserializer> = None
 let N = 100
-let mutable voxels = new NativeArray3D<bool>(N,N,N)
-let particles_array = new NativeArray<float32>(N * N * N * 7)
 
 let mutable camera: Camera = null
 let mutable state: Entity = 0u
@@ -50,10 +56,19 @@ let mutable animation_prev = false
 let mutable particles_on = true
 let mutable particles_prev = false
 
+let bo1 = new NativeArray<byte>(600)
+let bo2 = new NativeArray<byte>(600)
+
+system OnExit [] (fun _ ->
+    bo1.Dispose()
+    bo2.Dispose()
+)
+
 // clear on exit
 system OnExit [] (fun _ ->
-    gltf.Dispose()
-    voxels.Dispose()
+    match gltf with
+    | Some g -> g.Dispose()
+    | None -> ()
 )
  
 
@@ -70,22 +85,43 @@ system OnLoad [] (fun _ ->
     |> ignore
 )
 
+// let check_sparse_array (v:Voxels) =
+//     let voxels = v.voxels
+//     let t_filled = v.t_filled
+//     use mutable sparse = new SparseNativeArray3D<float>(voxels.I, voxels.J, voxels.K, t_filled)
+//     let mutable n = 0
+//     for ix in 0..voxels.I-1 do
+//         for iy in 0..voxels.J-1 do
+//             for iz in 0..voxels.K-1 do
+//                 if voxels[ix,iy,iz] then
+//                     // sparse.Values[n] <- Random.Shared.NextDouble() * 100.0
+//                     sparse[ix,iy,iz] <- Random.Shared.NextDouble() * 100.0
+//                     n <- n + 1
+//             sparse.Offsets[ix * voxels.J + iy] <- n
+//                 // else
+//     printfn "n: %d" n
+//     // sparse.Dispose()
+            
 
 // create entities on load
 system OnLoad [] (fun _ -> 
-    let struct(vertices,indices) = gltf.ReadMesh_unmanaged(0)
+    let struct(vertices,indices) =
+        match gltf with
+        | Some gltf -> gltf.ReadMesh_unmanaged(0)
+        | None -> Geometry.load_ply_unmanaged (path, 0.55f, 0.55f, 0.53f, 1.0f)
     let ob_model = new ValueModel(vertices, indices, [3;3;4])
     let mesh = Helpers.createMesh ob_model
 
     // create particles
-    let struct(v_min,v_max) = Geometry.bounds_SIMD ob_model.Vertices ob_model.L
-    let t_filled = Geometry.assign_voxels_SIMD ob_model N &voxels
-    Geometry.assign_particles_SIMD(v_min,v_max, &voxels, particles_array.AsSpan(), N, 7)
-    
-    let pt_model = new ValueModel(particles_array, new NativeArray<uint32>(0), [3;4])
-    let prim = Helpers.createPrim pt_model
+    let voxels = Geometry.voxels_SIMD N ob_model        
+    let particles = Geometry.particles_SIMD 7 voxels
 
-    printfn "for N: %d, filled_voxels: %d" N t_filled
+    // check_sparse_array voxels
+    
+    let pt_model = new ValueModel(particles,[3;4])
+    let prim = Helpers.createPrim_sliced pt_model voxels.t_filled
+
+    printfn "for N: %d, filled_voxels: %d, particles_size: %d" N voxels.t_filled (particles.Length / 7)
     GL.ClearColor(0.2f, 0.2f, 0.2f, 1.0f)
     GL.Enable(EnableCap.DepthTest)
     GL.Enable(EnableCap.ProgramPointSize)
@@ -93,14 +129,20 @@ system OnLoad [] (fun _ ->
     camera <- Camera(Vector3.UnitZ * 3f, 800f / 600f)
     window.CursorState <- CursorState.Grabbed
 
-    shaders.Add("model_shader", new Shader("shaders/shader.vert", "shaders/shader.frag"))
-    shaders.Add("particles_shader", new Shader("shaders/particles.vert", "shaders/particles.frag"))
+    // shaders.Add("model_shader", new Shader("shaders/shader.vert", "shaders/shader.frag"))
+    // shaders.Add("particles_shader", new Shader("shaders/particles.vert", "shaders/particles.frag"))
+
+    Shaders.load [
+        "model_shader", "shaders/shader.vert", "shaders/shader.frag"
+        "particles_shader", "shaders/particles.vert", "shaders/particles.frag"
+    ]
 
     let model = 
         entity()
         |> Entity.set ob_model
         |> Entity.set mesh
-        |> Entity.set (Matrix4.Identity)
+        |> Entity.set voxels
+        |> Entity.set (Matrix4.CreateScale(10.f))
         |> Entity.set {wireframe_active = true; prev_key = false}
         |> Entity.add<HasAnimation>
 
@@ -113,8 +155,8 @@ system OnLoad [] (fun _ ->
         entity()
         |> Entity.set pt_model
         |> Entity.set prim
-        |> Entity.set {count = t_filled * 7}
-        |> Entity.set (Matrix4.Identity)
+        |> Entity.set {count = voxels.t_filled * 7}
+        |> Entity.set (Matrix4.CreateScale(10.f))
 
     // create relation between a and b -> paticles depend on model
     relate model particles (HasParticles()) 
@@ -130,11 +172,23 @@ let render_ply () =
     let meshes = Components.get<GLMesh>()
     let transforms = Components.get<Matrix4>()
     
-    let shader = shaders["model_shader"]
+    // let shader = shaders["model_shader"]
+    // let shader = Shaders.shaders_map["model_shader"]
+    let shader = Shaders.get("model_shader")
+
     shader.Use()
     shader.SetMatrix4("view", camera.GetViewMatrix())
     shader.SetMatrix4("projection", camera.GetProjectionMatrix())
     shader.SetVector3("viewPos", camera.Position)
+
+    // let mutable i0 = 0
+    // bo1
+    // |> NativeBuffer.append &i0 (camera.GetViewMatrix())
+    // |> NativeBuffer.append &i0 (camera.GetProjectionMatrix())
+    // |> NativeBuffer.append &i0 (camera.Position)
+    // |> ignore
+
+    // shader.SetBufferObject(bo1.ToInt(), i0)
 
     shader.SetVector3("material.ambient", Vector3(1.0f, 0.5f, 0.31f))
     shader.SetVector3("material.diffuse", Vector3(1.0f, 0.5f, 0.31f))
@@ -177,7 +231,7 @@ let render_particles () =
     let lens = Components.get<SliceLen>()
     
     if particles_on then 
-        let particles = shaders["particles_shader"]
+        let particles = Shaders.get("particles_shader")
         particles.Use()
         particles.SetMatrix4("view", camera.GetViewMatrix())
         particles.SetMatrix4("projection", camera.GetProjectionMatrix())
@@ -192,7 +246,7 @@ system OnUpdate [typeof<ValueAnimation>] (fun q ->
     let animts = Components.get<ValueAnimation>()
     let transforms = Components.get<Matrix4>()
 
-    if animation_on then       
+    if animation_on && q.Count > 0 then       
         let time = window.ElapsedTime * 0.4   // the animation is too fast, slow it down a bit
         
         for e in q do
@@ -200,7 +254,7 @@ system OnUpdate [typeof<ValueAnimation>] (fun q ->
             let m_ent = Relation.get<HasAnimation> In e
             let p_ent = Relation.get<HasParticles> Out m_ent
 
-            let mutable animation_m = Helpers.animationTransform gltf time &anim
+            let mutable animation_m = Helpers.animationTransform gltf.Value time &anim
             let a_transform = Unsafe.As<System.Numerics.Matrix4x4, Matrix4>(&animation_m)  // cast to Matrix4
         
             transforms[m_ent] <- a_transform * Matrix4.CreateScale(10.f)
@@ -275,6 +329,10 @@ system OnExit [] (fun _ ->
     for model in models do
         model.Dispose()
 
+    let voxels = Components.get<Voxels>().Entries
+    for v in voxels do             
+        v.voxels.Dispose()
+
     let meshes = Components.get<GLMesh>().Entries
     for mesh in meshes do
         GL.DeleteVertexArray(mesh.vao)
@@ -286,8 +344,9 @@ system OnExit [] (fun _ ->
         GL.DeleteVertexArray(prim.vao)
         GL.DeleteBuffer(prim.vbo)
 
-    for shader in shaders.Values do
-        shader.Dispose()
+    // for shader in shaders.Values do
+    //     shader.Dispose()
+    Shaders.unload()
 
     window.Dispose()
 )

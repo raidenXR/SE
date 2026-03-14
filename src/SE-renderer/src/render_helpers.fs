@@ -134,6 +134,20 @@ module Helpers =
         GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, ob_model.L, ob_model.Attrib1)
         {vao = vao; vbo = vbo}
 
+    let createPrim_sliced (ob_model:ValueModel) (t_filled:int) =
+        let vbo = GL.GenBuffer()
+        GL.BindBuffer (BufferTarget.ArrayBuffer, vbo)
+        GL.BufferData (BufferTarget.ArrayBuffer, ob_model.Stride * t_filled, ob_model.vertices.ToInt(), BufferUsageHint.StaticDraw)
+        
+        let vao = GL.GenVertexArray()
+        GL.BindVertexArray(vao)
+        GL.EnableVertexAttribArray(0)
+        GL.EnableVertexAttribArray(1)            
+        GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, ob_model.L, ob_model.Attrib0)
+        GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, ob_model.L, ob_model.Attrib1)
+        {vao = vao; vbo = vbo}
+
+
     let updatePrim (ob_model:ValueModel) (prim:GLPrim) =
         GL.BindBuffer (BufferTarget.ArrayBuffer, prim.vbo)
         GL.BufferData (BufferTarget.ArrayBuffer, ob_model.vertices.BufferSize, ob_model.vertices.ToInt(), BufferUsageHint.DynamicDraw)

@@ -17,6 +17,8 @@ module UnsafeOps =
 
     let inline stackalloc<'T when 'T:unmanaged> (n:int) = NativePtr.stackalloc<'T> n
 
+    let inline cast<'T when 'T:unmanaged> (ptr:voidptr) = NativePtr.ofVoidPtr<'T> ptr
+
     type nativeptr<'T when 'T: unmanaged> with
         member this.Item with inline get(idx) = NativePtr.get this idx and inline set(idx) value = NativePtr.set this idx value  
 
@@ -135,15 +137,15 @@ type [<Struct>] NativeArray2D<'T when 'T:unmanaged> =
 
 
 type [<Struct>] NativeArray3D<'T when 'T:unmanaged> =
-    val mutable private ptr: voidptr
-    val mutable private I: int
-    val mutable private J: int
-    val mutable private K: int
-    val mutable private is_disposed: bool
+    val mutable Ptr: voidptr
+    val mutable I: int
+    val mutable J: int
+    val mutable K: int
+    val mutable is_disposed: bool
 
     new(i:int, j:int, k:int) =
         {
-            ptr = NativeMemory.AllocZeroed(unativeint((i*j*k) * sizeof<'T>))
+            Ptr = NativeMemory.AllocZeroed(unativeint((i*j*k) * sizeof<'T>))
             I = i
             J = j
             K = k
@@ -153,31 +155,90 @@ type [<Struct>] NativeArray3D<'T when 'T:unmanaged> =
     interface IDisposable with
         member this.Dispose() =
             if not this.is_disposed then
-                NativeMemory.Free(this.ptr)
+                NativeMemory.Free(this.Ptr)
             this.is_disposed <- true
 
     member this.Length with get() = this.I * this.J * this.K
     
-    member this.Ptr with get() = this.ptr
+    // member this.Ptr with get() = this.ptr
     
-    member this.ToInt() = this.ptr |> NativePtr.ofVoidPtr<'T> |> NativePtr.toNativeInt 
+    member this.ToInt() = this.Ptr |> NativePtr.ofVoidPtr<'T> |> NativePtr.toNativeInt 
 
     member this.Dispose() =
         if not this.is_disposed then
-            NativeMemory.Free(this.ptr)
+            NativeMemory.Free(this.Ptr)
         this.is_disposed <- true
 
-    member this.AsSpan() = Span<'T>(this.ptr, this.Length)
+    member this.AsSpan() = Span<'T>(this.Ptr, this.Length)
 
     member this.Item
         with [<MethodImpl(MethodImplOptions.AggressiveInlining)>] get (i:int, j:int, k:int) =
                 let idx = i * this.J * this.K + j * this.K + k
-                let p = NativePtr.ofVoidPtr<'T> this.ptr
+                let p = NativePtr.ofVoidPtr<'T> this.Ptr
                 NativePtr.get p idx
             and [<MethodImpl(MethodImplOptions.AggressiveInlining)>] set (i:int, j:int, k:int) value = 
                 let idx = i * this.J * this.K + j * this.K + k
-                let p = NativePtr.ofVoidPtr<'T> this.ptr
+                let p = NativePtr.ofVoidPtr<'T> this.Ptr
                 NativePtr.set p idx value
+
+
+type [<Struct>] SparseNativeArray3D<'T when 'T:unmanaged> =
+    val mutable offset: voidptr
+    val mutable values: voidptr
+    val mutable I: int
+    val mutable J: int
+    val mutable K: int
+    val mutable len: int
+    val mutable is_disposed: bool
+    
+    new(i:int, j:int, k:int, t_filled:int) =
+        {
+            offset = NativeMemory.AllocZeroed(unativeint((i*j) * sizeof<int>))
+            values = NativeMemory.AllocZeroed(unativeint(t_filled * sizeof<'T>))
+            I = i
+            J = j
+            K = k
+            len = t_filled
+            is_disposed = false
+        }
+        
+    interface IDisposable with
+        member this.Dispose() =
+            if not this.is_disposed then
+                NativeMemory.Free(this.offset)
+                NativeMemory.Free(this.values)
+            this.is_disposed <- true
+
+    member this.Length with get() = this.len
+    
+    member this.Offsets with get() = cast<int> this.offset
+
+    member this.Values with get() = cast<'T> this.values
+    
+    member this.Ptr with get() = this.values
+    
+    member this.ToInt() = this.values |> NativePtr.ofVoidPtr<'T> |> NativePtr.toNativeInt 
+
+    member this.Dispose() =
+        if not this.is_disposed then
+            NativeMemory.Free(this.offset)
+            NativeMemory.Free(this.values)
+        this.is_disposed <- true
+
+    member this.AsSpan() = Span<'T>(this.values, this.Length)
+
+    member this.Item
+        with [<MethodImpl(MethodImplOptions.AggressiveInlining)>] get (i:int, j:int, k:int) =
+                let p_offset = cast<int> this.offset
+                let p_values = cast<'T> this.values
+                let idx = NativePtr.get p_offset (i * this.J + j)
+                NativePtr.get p_values (idx + k)
+            and [<MethodImpl(MethodImplOptions.AggressiveInlining)>] set (i:int, j:int, k:int) value = 
+                let p_offset = cast<int> this.offset
+                let p_values = cast<'T> this.values
+                let idx = NativePtr.get p_offset (i * this.J + j)
+                NativePtr.set p_values (idx + k) value
+
 
 
 // ***********************************************************

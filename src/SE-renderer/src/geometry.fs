@@ -24,6 +24,13 @@ module S =
         for i in 1..(min n l.Length) do s <- s + l[i-1]
         s
 
+type [<Struct>] CVBounds = {v_min:Vector3; v_max:Vector3}
+
+type [<Struct>] Voxels = {voxels:NativeArray3D<bool>; t_filled:int; cv:CVBounds} with
+    interface IDisposable with
+        member this.Dispose() = this.voxels.Dispose()
+    member this.Dispose() = this.voxels.Dispose()
+
 type [<Struct>] Triangle = {n0:Vector3; n1:Vector3; n2:Vector3}
 
 type [<Struct>] GLMesh = {vao:int; vbo:int; ebo:int}
@@ -57,7 +64,20 @@ type [<Struct>] ValueModel =
             vertices = vertices
             indices = indices
             is_disposed = false
-            // transform = Matrix4.Identity
+            l = List.sum attribs
+            stride = (List.sum attribs) * (sizeof<float32>)
+            attrib0 = (S.sum 0 attribs) * sizeof<float32>
+            attrib1 = (S.sum 1 attribs) * sizeof<float32>
+            attrib2 = (S.sum 2 attribs) * sizeof<float32>
+            attrib3 = (S.sum 3 attribs) * sizeof<float32>
+            attrib4 = (S.sum 4 attribs) * sizeof<float32>            
+        }
+
+    new(vertices:NativeArray<float32>, attribs:list<int>) =
+        {
+            vertices = vertices
+            indices = new NativeArray<uint32>(10)
+            is_disposed = false
             l = List.sum attribs
             stride = (List.sum attribs) * (sizeof<float32>)
             attrib0 = (S.sum 0 attribs) * sizeof<float32>
@@ -611,13 +631,13 @@ module Geometry =
             v_min <- Vector3.Min(v, v_min)
             v_max <- Vector3.Max(v, v_max)
             
-        struct(v_min, v_max) 
+        {v_min = v_min; v_max = v_max} 
 
 
-    let bounds_union (v1_min:Vector3) (v1_max:Vector3) (v2_min:Vector3) (v2_max:Vector3) =
-        let v_min = Vector3.Min(v1_min, v2_min)
-        let v_max = Vector3.Max(v1_max, v2_max)
-        struct(v_min,v_max)        
+    let bounds_union (cv1:CVBounds) (cv2:CVBounds) =
+        let v_min = Vector3.Min(cv1.v_min, cv2.v_min)
+        let v_max = Vector3.Max(cv1.v_max, cv2.v_max)
+        {v_min = v_min; v_max = v_max} 
 
         
     let inline triangle_center (t:Triangle) =
@@ -637,6 +657,7 @@ module Geometry =
         v_min + (v_max - v_min) / 2.f
         
 
+    [<Obsolete>]
     let assign_voxels_from_valuemodel (model:ValueModel) (n:int) (voxels:bool array3d) =
         let vertices = model.Vertices
         let indices  = model.Indices
@@ -706,6 +727,7 @@ module Geometry =
 
 
     /// creates a volume as voxels bool, where n is the resolution
+    [<Obsolete>]
     let assign_voxels (model:Model) (n:int) (voxels:bool array3d) =
         let vertices = model.Vertices
         let indices  = model.Indices
@@ -767,7 +789,9 @@ module Geometry =
         let vertices = model.Vertices
         let p = &MemoryMarshal.GetReference(vertices)
         let L = model.L
-        let struct(v_min,v_max) = bounds_SIMD vertices L 
+        let cv = bounds_SIMD vertices L 
+        let v_min = cv.v_min
+        let v_max = cv.v_max
         let dv = v_max - v_min
         let n = float32 (N - 1)
         let mutable t_filled = 0
@@ -781,10 +805,21 @@ module Geometry =
             let v1 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i1))
             let v2 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i2))
             
-            let v_center = triangle_center_SIMD &v0 &v1 &v2
-            let idx = Vector3.Clamp(n * (v_center - v_min) / dv, Vector3.Zero, Vector3(n))
-            voxels[int32(idx.X), int32(idx.Y), int32(idx.Z)] <- true
+            let vc = triangle_center_SIMD &v0 &v1 &v2
+            let idx_c = Vector3.Clamp(n * (vc - v_min) / dv, Vector3.Zero, Vector3(n))
+            voxels[int32(idx_c.X), int32(idx_c.Y), int32(idx_c.Z)] <- true
             
+            let idx_0 = Vector3.Clamp(n * (v0 - v_min) / dv, Vector3.Zero, Vector3(n)) 
+            voxels[int32(idx_0.X), int32(idx_0.Y), int32(idx_0.Z)] <- true
+
+            let idx_1 = Vector3.Clamp(n * (v1 - v_min) / dv, Vector3.Zero, Vector3(n)) 
+            voxels[int32(idx_1.X), int32(idx_1.Y), int32(idx_1.Z)] <- true
+            
+            let idx_2 = Vector3.Clamp(n * (v2 - v_min) / dv, Vector3.Zero, Vector3(n)) 
+            voxels[int32(idx_2.X), int32(idx_2.Y), int32(idx_2.Z)] <- true
+
+            t_filled <- t_filled + 4
+                        
         // VECTORIZE THIS PART !!! OR NOT ... ??
         // let hn = if N % 2 <> 0 then N / 2 else N / 2 + 1
         let hn = N / 2
@@ -801,6 +836,7 @@ module Geometry =
         t_filled
 
 
+    [<Obsolete>]
     let as_voxels (model:Model) (n:int) =
         let voxels = Array3D.zeroCreate<bool> n n n
         let t_filled = assign_voxels model n voxels
@@ -843,14 +879,21 @@ module Geometry =
                         particles[i+6] <- 1.f
                         i <- i + stride
 
-    let assign_particles_SIMD (v_min:Vector3, v_max:Vector3, voxels:inref<NativeArray3D<bool>>, particles:Span<float32>, N:int, L:int) =
+    /// Use this function to assign on a buffer
+    let assign_particles_SIMD (cv:CVBounds, voxels:NativeArray3D<bool>, particles:Span<float32>, L:int) =
+        let I = voxels.I
+        let J = voxels.J
+        let K = voxels.K
+        let N = voxels.I
         let n = float32 N
+        let v_min = cv.v_min
+        let v_max = cv.v_max
         let dv = (v_max - v_min) / n            
         let p = &&MemoryMarshal.GetReference(particles)
         let mutable i = 0
-        for ix in 0..N-1 do
-            for iy in 0..N-1 do
-                for iz in 0..N-1 do
+        for ix in 0..I-1 do
+            for iy in 0..J-1 do
+                for iz in 0..K-1 do
                     if voxels[ix,iy,iz] then
                         let v = v_min + dv * Vector3(float32(ix), float32(iy), float32(iz))
                         let c = (v - v_min) / (dv * n)
@@ -858,6 +901,16 @@ module Geometry =
                         Unsafe.Write<Vector4>(~~(p ++ (i+3)), Vector4(c,1.f))
                         i <- i + L
 
+    let voxels_SIMD N (model:ValueModel) =
+        let mutable voxels = new NativeArray3D<bool>(N,N,N)
+        let t_filled = assign_voxels_SIMD model N &voxels
+        let cv = bounds_SIMD model.Vertices model.L
+        {voxels = voxels; t_filled = t_filled; cv = cv}
+
+    let particles_SIMD L (v:Voxels) =
+        let particles_array = new NativeArray<float32>(v.t_filled * L)
+        assign_particles_SIMD(v.cv, v.voxels, particles_array.AsSpan(), L)
+        particles_array
 
     /// gets a float32 array ready to be rendered from the shader 7-stride
     let get_particles (v_min:Vector3) (v_max:Vector3) (voxels:bool array3d) t n stride =
