@@ -220,14 +220,4 @@ module Shaders =
         shaders_map[tag]
     
 
-module NativeBuffer =
-    let append<'T when 'T:unmanaged> (idx:byref<int>) (data:'T) (buffer:NativeArray<byte>) =
-        let size = sizeof<'T>
-        if size + idx >= buffer.Length then raise (new ArgumentOutOfRangeException())
-        let mutable d = data
-        let a = ~~(&&d)
-        let b = ~~(cast<byte> buffer.Ptr ++ idx)
-        Buffer.MemoryCopy(a, b, size, size)
-        idx <- idx + size
-        buffer
         

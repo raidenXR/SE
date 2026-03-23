@@ -15,23 +15,14 @@ open System.Runtime.InteropServices
 open System.Runtime.CompilerServices
 open FSharp.NativeInterop
 
-
-// open Dear_ImGui_Sample.Backends
+open SE
+open SE.Spatial
 
 module S =
     let sum n (l:list<int>) =
         let mutable s = 0
         for i in 1..(min n l.Length) do s <- s + l[i-1]
         s
-
-type [<Struct>] CVBounds = {v_min:Vector3; v_max:Vector3}
-
-type [<Struct>] Voxels = {voxels:NativeArray3D<bool>; t_filled:int; cv:CVBounds} with
-    interface IDisposable with
-        member this.Dispose() = this.voxels.Dispose()
-    member this.Dispose() = this.voxels.Dispose()
-
-type [<Struct>] Triangle = {n0:Vector3; n1:Vector3; n2:Vector3}
 
 type [<Struct>] GLMesh = {vao:int; vbo:int; ebo:int}
 
@@ -48,8 +39,8 @@ type [<Struct>] ValueAnimation = {
 }
 
 type [<Struct>] ValueModel =
-    val mutable vertices: NativeArray<float32>
-    val mutable indices:  NativeArray<uint32>
+    val mutable vertices: narray<float32>
+    val mutable indices:  narray<uint32>
     val mutable private stride: int
     val mutable private l: int    
     val mutable private attrib0: int    
@@ -59,7 +50,7 @@ type [<Struct>] ValueModel =
     val mutable private attrib4: int    
     val mutable private is_disposed: bool
 
-    new(vertices:NativeArray<float32>, indices:NativeArray<uint32>, attribs:list<int>) =
+    new(vertices:narray<float32>, indices:narray<uint32>, attribs:list<int>) =
         {
             vertices = vertices
             indices = indices
@@ -73,10 +64,10 @@ type [<Struct>] ValueModel =
             attrib4 = (S.sum 4 attribs) * sizeof<float32>            
         }
 
-    new(vertices:NativeArray<float32>, attribs:list<int>) =
+    new(vertices:narray<float32>, attribs:list<int>) =
         {
             vertices = vertices
-            indices = new NativeArray<uint32>(10)
+            indices = NativeArray.create 10
             is_disposed = false
             l = List.sum attribs
             stride = (List.sum attribs) * (sizeof<float32>)
@@ -110,65 +101,6 @@ type [<Struct>] ValueModel =
             this.vertices.Dispose()
             this.indices.Dispose()
         this.is_disposed <- true
-
-
-type Model(vertices: array<float32>, indices: array<uint32>, attribs:list<int>) =
-    let sum n =
-        let mutable s = 0
-        for i in 1..n do s <- s + attribs[i-1]
-        s
-    let f32 = sizeof<float32>
-
-    new(vertices:array<float32>, indices:array<uint32>) = Model(vertices, indices, [3;3;4])
-
-    interface IEnumerable<Triangle> with
-        member this.GetEnumerator() = new MeshIterator(this)
-
-    interface System.Collections.IEnumerable with
-        member this.GetEnumerator() = null
-
-    member this.Vertices with get() = vertices
-    member this.Indices with get() = indices
-    member this.L with get() = List.sum attribs
-    member this.Stride with get() = (List.sum attribs) * f32
-    member this.Attrib0 with get() = (sum 0) * f32 
-    member this.Attrib1 with get() = (sum 1) * f32 
-    member this.Attrib2 with get() = (sum 2) * f32
-    member this.Attrib3 with get() = (sum 3) * f32
-    member this.Attrib4 with get() = (sum 4) * f32
-    member this.VerticesBufferSize with get() = vertices.Length * sizeof<float32>
-    member this.IndicesBufferSize with get() = indices.Length * sizeof<uint32>
-
-
-and MeshIterator(model:Model) =
-    let vertices = model.Vertices
-    let indices  = model.Indices
-    let L = model.L
-    let indices_count = indices.Length / 3
-    let mutable i = -1
-    
-    interface IEnumerator<Triangle> with
-        member this.Current with get() = 
-            let i0 = int32 (indices[3 * i + 0])
-            let i1 = int32 (indices[3 * i + 1])
-            let i2 = int32 (indices[3 * i + 2])
-
-            let v0 = Vector3(vertices[L*i0+0], vertices[L*i0+1], vertices[L*i0+2])
-            let v1 = Vector3(vertices[L*i1+0], vertices[L*i1+1], vertices[L*i1+2])
-            let v2 = Vector3(vertices[L*i2+0], vertices[L*i2+1], vertices[L*i2+2])
-            {n0 = v0; n1 = v1; n2 = v2}
-
-        member this.Dispose() = ()
-
-    interface Collections.IEnumerator with
-        member this.Current with get() = null
-
-        member this.MoveNext() =
-            i <- i + 1
-            i < indices_count
-        
-        member this.Reset() =
-            i <- -1
 
 
 module Geometry =
@@ -359,7 +291,7 @@ module Geometry =
         (vertices,indices)
 
     let cube_unmanaged () =
-        let vertices = new NativeArray<float32>(cube_positions.Length + cube_normals.Length + cube_colors.Length)
+        let vertices = NativeArray.create<float32> (cube_positions.Length + cube_normals.Length + cube_colors.Length)
         let v = vertices.AsSpan()
         let vertices_count = cube_positions.Length / 3
         for i in 0..vertices_count-1 do
@@ -374,7 +306,7 @@ module Geometry =
             v[10*i+8] <- cube_colors[4*i+2]
             v[10*i+9] <- cube_colors[4*i+3]
         
-        let indices  = new NativeArray<uint32>(cube_indices)        
+        let indices = NativeArray.ofArray (cube_indices)        
         struct(vertices,indices)
 
 
@@ -466,8 +398,8 @@ module Geometry =
 
         let I = 12 
         let J = 12 + vertices_count
-        let vertices = new NativeArray<float32>(vertices_count * 10)
-        let indices  = new NativeArray<uint32>(indices_count * 3)
+        let vertices = NativeArray.create<float32>(vertices_count * 10)
+        let indices  = NativeArray.create<uint32>(indices_count * 3)
 
         let v = vertices.AsSpan()
         for i in 0..vertices_count - 1 do
@@ -655,135 +587,9 @@ module Geometry =
         let v_min = Vector3.Min(a, Vector3.Min(b,c))
         let v_max = Vector3.Max(a, Vector3.Max(b,c))
         v_min + (v_max - v_min) / 2.f
-        
-
-    [<Obsolete>]
-    let assign_voxels_from_valuemodel (model:ValueModel) (n:int) (voxels:bool array3d) =
-        let vertices = model.Vertices
-        let indices  = model.Indices
-        let L = model.L
-        let stride   = model.L
-        let v_min,v_max = bounds vertices n stride 
-        let x_min = v_min.X
-        let y_min = v_min.Y
-        let z_min = v_min.Z
-        let x_max = v_max.X
-        let y_max = v_max.Y
-        let z_max = v_max.Z
-        let dx = x_max - x_min
-        let dy = y_max - y_min
-        let dz = z_max - z_min
-        let n_size = (min (min dx dy) dz) / float32(n)
-        let mutable total_filled_voxels = 0
-
-        let mutable i = 0
-        let indices_count = model.indices.Length / 3
-        while i < indices_count do
-            let mesh = 
-                let i0 = int32 (indices[3*i+0])
-                let i1 = int32 (indices[3*i+1])
-                let i2 = int32 (indices[3*i+2])
-
-                let v0 = Vector3(vertices[L*i0+0], vertices[L*i0+1], vertices[L*i0+2])
-                let v1 = Vector3(vertices[L*i1+0], vertices[L*i1+1], vertices[L*i1+2])
-                let v2 = Vector3(vertices[L*i2+0], vertices[L*i2+1], vertices[L*i2+2])
-                {n0 = v0; n1 = v1; n2 = v2}
-            
-            let v_center = triangle_center mesh
-            let ix = (float32(n) * (v_center.X - x_min)) / dx |> int32  // normalize to [0..1] and convert to index [0..n]
-            let iy = (float32(n) * (v_center.Y - y_min)) / dy |> int32
-            let iz = (float32(n) * (v_center.Z - z_min)) / dz |> int32
-            voxels[Math.Clamp(ix,0,n-1), Math.Clamp(iy,0,n-1), Math.Clamp(iz,0,n-1)] <- true
-            i <- i + 1
-
-        let hn = if n % 2 <> 0 then n / 2 else n / 2 + 1
-
-        for ix in 0..n-1 do
-            for iy in 0..n-1 do       
-                let mutable fill = false
-                for iz in 0..hn-1 do
-                    if voxels[ix,iy,iz] && not fill then
-                        fill <- true
-                        total_filled_voxels <- total_filled_voxels + 1
-                    elif voxels[ix,iy,iz] then
-                        fill <- false
-                        total_filled_voxels <- total_filled_voxels + 1
-                    elif fill then
-                        voxels[ix,iy,iz] <- true
-                        total_filled_voxels <- total_filled_voxels + 1
-
-                fill <- false
-                for iz=n-1 downto hn do
-                    if voxels[ix,iy,iz] && not fill then
-                        fill <- true
-                        total_filled_voxels <- total_filled_voxels + 1
-                    elif voxels[ix,iy,iz] then
-                        fill <- false
-                        total_filled_voxels <- total_filled_voxels + 1
-                    elif fill then
-                        voxels[ix,iy,iz] <- true
-                        total_filled_voxels <- total_filled_voxels + 1
-        total_filled_voxels                 
-
 
     /// creates a volume as voxels bool, where n is the resolution
-    [<Obsolete>]
-    let assign_voxels (model:Model) (n:int) (voxels:bool array3d) =
-        let vertices = model.Vertices
-        let indices  = model.Indices
-        let stride   = model.L
-        let v_min,v_max = bounds vertices n stride 
-        let x_min = v_min.X
-        let y_min = v_min.Y
-        let z_min = v_min.Z
-        let x_max = v_max.X
-        let y_max = v_max.Y
-        let z_max = v_max.Z
-        let dx = x_max - x_min
-        let dy = y_max - y_min
-        let dz = z_max - z_min
-        let n_size = (min (min dx dy) dz) / float32(n)
-        let mutable total_filled_voxels = 0
-
-        for mesh in (model :> IEnumerable<Triangle>) do
-            let v_center = triangle_center mesh
-            let ix = (float32(n) * (v_center.X - x_min)) / dx |> int32  // normalize to [0..1] and convert to index [0..n]
-            let iy = (float32(n) * (v_center.Y - y_min)) / dy |> int32
-            let iz = (float32(n) * (v_center.Z - z_min)) / dz |> int32
-            voxels[Math.Clamp(ix,0,n-1), Math.Clamp(iy,0,n-1), Math.Clamp(iz,0,n-1)] <- true
-
-        let hn = if n % 2 <> 0 then n / 2 else n / 2 + 1
-
-        for ix in 0..n-1 do
-            for iy in 0..n-1 do       
-                let mutable fill = false
-                for iz in 0..hn-1 do
-                    if voxels[ix,iy,iz] && not fill then
-                        fill <- true
-                        total_filled_voxels <- total_filled_voxels + 1
-                    elif voxels[ix,iy,iz] then
-                        fill <- false
-                        total_filled_voxels <- total_filled_voxels + 1
-                    elif fill then
-                        voxels[ix,iy,iz] <- true
-                        total_filled_voxels <- total_filled_voxels + 1
-
-                fill <- false
-                for iz=n-1 downto hn do
-                    if voxels[ix,iy,iz] && not fill then
-                        fill <- true
-                        total_filled_voxels <- total_filled_voxels + 1
-                    elif voxels[ix,iy,iz] then
-                        fill <- false
-                        total_filled_voxels <- total_filled_voxels + 1
-                    elif fill then
-                        voxels[ix,iy,iz] <- true
-                        total_filled_voxels <- total_filled_voxels + 1
-        total_filled_voxels                 
-
-
-    /// creates a volume as voxels bool, where n is the resolution
-    let assign_voxels_SIMD (model:ValueModel) (N:int) (voxels:byref<NativeArray3D<bool>>) =
+    let assign_voxels_SIMD (model:ValueModel) (N:int) (voxels:byref<narray3d<bool>>) =
         let indices_count = model.indices.Length / 3
         let indices  = model.Indices
         let vertices = model.Vertices
@@ -835,13 +641,6 @@ module Geometry =
         
         t_filled
 
-
-    [<Obsolete>]
-    let as_voxels (model:Model) (n:int) =
-        let voxels = Array3D.zeroCreate<bool> n n n
-        let t_filled = assign_voxels model n voxels
-        (voxels,t_filled)
-
     let reverse_voxels (voxels:bool array3d) n =
         let mutable t_filled = 0
         for ix in 0..n-1 do
@@ -880,7 +679,7 @@ module Geometry =
                         i <- i + stride
 
     /// Use this function to assign on a buffer
-    let assign_particles_SIMD (cv:CVBounds, voxels:NativeArray3D<bool>, particles:Span<float32>, L:int) =
+    let assign_particles_SIMD (cv:CVBounds, voxels:narray3d<bool>, particles:Span<float32>, L:int) =
         let I = voxels.I
         let J = voxels.J
         let K = voxels.K
@@ -902,26 +701,18 @@ module Geometry =
                         i <- i + L
 
     let voxels_SIMD N (model:ValueModel) =
-        let mutable voxels = new NativeArray3D<bool>(N,N,N)
+        let mutable voxels = NativeArray3D.create<bool> N N N
         let t_filled = assign_voxels_SIMD model N &voxels
         let cv = bounds_SIMD model.Vertices model.L
-        {voxels = voxels; t_filled = t_filled; cv = cv}
+        new Voxels(voxels, t_filled, cv)
 
     let particles_SIMD L (v:Voxels) =
-        let particles_array = new NativeArray<float32>(v.t_filled * L)
-        assign_particles_SIMD(v.cv, v.voxels, particles_array.AsSpan(), L)
+        let particles_array = NativeArray.create<float32>(v.filled * L)
+        assign_particles_SIMD(v.bounds, v.voxels, particles_array.AsSpan(), L)
         particles_array
-
-    /// gets a float32 array ready to be rendered from the shader 7-stride
-    let get_particles (v_min:Vector3) (v_max:Vector3) (voxels:bool array3d) t n stride =
-        let particles = Array.zeroCreate<float32> (t * stride)
-        assign_particles(v_min, v_max, voxels, particles, n, stride)
-        particles           
 
     let assign_particles_unmanaged (body:ValueModel) (particles:ValueModel) (voxels:bool array3d) (N:int) =
         let (v_min,v_max) = bounds body.Vertices N body.L  
         assign_particles(v_min, v_max, voxels, particles.Vertices, N, particles.L)          
-
-
 
 

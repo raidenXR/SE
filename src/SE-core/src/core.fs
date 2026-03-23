@@ -1,4 +1,4 @@
-﻿namespace SE.Core
+﻿namespace SE.ECS
 
 open System
 open System.Collections.Generic

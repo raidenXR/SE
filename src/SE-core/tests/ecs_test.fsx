@@ -2,7 +2,7 @@
 
 open System
 open System.Numerics
-open SE.Core
+open SE.ECS
 
 // components
 type [<Struct>] Position = Position of Vector3

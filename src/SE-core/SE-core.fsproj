@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <Compile Include="src/serializers.fs" />
+    <Compile Include="src/unsafe.fs" />
     <Compile Include="src/core.fs" />
     <Compile Include="src/linearalg.fs" />
     <Compile Include="src/numerics.fs" />
