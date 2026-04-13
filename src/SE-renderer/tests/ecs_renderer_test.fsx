@@ -42,11 +42,11 @@ type [<Struct>] DiscretizedVolume = {
     m_transform: Matrix4
 }
 
-let path = "../models/animated_object.gltf"
-// let path = "../models/bun_zipper.ply"
-let gltf: option<GLTF.Deserializer> = Some (new GLTF.Deserializer(path))
-// let gltf: option<GLTF.Deserializer> = None
-let N = 100
+// let path = "../models/animated_object.gltf"
+let path = "../models/bun_zipper.ply"
+// let gltf: option<GLTF.Deserializer> = Some (new GLTF.Deserializer(path))
+let gltf: option<GLTF.Deserializer> = None
+let N = 50
 
 let mutable camera: Camera = null
 let mutable state: Entity = 0u
@@ -81,19 +81,19 @@ system OnLoad [] (fun _ ->
 
 // create entities on load
 system OnLoad [] (fun _ -> 
-    let struct(vertices,indices) =
+    let mesh =
         match gltf with
-        | Some gltf -> gltf.ReadMesh_unmanaged(0)
-        | None -> Geometry.load_ply_unmanaged (path, 0.55f, 0.55f, 0.53f, 1.0f)
-    let ob_model = new ValueModel(vertices, indices, [3;3;4])
+        | Some gltf -> gltf.ReadMeshF(0)
+        | None -> RGeometry.load_ply_unmanaged (path, 0.55f, 0.55f, 0.53f, 1.0f)
+    let ob_model = new Model(mesh.vertices, mesh.indices, [3;3;4])
     let mesh = Helpers.createMesh ob_model
 
     // create particles
-    let voxels = Geometry.voxels_SIMD N ob_model        
-    let particles = Geometry.particles_SIMD 7 voxels
+    let voxels = Geometry.voxels ob_model.mesh N        
+    let particles = RGeometry.particles_SIMD 7 voxels
 
     
-    let pt_model = new ValueModel(particles,[3;4])
+    let pt_model = new Model(particles,[3;4])
     let prim = Helpers.createPrim_sliced pt_model voxels.filled
 
     printfn "for N: %d, filled_voxels: %d, particles_size: %d" N voxels.filled (particles.Length / 7)
@@ -118,11 +118,6 @@ system OnLoad [] (fun _ ->
         |> Entity.set {wireframe_active = true; prev_key = false}
         |> Entity.add<HasAnimation>
 
-    let animation =
-        entity()
-        |> Entity.set {idx = 0; dt = 0.; is_reversed = false; is_active = true; is_looped = true}
-        |> Entity.set {animation_active = true; prev_key = false}
-
     let particles = 
         entity()
         |> Entity.set pt_model
@@ -132,7 +127,13 @@ system OnLoad [] (fun _ ->
 
     // create relation between a and b -> paticles depend on model
     relate model particles (HasParticles()) 
-    relate model animation (HasAnimation())
+
+    // let animation =
+    //     entity()
+    //     |> Entity.set {idx = 0; dt = 0.; is_reversed = false; is_active = true; is_looped = true}
+    //     |> Entity.set {animation_active = true; prev_key = false}
+        
+    // relate model animation (HasAnimation())
 )
 
 // load the window
@@ -140,7 +141,7 @@ system OnLoad [] (fun _ -> window.Load())
 
 
 let render_ply () =
-    let models = Components.get<ValueModel>()
+    let models = Components.get<Model>()
     let meshes = Components.get<GLMesh>()
     let transforms = Components.get<Matrix4>()
     
@@ -186,7 +187,7 @@ let render_ply () =
   
 
 let render_particles () =
-    let models = Components.get<ValueModel>()
+    let models = Components.get<Model>()
     let prims = Components.get<GLPrim>()
     let transforms = Components.get<Matrix4>()
     let lens = Components.get<SliceLen>()
@@ -274,7 +275,7 @@ system OnUpdate [] (fun _ ->
 )
 
 // invoke when window renders frame
-system OnRender [typeof<ValueModel>] (fun q -> 
+system OnRender [typeof<Model>] (fun q -> 
     window.Update(fun _ ->
         GL.Clear(ClearBufferMask.ColorBufferBit ||| ClearBufferMask.DepthBufferBit)
         render_ply ()
@@ -286,7 +287,7 @@ system OnRender [typeof<ValueModel>] (fun q ->
 
 // clear all resources
 system OnExit [] (fun _ ->
-    let models = Components.get<ValueModel>().Entries
+    let models = Components.get<Model>().Entries
     for model in models do
         model.Dispose()
 

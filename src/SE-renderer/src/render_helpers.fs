@@ -18,92 +18,92 @@ open SE
 
 
 module Helpers =
-    let createMesh (ob_model:ValueModel) =
+    let createMesh (model:Model) =
         let vbo = GL.GenBuffer()
         GL.BindBuffer (BufferTarget.ArrayBuffer, vbo)
-        GL.BufferData (BufferTarget.ArrayBuffer, ob_model.vertices.BufferSize, ob_model.vertices.ToInt(), BufferUsageHint.StaticDraw)
+        GL.BufferData (BufferTarget.ArrayBuffer, model.mesh.vertices.BufferSize, model.mesh.vertices.ToInt(), BufferUsageHint.StaticDraw)
     
         let vao = GL.GenVertexArray()
         GL.BindVertexArray(vao)
         GL.EnableVertexAttribArray(0)
         GL.EnableVertexAttribArray(1)
         GL.EnableVertexAttribArray(2)            
-        GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, ob_model.Stride, ob_model.Attrib0)
-        GL.VertexAttribPointer(1, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, ob_model.Stride, ob_model.Attrib1)
-        GL.VertexAttribPointer(2, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, ob_model.Stride, ob_model.Attrib2)
+        GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, model.Stride, model.Attrib0)
+        GL.VertexAttribPointer(1, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, model.Stride, model.Attrib1)
+        GL.VertexAttribPointer(2, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, model.Stride, model.Attrib2)
 
         let ebo = GL.GenBuffer()
         GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo)
-        GL.BufferData(BufferTarget.ElementArrayBuffer, ob_model.indices.BufferSize, ob_model.indices.ToInt(), BufferUsageHint.StaticDraw)
+        GL.BufferData(BufferTarget.ElementArrayBuffer, model.mesh.indices.BufferSize, model.mesh.indices.ToInt(), BufferUsageHint.StaticDraw)
         {vao = vao; vbo = vbo; ebo = ebo}
 
-    let updateMesh (ob_model:ValueModel) (mesh:GLMesh) =
+    let updateMesh (model:Model) (mesh:GLMesh) =
         GL.BindBuffer (BufferTarget.ArrayBuffer, mesh.vbo)
-        GL.BufferData (BufferTarget.ArrayBuffer, ob_model.vertices.BufferSize, ob_model.vertices.ToInt(), BufferUsageHint.StaticDraw)
+        GL.BufferData (BufferTarget.ArrayBuffer, model.mesh.vertices.BufferSize, model.mesh.vertices.ToInt(), BufferUsageHint.StaticDraw)
     
         GL.BindVertexArray(mesh.vao)
         GL.EnableVertexAttribArray(0)
         GL.EnableVertexAttribArray(1)
         GL.EnableVertexAttribArray(2)            
-        GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, ob_model.Stride, ob_model.Attrib0)
-        GL.VertexAttribPointer(1, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, ob_model.Stride, ob_model.Attrib1)
-        GL.VertexAttribPointer(2, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, ob_model.Stride, ob_model.Attrib2)
+        GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, model.Stride, model.Attrib0)
+        GL.VertexAttribPointer(1, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, model.Stride, model.Attrib1)
+        GL.VertexAttribPointer(2, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, model.Stride, model.Attrib2)
 
         GL.BindBuffer(BufferTarget.ElementArrayBuffer, mesh.ebo)
-        GL.BufferData(BufferTarget.ElementArrayBuffer, ob_model.indices.BufferSize, ob_model.indices.ToInt(), BufferUsageHint.DynamicDraw)
+        GL.BufferData(BufferTarget.ElementArrayBuffer, model.mesh.indices.BufferSize, model.mesh.indices.ToInt(), BufferUsageHint.DynamicDraw)
         
-    let drawMesh (ob_model:ValueModel) (mesh:GLMesh) =
+    let drawMesh (model:Model) (mesh:GLMesh) =
         GL.BindVertexArray(mesh.vao)
-        GL.DrawElements(PrimitiveType.Triangles, ob_model.Indices.Length, DrawElementsType.UnsignedInt, 0)
+        GL.DrawElements(PrimitiveType.Triangles, model.Indices.Length, DrawElementsType.UnsignedInt, 0)
 
-    let createPrim (ob_model:ValueModel) =
+    let createPrim (model:Model) =
         let vbo = GL.GenBuffer()
         GL.BindBuffer (BufferTarget.ArrayBuffer, vbo)
-        GL.BufferData (BufferTarget.ArrayBuffer, ob_model.vertices.BufferSize, ob_model.vertices.ToInt(), BufferUsageHint.StaticDraw)
+        GL.BufferData (BufferTarget.ArrayBuffer, model.mesh.vertices.BufferSize, model.mesh.vertices.ToInt(), BufferUsageHint.StaticDraw)
         
         let vao = GL.GenVertexArray()
         GL.BindVertexArray(vao)
         GL.EnableVertexAttribArray(0)
         GL.EnableVertexAttribArray(1)            
-        GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, ob_model.L, ob_model.Attrib0)
-        GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, ob_model.L, ob_model.Attrib1)
+        GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, model.L, model.Attrib0)
+        GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, model.L, model.Attrib1)
         {vao = vao; vbo = vbo}
 
-    let createPrim_sliced (ob_model:ValueModel) (t_filled:int) =
+    let createPrim_sliced (model:Model) (t_filled:int) =
         let vbo = GL.GenBuffer()
         GL.BindBuffer (BufferTarget.ArrayBuffer, vbo)
-        GL.BufferData (BufferTarget.ArrayBuffer, ob_model.Stride * t_filled, ob_model.vertices.ToInt(), BufferUsageHint.StaticDraw)
+        GL.BufferData (BufferTarget.ArrayBuffer, model.Stride * t_filled, model.mesh.vertices.ToInt(), BufferUsageHint.StaticDraw)
         
         let vao = GL.GenVertexArray()
         GL.BindVertexArray(vao)
         GL.EnableVertexAttribArray(0)
         GL.EnableVertexAttribArray(1)            
-        GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, ob_model.L, ob_model.Attrib0)
-        GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, ob_model.L, ob_model.Attrib1)
+        GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, model.L, model.Attrib0)
+        GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, model.L, model.Attrib1)
         {vao = vao; vbo = vbo}
 
 
-    let updatePrim (ob_model:ValueModel) (prim:GLPrim) =
+    let updatePrim (model:Model) (prim:GLPrim) =
         GL.BindBuffer (BufferTarget.ArrayBuffer, prim.vbo)
-        GL.BufferData (BufferTarget.ArrayBuffer, ob_model.vertices.BufferSize, ob_model.vertices.ToInt(), BufferUsageHint.DynamicDraw)
+        GL.BufferData (BufferTarget.ArrayBuffer, model.mesh.vertices.BufferSize, model.mesh.vertices.ToInt(), BufferUsageHint.DynamicDraw)
         
         GL.BindVertexArray(prim.vao)
         GL.EnableVertexAttribArray(0)
         GL.EnableVertexAttribArray(1)            
-        GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, ob_model.L, ob_model.Attrib0)
-        GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, ob_model.L, ob_model.Attrib1)
+        GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, model.L, model.Attrib0)
+        GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, model.L, model.Attrib1)
 
-    let updatePrim_sliced (ob_model:ValueModel) (t_filled:int) (prim:GLPrim) =
+    let updatePrim_sliced (model:Model) (t_filled:int) (prim:GLPrim) =
         GL.BindBuffer (BufferTarget.ArrayBuffer, prim.vbo)
-        GL.BufferData (BufferTarget.ArrayBuffer, ob_model.Stride * t_filled, ob_model.vertices.ToInt(), BufferUsageHint.DynamicDraw)
+        GL.BufferData (BufferTarget.ArrayBuffer, model.Stride * t_filled, model.mesh.vertices.ToInt(), BufferUsageHint.DynamicDraw)
         
         GL.BindVertexArray(prim.vao)
         GL.EnableVertexAttribArray(0)
         GL.EnableVertexAttribArray(1)            
-        GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, ob_model.L, ob_model.Attrib0)
-        GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, ob_model.L, ob_model.Attrib1)
+        GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, model.L, model.Attrib0)
+        GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, model.L, model.Attrib1)
 
-    let drawPrim (ob_model:ValueModel) (prim:GLPrim) =
+    let drawPrim (ob_model:Model) (prim:GLPrim) =
         GL.BindVertexArray(prim.vao)
         GL.DrawArrays(PrimitiveType.Points, 0, ob_model.Vertices.Length)
 
@@ -116,7 +116,7 @@ module Helpers =
     let default_color = [|0.53f; 0.55f; 0.53f; 1.0f|]
 
     [<Obsolete>]
-    let update_animation (gltf:GLTF.Deserializer, model:inref<ValueModel>, v_animation:byref<ValueAnimation>, time:float) =
+    let update_animation (gltf:GLTF.Deserializer, model:inref<Model>, v_animation:byref<ValueAnimation>, time:float) =
         let root = gltf.Root
         let vertices = model.Vertices
         let indices  = model.Indices

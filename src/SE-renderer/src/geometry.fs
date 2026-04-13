@@ -38,9 +38,10 @@ type [<Struct>] ValueAnimation = {
     mutable dt: float
 }
 
-type [<Struct>] ValueModel =
-    val mutable vertices: narray<float32>
-    val mutable indices:  narray<uint32>
+type [<Struct>] Model =
+    // val mutable vertices: narray<float32>
+    // val mutable indices:  narray<uint32>
+    val mutable mesh: MeshF
     val mutable private stride: int
     val mutable private l: int    
     val mutable private attrib0: int    
@@ -52,8 +53,9 @@ type [<Struct>] ValueModel =
 
     new(vertices:narray<float32>, indices:narray<uint32>, attribs:list<int>) =
         {
-            vertices = vertices
-            indices = indices
+            // vertices = vertices
+            // indices = indices
+            mesh = {vertices = vertices; indices = indices; L = List.sum attribs}
             is_disposed = false
             l = List.sum attribs
             stride = (List.sum attribs) * (sizeof<float32>)
@@ -66,8 +68,9 @@ type [<Struct>] ValueModel =
 
     new(vertices:narray<float32>, attribs:list<int>) =
         {
-            vertices = vertices
-            indices = NativeArray.create 10
+            // vertices = vertices
+            // indices = NativeArray.create 10
+            mesh = {vertices = vertices; indices = NativeArray.empty(); L = List.sum attribs}
             is_disposed = false
             l = List.sum attribs
             stride = (List.sum attribs) * (sizeof<float32>)
@@ -78,16 +81,18 @@ type [<Struct>] ValueModel =
             attrib4 = (S.sum 4 attribs) * sizeof<float32>            
         }
 
-    interface IDisposable with
-     member this.Dispose() = 
+    member this.Dispose() =
         if not this.is_disposed then
-            this.vertices.Dispose()
-            this.indices.Dispose()
+            this.mesh.vertices.Dispose()
+            this.mesh.indices.Dispose()
         this.is_disposed <- true
+
+    interface IDisposable with
+        member this.Dispose() = this.Dispose() 
         
     
-    member this.Vertices with get() = this.vertices.AsSpan()
-    member this.Indices with get()  = this.indices.AsSpan() 
+    member this.Vertices with get() = this.mesh.vertices.AsSpan()
+    member this.Indices with get()  = this.mesh.indices.AsSpan() 
     member this.L with get() = this.l
     member this.Stride with get() = this.stride
     member this.Attrib0 with get() = this.attrib0 
@@ -96,14 +101,8 @@ type [<Struct>] ValueModel =
     member this.Attrib3 with get() = this.attrib3
     member this.Attrib4 with get() = this.attrib4
     
-    member this.Dispose() =
-        if not this.is_disposed then
-            this.vertices.Dispose()
-            this.indices.Dispose()
-        this.is_disposed <- true
 
-
-module Geometry =
+module RGeometry =
     let cube_vertices = [|
         // Fill in the front face vertex data.
         -0.5f; -0.5f; -0.5f; 0.0f; 0.0f; -1.0f;
@@ -450,7 +449,12 @@ module Geometry =
             v[10*i + 8] <- g
             v[10*i + 9] <- a
         
-        struct(vertices,indices)
+        // struct(vertices,indices)
+        {
+            SE.Spatial.MeshF.vertices = vertices
+            SE.Spatial.MeshF.indices = indices
+            SE.Spatial.MeshF.L = 10
+        }
         
 
     /// deserializes the vertices and indices from a .txt file
@@ -524,159 +528,157 @@ module Geometry =
     let inline is_clamped v1 v v2 =
         v > v1 && v < v2
 
-    /// gets the control volume that includes the vertices
-    let bounds (vertices:ReadOnlySpan<float32>) N stride =
-        let n = float32 N
-        let L = stride
-        let mutable x_min = vertices[0]
-        let mutable y_min = vertices[1]
-        let mutable z_min = vertices[2]
+    // /// gets the control volume that includes the vertices
+    // let bounds (vertices:ReadOnlySpan<float32>) N stride =
+    //     let n = float32 N
+    //     let L = stride
+    //     let mutable x_min = vertices[0]
+    //     let mutable y_min = vertices[1]
+    //     let mutable z_min = vertices[2]
 
-        let mutable x_max = x_min
-        let mutable y_max = y_min
-        let mutable z_max = z_min
+    //     let mutable x_max = x_min
+    //     let mutable y_max = y_min
+    //     let mutable z_max = z_min
 
-        let vertices_count = vertices.Length / L
-        for i in 0..vertices_count - 1 do
-            x_min <- min x_min vertices[L * i + 0]
-            y_min <- min y_min vertices[L * i + 1]
-            z_min <- min z_min vertices[L * i + 2]
-            x_max <- max x_max vertices[L * i + 0]
-            y_max <- max y_max vertices[L * i + 1]
-            z_max <- max z_max vertices[L * i + 2]
+    //     let vertices_count = vertices.Length / L
+    //     for i in 0..vertices_count - 1 do
+    //         x_min <- min x_min vertices[L * i + 0]
+    //         y_min <- min y_min vertices[L * i + 1]
+    //         z_min <- min z_min vertices[L * i + 2]
+    //         x_max <- max x_max vertices[L * i + 0]
+    //         y_max <- max y_max vertices[L * i + 1]
+    //         z_max <- max z_max vertices[L * i + 2]
 
-        let dx = (x_max - x_min) / n
-        let dy = (y_max - y_min) / n
-        let dz = (z_max - z_min) / n
-        // (Vector3(x_min-dx, y_min-dy, z_min-dz), Vector3(x_max+dx, y_max+dy, z_max+dz))        
-        (Vector3(x_min, y_min, z_min), Vector3(x_max, y_max, z_max))        
+    //     let dx = (x_max - x_min) / n
+    //     let dy = (y_max - y_min) / n
+    //     let dz = (z_max - z_min) / n
+    //     // (Vector3(x_min-dx, y_min-dy, z_min-dz), Vector3(x_max+dx, y_max+dy, z_max+dz))        
+    //     (Vector3(x_min, y_min, z_min), Vector3(x_max, y_max, z_max))        
 
-    /// calculates the bounds of a ControlVolume (CV) with SIMD intrisics
-    let bounds_SIMD (vertices:ReadOnlySpan<float32>) L =
-        let vertices_count = vertices.Length / L
-        let p = &MemoryMarshal.GetReference(vertices)
-        let mutable v_min = Unsafe.As<float32,Vector3>(&p)
-        let mutable v_max = Unsafe.As<float32,Vector3>(&p)
+    // calculates the bounds of a ControlVolume (CV) with SIMD intrisics
+    // let bounds_SIMD (vertices:ReadOnlySpan<float32>) L =
+    //     let vertices_count = vertices.Length / L
+    //     let p = &MemoryMarshal.GetReference(vertices)
+    //     let mutable v_min = Unsafe.As<float32,Vector3>(&p)
+    //     let mutable v_max = Unsafe.As<float32,Vector3>(&p)
 
-        for i in 0..vertices_count-1 do
-            let v = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, i*L))
-            v_min <- Vector3.Min(v, v_min)
-            v_max <- Vector3.Max(v, v_max)
+    //     for i in 0..vertices_count-1 do
+    //         let v = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, i*L))
+    //         v_min <- Vector3.Min(v, v_min)
+    //         v_max <- Vector3.Max(v, v_max)
             
-        {v_min = v_min; v_max = v_max} 
+    //     {v_min = v_min; v_max = v_max} 
 
 
-    let bounds_union (cv1:CVBounds) (cv2:CVBounds) =
-        let v_min = Vector3.Min(cv1.v_min, cv2.v_min)
-        let v_max = Vector3.Max(cv1.v_max, cv2.v_max)
-        {v_min = v_min; v_max = v_max} 
+    // let bounds_union (cv1:CVBounds) (cv2:CVBounds) =
+    //     let v_min = Vector3.Min(cv1.v_min, cv2.v_min)
+    //     let v_max = Vector3.Max(cv1.v_max, cv2.v_max)
+    //     {v_min = v_min; v_max = v_max} 
 
         
-    let inline triangle_center (t:Triangle) =
-        let tx_min = min (min t.n0.X t.n1.X) t.n2.X
-        let ty_min = min (min t.n0.Y t.n1.Y) t.n2.Y
-        let tz_min = min (min t.n0.Z t.n1.Z) t.n2.Z
-        let tx_max = max (max t.n0.X t.n1.X) t.n2.X
-        let ty_max = max (max t.n0.Y t.n1.Y) t.n2.Y
-        let tz_max = max (max t.n0.Z t.n1.Z) t.n2.Z
+    // let inline triangle_center (t:Triangle) =
+    //     let tx_min = min (min t.n0.X t.n1.X) t.n2.X
+    //     let ty_min = min (min t.n0.Y t.n1.Y) t.n2.Y
+    //     let tz_min = min (min t.n0.Z t.n1.Z) t.n2.Z
+    //     let tx_max = max (max t.n0.X t.n1.X) t.n2.X
+    //     let ty_max = max (max t.n0.Y t.n1.Y) t.n2.Y
+    //     let tz_max = max (max t.n0.Z t.n1.Z) t.n2.Z
 
-        Vector3(tx_min + (tx_max - tx_min) / 2.f, ty_min + (ty_max - ty_min) / 2.f, tz_min + (tz_max - tz_min) / 2.f)
+    //     Vector3(tx_min + (tx_max - tx_min) / 2.f, ty_min + (ty_max - ty_min) / 2.f, tz_min + (tz_max - tz_min) / 2.f)
         
 
-    let inline triangle_center_SIMD (a:inref<Vector3>) (b:inref<Vector3>) (c:inref<Vector3>) =
-        let v_min = Vector3.Min(a, Vector3.Min(b,c))
-        let v_max = Vector3.Max(a, Vector3.Max(b,c))
-        v_min + (v_max - v_min) / 2.f
+    // let inline triangle_center_SIMD (a:inref<Vector3>) (b:inref<Vector3>) (c:inref<Vector3>) =
+    //     let v_min = Vector3.Min(a, Vector3.Min(b,c))
+    //     let v_max = Vector3.Max(a, Vector3.Max(b,c))
+    //     v_min + (v_max - v_min) / 2.f
 
-    /// creates a volume as voxels bool, where n is the resolution
-    let assign_voxels_SIMD (model:ValueModel) (N:int) (voxels:byref<narray3d<bool>>) =
-        let indices_count = model.indices.Length / 3
-        let indices  = model.Indices
-        let vertices = model.Vertices
-        let p = &MemoryMarshal.GetReference(vertices)
-        let L = model.L
-        let cv = bounds_SIMD vertices L 
-        let v_min = cv.v_min
-        let v_max = cv.v_max
-        let dv = v_max - v_min
-        let n = float32 (N - 1)
-        let mutable t_filled = 0
+    // creates a volume as voxels bool, where n is the resolution
+    // let assign_voxels_SIMD (model:Model) (N:int) (voxels:byref<narray3d<bool>>) =
+    //     let indices_count = model.mesh.indices.Length / 3
+    //     let indices  = model.Indices
+    //     let vertices = model.Vertices
+    //     let p = &MemoryMarshal.GetReference(vertices)
+    //     let L = model.L
+    //     let cv = bounds_SIMD vertices L 
+    //     let v_min = cv.v_min
+    //     let v_max = cv.v_max
+    //     let dv = v_max - v_min
+    //     let n = float32 (N - 1)
+    //     let mutable t_filled = 0
 
-        for i in 0..indices_count-1 do
-            let i0 = int32 (indices[3*i+0])
-            let i1 = int32 (indices[3*i+1])
-            let i2 = int32 (indices[3*i+2])
+    //     for i in 0..indices_count-1 do
+    //         let i0 = int32 (indices[3*i+0])
+    //         let i1 = int32 (indices[3*i+1])
+    //         let i2 = int32 (indices[3*i+2])
 
-            let v0 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i0))
-            let v1 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i1))
-            let v2 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i2))
+    //         let v0 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i0))
+    //         let v1 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i1))
+    //         let v2 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i2))
             
-            let vc = triangle_center_SIMD &v0 &v1 &v2
-            let idx_c = Vector3.Clamp(n * (vc - v_min) / dv, Vector3.Zero, Vector3(n))
-            voxels[int32(idx_c.X), int32(idx_c.Y), int32(idx_c.Z)] <- true
+    //         let vc = triangle_center_SIMD &v0 &v1 &v2
+    //         let idx_c = Vector3.Round(n * (vc - v_min) / dv, 0)
+    //         let idx_0 = Vector3.Round(n * (v0 - v_min) / dv, 0) 
+    //         let idx_1 = Vector3.Round(n * (v1 - v_min) / dv, 0) 
+    //         let idx_2 = Vector3.Round(n * (v2 - v_min) / dv, 0) 
             
-            let idx_0 = Vector3.Clamp(n * (v0 - v_min) / dv, Vector3.Zero, Vector3(n)) 
-            voxels[int32(idx_0.X), int32(idx_0.Y), int32(idx_0.Z)] <- true
+    //         voxels[int32(idx_c.X), int32(idx_c.Y), int32(idx_c.Z)] <- true
+    //         voxels[int32(idx_0.X), int32(idx_0.Y), int32(idx_0.Z)] <- true
+    //         voxels[int32(idx_1.X), int32(idx_1.Y), int32(idx_1.Z)] <- true            
+    //         voxels[int32(idx_2.X), int32(idx_2.Y), int32(idx_2.Z)] <- true
 
-            let idx_1 = Vector3.Clamp(n * (v1 - v_min) / dv, Vector3.Zero, Vector3(n)) 
-            voxels[int32(idx_1.X), int32(idx_1.Y), int32(idx_1.Z)] <- true
-            
-            let idx_2 = Vector3.Clamp(n * (v2 - v_min) / dv, Vector3.Zero, Vector3(n)) 
-            voxels[int32(idx_2.X), int32(idx_2.Y), int32(idx_2.Z)] <- true
-
-            t_filled <- t_filled + 4
+    //         t_filled <- t_filled + 4
                         
-        // VECTORIZE THIS PART !!! OR NOT ... ??
-        // let hn = if N % 2 <> 0 then N / 2 else N / 2 + 1
-        let hn = N / 2
-        for ix in 0..N-1 do
-            for iy in 0..N-1 do       
-                for iz in 1..hn-1 do
-                    voxels[ix,iy,iz] <- voxels[ix,iy,iz-1] || voxels[ix,iy,iz]
-                    t_filled <- t_filled + if voxels[ix,iy,iz] then 1 else 0
+    //     // VECTORIZE THIS PART !!! OR NOT ... ??
+    //     // let hn = if N % 2 <> 0 then N / 2 else N / 2 + 1
+    //     let hn = N / 2
+    //     for ix in 0..N-1 do
+    //         for iy in 0..N-1 do       
+    //             for iz in 1..hn-1 do
+    //                 voxels[ix,iy,iz] <- voxels[ix,iy,iz-1] || voxels[ix,iy,iz]
+    //                 t_filled <- t_filled + if voxels[ix,iy,iz] then 1 else 0
 
-                for iz=N-2 downto hn do
-                    voxels[ix,iy,iz] <- voxels[ix,iy,iz+1] || voxels[ix,iy,iz]
-                    t_filled <- t_filled + if voxels[ix,iy,iz] then 1 else 0
+    //             for iz=N-2 downto hn do
+    //                 voxels[ix,iy,iz] <- voxels[ix,iy,iz+1] || voxels[ix,iy,iz]
+    //                 t_filled <- t_filled + if voxels[ix,iy,iz] then 1 else 0
         
-        t_filled
+    //     t_filled
 
-    let reverse_voxels (voxels:bool array3d) n =
-        let mutable t_filled = 0
-        for ix in 0..n-1 do
-            for iy in 0..n-1 do
-                for iz in 0..n-1 do
-                    voxels[ix,iy,iz] <- not voxels[ix,iy,iz]
-                    if voxels[ix,iy,iz] then t_filled <- t_filled + 1
-        t_filled
+    // let reverse_voxels (voxels:bool array3d) n =
+    //     let mutable t_filled = 0
+    //     for ix in 0..n-1 do
+    //         for iy in 0..n-1 do
+    //             for iz in 0..n-1 do
+    //                 voxels[ix,iy,iz] <- not voxels[ix,iy,iz]
+    //                 if voxels[ix,iy,iz] then t_filled <- t_filled + 1
+    //     t_filled
 
-    let assign_particles (v_min:Vector3, v_max:Vector3, voxels:bool array3d, particles:Span<float32>, n:int, stride:int) =
-        let x_min = v_min.X
-        let y_min = v_min.Y
-        let z_min = v_min.Z
-        let x_max = v_max.X
-        let y_max = v_max.Y
-        let z_max = v_max.Z
-        let dx = (x_max - x_min) / float32(n)
-        let dy = (y_max - y_min) / float32(n)
-        let dz = (z_max - z_min) / float32(n)
+    // let assign_particles (v_min:Vector3, v_max:Vector3, voxels:bool array3d, particles:Span<float32>, n:int, stride:int) =
+    //     let x_min = v_min.X
+    //     let y_min = v_min.Y
+    //     let z_min = v_min.Z
+    //     let x_max = v_max.X
+    //     let y_max = v_max.Y
+    //     let z_max = v_max.Z
+    //     let dx = (x_max - x_min) / float32(n)
+    //     let dy = (y_max - y_min) / float32(n)
+    //     let dz = (z_max - z_min) / float32(n)
             
-        let mutable i = 0
-        for ix in 0..n-1 do
-            for iy in 0..n-1 do
-                for iz in 0..n-1 do
-                    if voxels[ix,iy,iz] then
-                        let x = x_min + dx * float32(ix)
-                        let y = y_min + dy * float32(iy)
-                        let z = z_min + dz * float32(iz)
-                        particles[i+0] <- x
-                        particles[i+1] <- y
-                        particles[i+2] <- z
-                        particles[i+3] <- (x - x_min) / (dx * float32(n))
-                        particles[i+4] <- (y - y_min) / (dy * float32(n))
-                        particles[i+5] <- (z - z_min) / (dz * float32(n))
-                        particles[i+6] <- 1.f
-                        i <- i + stride
+    //     let mutable i = 0
+    //     for ix in 0..n-1 do
+    //         for iy in 0..n-1 do
+    //             for iz in 0..n-1 do
+    //                 if voxels[ix,iy,iz] then
+    //                     let x = x_min + dx * float32(ix)
+    //                     let y = y_min + dy * float32(iy)
+    //                     let z = z_min + dz * float32(iz)
+    //                     particles[i+0] <- x
+    //                     particles[i+1] <- y
+    //                     particles[i+2] <- z
+    //                     particles[i+3] <- (x - x_min) / (dx * float32(n))
+    //                     particles[i+4] <- (y - y_min) / (dy * float32(n))
+    //                     particles[i+5] <- (z - z_min) / (dz * float32(n))
+    //                     particles[i+6] <- 1.f
+    //                     i <- i + stride
 
     /// Use this function to assign on a buffer
     let assign_particles_SIMD (cv:CVBounds, voxels:narray3d<bool>, particles:Span<float32>, L:int) =
@@ -700,19 +702,20 @@ module Geometry =
                         Unsafe.Write<Vector4>(~~(p ++ (i+3)), Vector4(c,1.f))
                         i <- i + L
 
-    let voxels_SIMD N (model:ValueModel) =
-        let mutable voxels = NativeArray3D.create<bool> N N N
-        let t_filled = assign_voxels_SIMD model N &voxels
-        let cv = bounds_SIMD model.Vertices model.L
-        new Voxels(voxels, t_filled, cv)
+    // let voxels_SIMD N (model:Model) =
+        // let mutable voxels = NativeArray3D.create<bool> N N N
+        // let t_filled = assign_voxels_SIMD model N &voxels
+        // let cv = bounds_SIMD model.Vertices model.L
+        // new Voxels(voxels, t_filled, cv)
+        // let mutable v = new Voxels(voxels, 0, CVBounds.)
 
     let particles_SIMD L (v:Voxels) =
         let particles_array = NativeArray.create<float32>(v.filled * L)
         assign_particles_SIMD(v.bounds, v.voxels, particles_array.AsSpan(), L)
         particles_array
 
-    let assign_particles_unmanaged (body:ValueModel) (particles:ValueModel) (voxels:bool array3d) (N:int) =
-        let (v_min,v_max) = bounds body.Vertices N body.L  
-        assign_particles(v_min, v_max, voxels, particles.Vertices, N, particles.L)          
+    // let assign_particles_unmanaged (body:Model) (particles:Model) (voxels:bool array3d) (N:int) =
+    //     let (v_min,v_max) = bounds body.Vertices N body.L  
+    //     assign_particles(v_min, v_max, voxels, particles.Vertices, N, particles.L)          
 
 

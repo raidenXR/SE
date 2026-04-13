@@ -1,5 +1,6 @@
 #nowarn "9"
 namespace SE
+
 open System
 open System.Numerics
 open System.Runtime.CompilerServices
@@ -16,6 +17,8 @@ module UnsafeOps =
     let inline ( ++ ) (ptr:nativeptr<_>) offset = NativePtr.add ptr offset
 
     let inline ( -- ) (ptr:nativeptr<_>) offset = NativePtr.add ptr (-offset)
+
+    let nullptr = IntPtr.Zero |> NativePtr.ofNativeInt<uint8> |> NativePtr.toVoidPtr
 
     /// stack allocates a Span<T>() with legth N
     let inline stackalloc<'T when 'T:unmanaged> (n:int) =
@@ -125,6 +128,8 @@ type [<Struct>] narray<'T when 'T:unmanaged> =
             NativePtr.set p i value
 
 module NativeArray =
+    let empty<'T when 'T:unmanaged> () = new narray<'T>(nullptr, 0, false)
+
     let create<'T when 'T:unmanaged> (N:int) =
         new narray<'T>(alloc<'T> N, N, false)
 

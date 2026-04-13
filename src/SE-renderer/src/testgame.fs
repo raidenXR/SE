@@ -337,7 +337,7 @@ open SE
 
 type [<Struct>] Vertex = {pos:Vector3; color:Vector4} 
 
-type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:ValueModel, game_window_settings:GameWindowSettings, native_window_settings:NativeWindowSettings) =
+type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:Model, game_window_settings:GameWindowSettings, native_window_settings:NativeWindowSettings) =
     inherit GameWindow(game_window_settings, native_window_settings)
     
     let mutable animation_active = true
@@ -350,9 +350,10 @@ type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:ValueModel, gam
     let mutable vao1 = 0
     let mutable shader1: Shader = null
     let N = 80
-    let voxels = Array3D.zeroCreate N N N
+    // let voxels = Array3D.zeroCreate N N N
+    let v = SE.Spatial.Geometry.voxels ob_model.mesh N
     let voxels_particles = NativeArray.create<float32>(N * N * N * 7)
-    let particles = new ValueModel(voxels_particles, NativeArray.create<uint32>(10), [3;4])
+    let particles = new Model(voxels_particles, NativeArray.create<uint32>(10), [3;4])
 
     let mutable vbo2 = 0
     let mutable vao2 = 0
@@ -366,7 +367,7 @@ type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:ValueModel, gam
     let mutable wireframe_on = false
 
     do
-        Geometry.assign_particles_unmanaged ob_model particles voxels N 
+        RGeometry.assign_particles_SIMD(v.bounds, v.voxels, voxels_particles.AsSpan(), ob_model.L) 
 
     let load_particles () =
         shader1 <- new Shader("shaders/particles.vert", "shaders/particles.frag")
@@ -374,7 +375,7 @@ type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:ValueModel, gam
     
         vbo1 <- GL.GenBuffer()
         GL.BindBuffer (BufferTarget.ArrayBuffer, vbo1)
-        GL.BufferData (BufferTarget.ArrayBuffer, particles.vertices.BufferSize, voxels_particles.ToInt(), BufferUsageHint.DynamicDraw)
+        GL.BufferData (BufferTarget.ArrayBuffer, particles.mesh.vertices.BufferSize, voxels_particles.ToInt(), BufferUsageHint.DynamicDraw)
         
         vao1 <- GL.GenVertexArray()
         GL.BindVertexArray(vao1)
@@ -389,7 +390,7 @@ type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:ValueModel, gam
     
         vbo2 <- GL.GenBuffer()
         GL.BindBuffer (BufferTarget.ArrayBuffer, vbo2)
-        GL.BufferData (BufferTarget.ArrayBuffer, ob_model.vertices.BufferSize, ob_model.vertices.ToInt(), BufferUsageHint.StaticDraw)
+        GL.BufferData (BufferTarget.ArrayBuffer, ob_model.mesh.vertices.BufferSize, ob_model.mesh.vertices.ToInt(), BufferUsageHint.StaticDraw)
         
         vao2 <- GL.GenVertexArray()
         GL.BindVertexArray(vao2)
@@ -402,15 +403,15 @@ type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:ValueModel, gam
 
         ebo2 <- GL.GenBuffer()
         GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo2)
-        GL.BufferData(BufferTarget.ElementArrayBuffer, ob_model.indices.BufferSize, ob_model.indices.ToInt(), BufferUsageHint.StaticDraw)
+        GL.BufferData(BufferTarget.ElementArrayBuffer, ob_model.mesh.indices.BufferSize, ob_model.mesh.indices.ToInt(), BufferUsageHint.StaticDraw)
         
     let update_particles (e:FrameEventArgs) =
-        Geometry.assign_particles_unmanaged ob_model particles voxels N
+        RGeometry.assign_particles_SIMD(v.bounds, v.voxels, voxels_particles.AsSpan(), N)
 
         shader1.Use()        
     
         GL.BindBuffer (BufferTarget.ArrayBuffer, vbo1)
-        GL.BufferData (BufferTarget.ArrayBuffer, particles.vertices.BufferSize, voxels_particles.ToInt(), BufferUsageHint.DynamicDraw)
+        GL.BufferData (BufferTarget.ArrayBuffer, particles.mesh.vertices.BufferSize, voxels_particles.ToInt(), BufferUsageHint.DynamicDraw)
         
         GL.BindVertexArray(vao1)
         GL.EnableVertexAttribArray(0)
@@ -426,7 +427,7 @@ type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:ValueModel, gam
         shader2.Use()        
     
         GL.BindBuffer (BufferTarget.ArrayBuffer, vbo2)
-        GL.BufferData (BufferTarget.ArrayBuffer, ob_model.vertices.BufferSize, ob_model.vertices.ToInt(), BufferUsageHint.DynamicDraw)
+        GL.BufferData (BufferTarget.ArrayBuffer, ob_model.mesh.vertices.BufferSize, ob_model.mesh.vertices.ToInt(), BufferUsageHint.DynamicDraw)
         
         GL.BindVertexArray(vao2)
         GL.EnableVertexAttribArray(0)
@@ -437,7 +438,7 @@ type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:ValueModel, gam
         GL.VertexAttribPointer(2, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, ob_model.Stride, ob_model.Attrib2)
 
         GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo2)
-        GL.BufferData(BufferTarget.ElementArrayBuffer, ob_model.indices.BufferSize, ob_model.indices.ToInt(), BufferUsageHint.DynamicDraw)
+        GL.BufferData(BufferTarget.ElementArrayBuffer, ob_model.mesh.indices.BufferSize, ob_model.mesh.indices.ToInt(), BufferUsageHint.DynamicDraw)
     
 
     let render_particles () =
@@ -447,7 +448,7 @@ type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:ValueModel, gam
         shader1.SetMatrix4("model", Matrix4.CreateScale(10.f))
 
         GL.BindVertexArray(vao1)
-        GL.DrawArrays(PrimitiveType.Points, 0, particles.vertices.BufferSize)
+        GL.DrawArrays(PrimitiveType.Points, 0, particles.mesh.vertices.BufferSize)
 
     let render_gltf () =
         shader2.Use()
@@ -489,7 +490,7 @@ type GltfWithParticles(_gltf:option<GLTF.Deserializer>, ob_model:ValueModel, gam
         GL.DrawElements(PrimitiveType.Triangles, ob_model.Indices.Length, DrawElementsType.UnsignedInt, 0)
 
         
-    new(_gltf:option<GLTF.Deserializer>, model:ValueModel) = new GltfWithParticles(_gltf, model, GameWindowSettings.Default, NativeWindowSettings(ClientSize = Vector2i(800, 600), Title = "opetk-window", Flags = ContextFlags.ForwardCompatible))
+    new(_gltf:option<GLTF.Deserializer>, model:Model) = new GltfWithParticles(_gltf, model, GameWindowSettings.Default, NativeWindowSettings(ClientSize = Vector2i(800, 600), Title = "opetk-window", Flags = ContextFlags.ForwardCompatible))
     
     override this.OnLoad() =
         base.OnLoad()

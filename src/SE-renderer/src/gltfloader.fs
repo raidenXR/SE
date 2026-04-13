@@ -487,7 +487,7 @@ module GLTF =
             (vertices.ToArray(),indices.ToArray())           
 
         /// still allocates ResizeArray s  due to not knowing the size beforehand
-        member this.ReadMesh_unmanaged(idx:int) =
+        member this.ReadMeshF(idx:int) =
             let vertices = ResizeArray<float32>(10000)
             let indices = ResizeArray<uint32>(20000)
             let mesh = root.meshes[idx]
@@ -526,10 +526,15 @@ module GLTF =
                     indices.Add(base_vertex + uint32 i)
                 base_vertex <- base_vertex + (uint32 vertices_count)
 
-            struct(NativeArray.ofSeq(vertices), NativeArray.ofSeq(indices))
+            {
+                SE.Spatial.MeshF.vertices = NativeArray.ofSeq(vertices)
+                SE.Spatial.MeshF.indices = NativeArray.ofSeq(indices)
+                SE.Spatial.MeshF.L = 10
+            }
         
 
-        member this.UpdateAnimation_unmanaged (model:ValueModel, time:float) =
+        [<Obsolete>]
+        member this.UpdateAnimation_unmanaged (model:Model, time:float) =
             let vertices = model.Vertices
             let indices  = model.Indices
             // t_list.Clear()
