@@ -1,6 +1,8 @@
 #r "../bin/Debug/net10.0/SE-renderer.dll"
 #r "../bin/Debug/net10.0/SE-core.dll"
 #r "nuget: OpenTK, 4.9.4"
+#r "nuget: SkiaSharp, 2.88.6"
+#r "nuget: FFMPegCore, 5.4.0"
 
 
 open OpenTK.Core
@@ -16,6 +18,10 @@ open System
 open System.Runtime.InteropServices
 open System.Runtime.CompilerServices
 open FSharp.NativeInterop
+
+open SkiaSharp
+open FFMpegCore
+open FFMpegCore.Pipes
 
 open SE
 open SE.ECS
@@ -55,8 +61,12 @@ let mutable wireframe_on = false
 let mutable wireframe_prev = false
 let mutable animation_on = true
 let mutable animation_prev = false
-let mutable particles_on = true
+let mutable particles_on = false
 let mutable particles_prev = false
+
+let mutable record = false
+let mutable record_prev = false
+let mutable total_time = 0.
 
 // clear on exit
 system OnExit [] (fun _ ->
@@ -64,7 +74,79 @@ system OnExit [] (fun _ ->
     | Some g -> g.Dispose()
     | None -> ()
 )
- 
+
+let frames = ResizeArray<IVideoFrame>(1000)
+
+type SKBitmapFrame(bmp:SKBitmap) =
+    let Source = bmp
+
+    do
+        if bmp.ColorType <> SKColorType.Bgra8888 then
+            printfn "colortype: %A" bmp.ColorType
+            failwith "only 'bgra' colortype is supported"
+
+    interface IDisposable with
+        member this.Dispose() = Source.Dispose()
+
+    interface IVideoFrame with
+        member this.Width = Source.Width
+        member this.Height = Source.Height
+        member this.Format = "bgra"
+    
+        member this.Serialize(pipe:System.IO.Stream) =
+            pipe.Write(Source.Bytes, 0, Source.Bytes.Length)
+
+        member this.SerializeAsync(pipe:System.IO.Stream, token:System.Threading.CancellationToken) =
+            pipe.WriteAsync(Source.Bytes, 0, Source.Bytes.Length, token)
+
+    member this.Bitmap = Source
+
+
+let frame_options (options:FFMpegArgumentOptions) = options.WithVideoCodec("libvpx-vp9")
+// let action = Action frame_options
+    
+let create_video_from_frames (path:string) (frames:seq<IVideoFrame>) =
+    // save last frame as image
+    printfn "image png conversion"
+    let last_frame = (Seq.last frames) :?> SKBitmapFrame
+    let bmp = last_frame.Bitmap
+    use tmp_img = SKImage.FromBitmap(bmp)
+    use tmp_dat = tmp_img.Encode(SKEncodedImageFormat.Png, 80)
+    use tmp_stm = System.IO.File.OpenWrite("./tmp.png")
+    tmp_dat.SaveTo(tmp_stm)
+    tmp_stm.Close()
+    printfn "image png saved"
+
+    let source = new RawVideoPipeSource(frames, FrameRate = 30)
+    let success = FFMpegArguments
+                    .FromPipeInput(source)
+                    .OutputToFile(path, true, (fun options -> options.WithVideoCodec("libvpx-vp9") |> ignore))
+                    // .ProcessSynchronously()
+
+    printfn "start processing video conversion on %d frames" (Seq.length frames)
+    let s = success.ProcessSynchronously()
+    // success
+    let str = if s then "video conversion done!" else "video conversion failed"
+    printfn "%s" str
+        
+
+let capture_frame (wnd:SE_Window) =
+    let size = wnd.ClientSize
+    let w = size.X
+    let h = size.Y
+    let pixels = Array.zeroCreate<byte> (w*h*4)
+    GL.ReadPixels(0, 0, w, h, PixelFormat.Rgba, PixelType.UnsignedByte, pixels)
+
+    let bitmap = new SKBitmap(w, h, SKColorType.Bgra8888, SKAlphaType.Premul)
+    use pixels_ptr = fixed pixels
+    let success = bitmap.InstallPixels(new SKImageInfo(w, h, SKColorType.Bgra8888, SKAlphaType.Premul), (NativePtr.toNativeInt pixels_ptr), w*4)
+
+    if not success then
+        failwith "failed to install pixels on SKBitmap"
+        
+    let frame = new SKBitmapFrame(bitmap)
+    frames.Add(frame :> IVideoFrame)
+
 
 let settings = GameWindowSettings.Default
 let n_settings = NativeWindowSettings(ClientSize = Vector2i(800, 600), Title = "opetk-window", Flags = ContextFlags.ForwardCompatible)
@@ -262,6 +344,13 @@ system OnUpdate [] (fun _ ->
     if input.IsKeyDown(Keys.Space) then camera.Position <- camera.Position + camera.Up * camera_speed * (float32 e)
     if input.IsKeyDown(Keys.LeftShift) then camera.Position <- camera.Position - camera.Up * camera_speed * (float32 e)
     
+    if input.IsKeyDown(Keys.R) && not record_prev then
+        record_prev <- true
+        record <- not record
+        if record then printfn "recording stared" else printfn "recording paused"
+    elif not (input.IsKeyDown(Keys.R)) then
+        record_prev <- false
+    
     let mouse = window.MouseState
     if s.first_move then
         s.last_pos <- Vector2(mouse.X, mouse.Y)
@@ -282,6 +371,15 @@ system OnRender [typeof<Model>] (fun q ->
         render_particles ()
         window.Context.SwapBuffers()
     )
+
+    total_time <- total_time + window.ElapsedTime 
+    // printfn "%g" (window.ElapsedTime)
+    if record && (total_time > 0.20) then
+        capture_frame window
+        total_time <- total_time - 0.20
+        let struct(i,j) = Console.GetCursorPosition()
+        printfn "frame %d captured" (Seq.length frames)
+        Console.SetCursorPosition(i,j)
 )
 
 
@@ -309,7 +407,18 @@ system OnExit [] (fun _ ->
     Shaders.unload()
     window.Dispose()
 )
+
+// system OnExit [] (fun _ ->
+//     printfn "wnd exists, calling 'create_video_from_frames'"
+//     create_video_from_frames "capture.mp4" frames
+//     printfn "process finished running"
+// )
     
 Systems.progress()
+
+
+printfn "wnd exists, calling 'create_video_from_frames'"
+create_video_from_frames "./capture.mp4" frames
+printfn "process finished running"
 
 
