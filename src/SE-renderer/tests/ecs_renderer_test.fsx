@@ -105,9 +105,17 @@ type SKBitmapFrame(bmp:SKBitmap) =
 let frame_options (options:FFMpegArgumentOptions) = options.WithVideoCodec("libvpx-vp9")
 // let action = Action frame_options
     
-let create_video_from_frames (path:string) (frames:seq<IVideoFrame>) =
+let create_video_from_frames (path:string) (frames:seq<IVideoFrame>) (wnd:SE_Window) =
+    if System.IO.File.Exists(path) then
+        System.IO.File.Delete(path)
+    if System.IO.File.Exists("./tmp.png") then
+        System.IO.File.Delete("./tmp.png")
+
+    let size = wnd.FramebufferSize
+    printfn "framebuffer: (%d, %d)" size.X size.Y
     // save last frame as image
     printfn "image png conversion"
+    
     let last_frame = (Seq.last frames) :?> SKBitmapFrame
     let bmp = last_frame.Bitmap
     use tmp_img = SKImage.FromBitmap(bmp)
@@ -120,7 +128,7 @@ let create_video_from_frames (path:string) (frames:seq<IVideoFrame>) =
     let source = new RawVideoPipeSource(frames, FrameRate = 30)
     let success = FFMpegArguments
                     .FromPipeInput(source)
-                    .OutputToFile(path, true, (fun options -> options.WithVideoCodec("libvpx-vp9") |> ignore))
+                    .OutputToFile(path, true, (fun options -> options.WithVideoCodec("libvpx-vp9").WithVideoFilters(fun filter -> filter.Mirror(Enums.Mirroring.Vertical) |> ignore) |> ignore))
                     // .ProcessSynchronously()
 
     printfn "start processing video conversion on %d frames" (Seq.length frames)
@@ -131,15 +139,18 @@ let create_video_from_frames (path:string) (frames:seq<IVideoFrame>) =
         
 
 let capture_frame (wnd:SE_Window) =
-    let size = wnd.ClientSize
+    let size = wnd.FramebufferSize
     let w = size.X
     let h = size.Y
-    let pixels = Array.zeroCreate<byte> (w*h*4)
-    GL.ReadPixels(0, 0, w, h, PixelFormat.Rgba, PixelType.UnsignedByte, pixels)
+    // use pixels = NativeArray.rent<byte> (w*h*4)
+    let pixels = NativeArray.create<byte> (w*h*4)  // This leaks memory, use regular arrays, DO NOT POOL
+    // let pixels = Array.zeroCreate<byte> (w*h*4)
+    GL.ReadPixels(0, 0, w, h, PixelFormat.Bgra, PixelType.UnsignedByte, pixels.ToInt())
 
     let bitmap = new SKBitmap(w, h, SKColorType.Bgra8888, SKAlphaType.Premul)
-    use pixels_ptr = fixed pixels
-    let success = bitmap.InstallPixels(new SKImageInfo(w, h, SKColorType.Bgra8888, SKAlphaType.Premul), (NativePtr.toNativeInt pixels_ptr), w*4)
+    // let bit = new SKBitmap(pixels)
+    // use pixels_ptr = fixed pixels
+    let success = bitmap.InstallPixels(new SKImageInfo(w, h, SKColorType.Bgra8888, SKAlphaType.Premul), pixels.ToInt(), w*4)
 
     if not success then
         failwith "failed to install pixels on SKBitmap"
@@ -374,9 +385,9 @@ system OnRender [typeof<Model>] (fun q ->
 
     total_time <- total_time + window.ElapsedTime 
     // printfn "%g" (window.ElapsedTime)
-    if record && (total_time > 0.20) then
+    if record && (total_time > 0.16) then
         capture_frame window
-        total_time <- total_time - 0.20
+        total_time <- total_time - 0.16
         let struct(i,j) = Console.GetCursorPosition()
         printfn "frame %d captured" (Seq.length frames)
         Console.SetCursorPosition(i,j)
@@ -418,7 +429,7 @@ Systems.progress()
 
 
 printfn "wnd exists, calling 'create_video_from_frames'"
-create_video_from_frames "./capture.mp4" frames
-printfn "process finished running"
+create_video_from_frames "./capture.mp4" frames window
+printfn "process finished running on %d frames" (Seq.length frames)
 
 
