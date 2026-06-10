@@ -113,6 +113,7 @@ module Quadtree =
             if c <> null then count c &j N
         
 
+
 module Octree =
     // type [<Struct>] NodeIndex = {ix:int; iy:int; iz:int}
     
@@ -270,6 +271,23 @@ module Octree =
         count_rec node
         n
         
+
+type Octree<'T>(N:int, pred: 'T -> 'T -> bool, v_min:Vector3, v_max:Vector3) =
+    let n = log10 (double N) / log10 2. |> ceil |> int
+    let root = Octree.Node(null, v_min, v_max)
+    let mutable j = 0
+    let mutable current_node: Octree.Node<'T> = null
+
+    member this.Item
+        with get (x:double, y:double, z:double) =
+            let p = Vector3(float32 x, float32 y, float32 z)
+            // current_node <- Octree.traverse p current_node 
+            let d = Octree.get_value p current_node j
+            d
+        and set (x:double, y:double, z:double) value =
+            let p = Vector3(float32 x, float32 y, float32 z)
+            Octree.set_value p value current_node j pred
+    
 
 module Bits = 
     // bitwise operations

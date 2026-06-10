@@ -133,6 +133,10 @@ module NativeArray =
     let create<'T when 'T:unmanaged> (N:int) =
         new narray<'T>(alloc<'T> N, N, false)
 
+    let delete (source:narray<'T>) =
+        if source.IsPooled then Console.WriteLine("WARNING: pooled narray<'T> is deleted")
+        NativeMemory.Free (source.Ptr)
+
     let rent<'T when 'T:unmanaged> (N:int) =
         new narray<'T>(rent<'T> N, N, true)
                 
@@ -199,7 +203,8 @@ type [<Struct>] narray2d<'T when 'T:unmanaged> =
 
     member this.IsDisposed = this.is_disposed
     
-    member this.ToInt() = this.ptr |> NativePtr.ofVoidPtr<'T> |> NativePtr.toNativeInt 
+    // member this.ToInt() = this.ptr |> NativePtr.ofVoidPtr<'T> |> NativePtr.toNativeInt 
+    member this.ToInt() = nint this.ptr 
 
     member this.AsSpan() = Span<'T>(this.ptr, this.Length)
 
@@ -217,6 +222,10 @@ module NativeArray2D =
     let create<'T when 'T:unmanaged> I J =
         let N = I*J
         new narray2d<'T>(alloc<'T> N, I, J, false)
+
+    let delete (source:narray2d<'T>) =
+        if source.IsPooled then Console.WriteLine("WARNING: pooled narray<'T> is deleted")
+        NativeMemory.Free (source.Ptr)
 
     let rent<'T when 'T:unmanaged> I J =
         let N = I*J
@@ -285,12 +294,147 @@ module NativeArray3D =
         let N = I*J*K
         new narray3d<'T>(alloc<'T> N, I, J, K, false)
 
+    let delete (source:narray3d<'T>) =
+        if source.IsPooled then Console.WriteLine("WARNING: pooled narray<'T> is deleted")
+        NativeMemory.Free (source.Ptr)
+
     let rent<'T when 'T:unmanaged> I J K =
         let N = I*J*K
         new narray3d<'T>(rent<'T> N, I, J, K, true)
 
 
-// module NativeBuffer =
+module Bits =
+    /// use this to use bits instead of bools for 0 - 1 and store information for discretization
+    let get_bit (item:byref<byte>) n =
+    // let get_bit (bytes:Span<byte>) n =
+        // let item = bytes[n / 8]
+        match n % 8 with
+        | 0 -> (item &&& 0b00000001uy) > 0uy
+        | 1 -> (item &&& 0b00000010uy) > 0uy
+        | 2 -> (item &&& 0b00000100uy) > 0uy
+        | 3 -> (item &&& 0b00001000uy) > 0uy
+        | 4 -> (item &&& 0b00010000uy) > 0uy
+        | 5 -> (item &&& 0b00100000uy) > 0uy
+        | 6 -> (item &&& 0b01000000uy) > 0uy
+        | 7 -> (item &&& 0b10000000uy) > 0uy
+        | _ -> false
+
+    let get_bit1d (bytes:Span<byte>) n = get_bit (&bytes[n / 8]) n    
+    let get_bit2d (bytes:Span<byte>) n = get_bit (&bytes[n / 8 / 8]) n    
+    let get_bit3d (bytes:Span<byte>) n = get_bit (&bytes[n / 8 / 8 / 8]) n
+
+    let get_byte1d (bytes:Span<byte>) n = bytes[n / 8]
+    let get_byte2d (bytes:Span<byte>) n = bytes[n / 8 / 8]
+    let get_byte3d (bytes:Span<byte>) n = bytes[n / 8 / 8 / 8]
+
+    let set_bit (item:byref<byte>) n value =
+    // let set_bit (bytes:Span<byte>) n value =
+        // let item = &bytes[n / 8]
+        match value with
+        | true -> 
+            item <- match n % 8 with
+                    | 0 -> (item ||| 0b00000001uy)
+                    | 1 -> (item ||| 0b00000010uy)
+                    | 2 -> (item ||| 0b00000100uy)
+                    | 3 -> (item ||| 0b00001000uy)
+                    | 4 -> (item ||| 0b00010000uy)
+                    | 5 -> (item ||| 0b00100000uy)
+                    | 6 -> (item ||| 0b01000000uy)
+                    | 7 -> (item ||| 0b10000000uy)
+                    | _ -> item
+        | false ->
+            item <- match n % 8 with
+                    | 0 -> (item &&& 0b11111110uy)
+                    | 1 -> (item &&& 0b11111101uy)
+                    | 2 -> (item &&& 0b11111011uy)
+                    | 3 -> (item &&& 0b11110111uy)
+                    | 4 -> (item &&& 0b11101111uy)
+                    | 5 -> (item &&& 0b11011111uy)
+                    | 6 -> (item &&& 0b10111111uy)
+                    | 7 -> (item &&& 0b01111111uy)
+                    | _ -> item
+
+    let set_bit1d (bytes:Span<byte>) n value = set_bit (&bytes[n / 8]) n value
+            
+    let set_bit2d (bytes:Span<byte>) n value = set_bit (&bytes[n / 8 / 8]) n value
+            
+    let set_bit3d (bytes:Span<byte>) n value = set_bit (&bytes[n / 8 / 8 / 8]) n value
+            
+
+    let bits_count (b:byte) =
+        let b0 = if b &&& 0b00000001uy > 0uy then 1 else 0 
+        let b1 = if b &&& 0b00000010uy > 0uy then 1 else 0 
+        let b2 = if b &&& 0b00000100uy > 0uy then 1 else 0 
+        let b3 = if b &&& 0b00001000uy > 0uy then 1 else 0 
+        let b4 = if b &&& 0b00010000uy > 0uy then 1 else 0 
+        let b5 = if b &&& 0b00100000uy > 0uy then 1 else 0 
+        let b6 = if b &&& 0b01000000uy > 0uy then 1 else 0 
+        let b7 = if b &&& 0b10000000uy > 0uy then 1 else 0 
+        b0 + b1 + b2 + b3 + b4 + b5 + b6 + b7
+
+
+    
+[<Extension>]
+type NArrayExtensions() =
+
+    [<Extension>] 
+    static member BitCount(bits:byte) = Bits.bits_count bits
+
+
+    [<Extension>] 
+    static member GetBit(bits:narray<byte>, i:int) =
+        let ni = i / 8
+        Bits.get_bit (&bits.AsSpan()[ni]) i 
+    
+    [<Extension>] 
+    static member SetBit(bits:narray<byte>, i:int, value:bool) =
+        let ni = i / 8
+        Bits.set_bit (&bits.AsSpan()[ni]) i value
+    
+    [<Extension>] 
+    static member GetByte(bits:narray<byte>, i:int) = bits.AsSpan()[i/8]
+
+    [<Extension>] 
+    static member GetBit(bits:narray2d<byte>, i:int, j:int) =
+        let ni = i / 8
+        let nj = j / 8
+        Bits.get_bit (&bits.AsSpan()[ni*bits.J + nj]) j
+    
+    [<Extension>] 
+    static member SetBit(bits:narray2d<byte>, i:int, j:int, value:bool) =
+        let ni = i / 8
+        let nj = j / 8
+        Bits.set_bit (&bits.AsSpan()[ni*bits.J + nj]) j value
+    
+    [<Extension>] 
+    static member GetByte(bits:narray2d<byte>, i:int, j:int) = 
+        let ni = i / 8
+        let nj = j / 8
+        bits.AsSpan()[ni*bits.J + nj]
+
+    [<Extension>] 
+    static member GetBit(bits:narray3d<byte>, i:int, j:int, k:int) =
+        let ni = i / 8
+        let nj = j / 8
+        let nk = k / 8
+        Bits.get_bit (&bits.AsSpan()[ni*bits.J*bits.K + nj*bits.K + nk]) j
+    
+    [<Extension>] 
+    static member SetBit(bits:narray3d<byte>, i:int, j:int, k:int, value:bool) =
+        let ni = i / 8
+        let nj = j / 8
+        let nk = k / 8
+        Bits.set_bit (&bits.AsSpan()[ni*bits.J*bits.K + nj*bits.K + nk]) j value
+    
+    [<Extension>] 
+    static member GetByte(bits:narray3d<byte>, i:int, j:int, k:int) =
+        let ni = i / 8
+        let nj = j / 8
+        let nk = k / 8
+        bits.AsSpan()[ni*bits.J*bits.K + nj*bits.K + nk]
+
+
+ // module NativeBuffer =
 //     let append<'T when 'T:unmanaged> (idx:byref<int>) (data:'T) (buffer:narray<byte>) =
 //         let size = sizeof<'T>
 //         if size + idx >= buffer.Length then raise (new ArgumentOutOfRangeException())
