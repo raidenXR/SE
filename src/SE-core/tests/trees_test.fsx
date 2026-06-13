@@ -1,40 +1,94 @@
-#load "../src/unsafe.fs"
-#load "../src/trees.fs"
+// #load "../src/unsafe.fs"
+// #load "../src/trees.fs"
+#r "../bin/Release/net10.0/SE-core.dll"
 
 open SE
 open SE.Core
 open System.Numerics
 
 // let octree = Octree<double>(100, Vector3.Zero, Vector3.One, (fun a b -> a - b > 0.4))
-let N = 400
+let N = 200
 let octree = Octree<double>(N, Vector3.Zero, Vector3.One * float32 N)
+let octree_2 = Octree2.Root<double>(N, Vector3.Zero, Vector3.One * float32 N)
+
 let dx = octree.dX
 let dy = octree.dY
 let dz = octree.dZ
-printfn "dx: %g, dy: %g, dz: %g" dx dy dz
 
-// octree[0.4, 0.4, 0.4] <- 653.63
-
-// let d = octree[0.4, 0.4, 0.4]
-// printfn "node: %g" d
+let dx' = octree_2.dX
+let dy' = octree_2.dY
+let dz' = octree_2.dZ
 
 #time
 for ix in 1..N-1 do
     for iy in 1..N-1 do
         for iz in 1..N-1 do
             // let x = float ix
-            let y = System.Random.Shared.NextDouble() * double iy
-            let z = System.Random.Shared.NextDouble() * double iz
-            let x = double N - System.Random.Shared.NextDouble() * double ix
-            // let y = float N - float iy
-            // let z = float N - float iz
-            // printfn "x: %g, y: %g, z: %g" x y z
-            octree[x,y,z] <- System.Random.Shared.NextDouble()
-            // octree[x,y,z] <- 0.0
+            let x = float ix
+            let y = float iy
+            let z = float iz
+            // let y = System.Random.Shared.NextDouble() * double iy
+            // let z = System.Random.Shared.NextDouble() * double iz
+            // let x = double N - System.Random.Shared.NextDouble() * double ix
+            octree_2[x,y,z] <- System.Random.Shared.NextDouble()
 #time
-            
-printfn "count: %d, %gMB" (octree.GetCount()) (double(octree.GetCount()) * 120. / 1024. / 1024.) 
-printfn "max_level: %d" (octree.MaxLevel) 
+printfn "octree_2: dx: %g, dy: %g, dz: %g" dx' dy' dz'
+printfn "octree_2: count: %d, %gMB" (octree_2.GetCount()) (double(octree_2.GetCount()) * 120. / 1024. / 1024.) 
+printfn "octree_2: max_level: %d" (octree_2.MaxLevel) 
+#time
+for ix in 1..N-1 do
+    for iy in 1..N-1 do
+        for iz in 1..N-1 do
+            // let x = float ix
+            let x = float ix
+            let y = float iy
+            let z = float iz
+            // let y = System.Random.Shared.NextDouble() * double iy
+            // let z = System.Random.Shared.NextDouble() * double iz
+            // let x = double N - System.Random.Shared.NextDouble() * double ix
+            let v = octree_2[x,y,z]
+            ignore v
+#time
+printfn "traversal on built tree ^^^^^"
+
+printfn "\n"
+#time
+for ix in 1..N-1 do
+    for iy in 1..N-1 do
+        for iz in 1..N-1 do
+            let x = float ix
+            let y = float iy
+            let z = float iz
+            // let y = System.Random.Shared.NextDouble() * double iy
+            // let z = System.Random.Shared.NextDouble() * double iz
+            // let x = double N - System.Random.Shared.NextDouble() * double ix
+            octree[x,y,z] <- System.Random.Shared.NextDouble()
+#time            
+printfn "octree: dx: %g, dy: %g, dz: %g" dx dy dz
+printfn "octree: count: %d, %gMB" (octree.GetCount()) (double(octree.GetCount()) * 120. / 1024. / 1024.) 
+printfn "octree: max_level: %d" (octree.MaxLevel) 
+
+// ignore (octree[50.4,90.1,60.3])
+// ignore (octree[40.4,70.1,60.3])
+// ignore (octree[20.4,80.1,30.3])
+// ignore (octree[20.4,70.1,50.3])
+
+#time
+for ix in 1..N-1 do
+    for iy in 1..N-1 do
+        for iz in 1..N-1 do
+            // let x = float ix
+            let x = float ix
+            let y = float iy
+            let z = float iz
+            // let y = System.Random.Shared.NextDouble() * double iy
+            // let z = System.Random.Shared.NextDouble() * double iz
+            // let x = double N - System.Random.Shared.NextDouble() * double ix
+            let v = octree[x,y,z]
+            ignore v
+#time
+printfn "traversal on built tree ^^^^^"
+
 
 printfn "\nbit-narray1d"
 do

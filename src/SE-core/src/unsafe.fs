@@ -305,31 +305,38 @@ module NativeArray3D =
 
 module Bits =
     /// use this to use bits instead of bools for 0 - 1 and store information for discretization
-    let get_bit (item:byref<byte>) n =
-    // let get_bit (bytes:Span<byte>) n =
-        // let item = bytes[n / 8]
-        match n % 8 with
-        | 0 -> (item &&& 0b00000001uy) > 0uy
-        | 1 -> (item &&& 0b00000010uy) > 0uy
-        | 2 -> (item &&& 0b00000100uy) > 0uy
-        | 3 -> (item &&& 0b00001000uy) > 0uy
-        | 4 -> (item &&& 0b00010000uy) > 0uy
-        | 5 -> (item &&& 0b00100000uy) > 0uy
-        | 6 -> (item &&& 0b01000000uy) > 0uy
-        | 7 -> (item &&& 0b10000000uy) > 0uy
-        | _ -> false
+    let get_bit (item:byte) n =
+        // match n % 8 with
+        // | 0 -> (item &&& 0b00000001uy) > 0uy
+        // | 1 -> (item &&& 0b00000010uy) > 0uy
+        // | 2 -> (item &&& 0b00000100uy) > 0uy
+        // | 3 -> (item &&& 0b00001000uy) > 0uy
+        // | 4 -> (item &&& 0b00010000uy) > 0uy
+        // | 5 -> (item &&& 0b00100000uy) > 0uy
+        // | 6 -> (item &&& 0b01000000uy) > 0uy
+        // | 7 -> (item &&& 0b10000000uy) > 0uy
+        // | _ -> false
+        let b = match n % 8 with
+                | 0 -> (item &&& 1uy)
+                | 1 -> (item &&& 2uy)
+                | 2 -> (item &&& 4uy)
+                | 3 -> (item &&& 8uy)
+                | 4 -> (item &&& 16uy)
+                | 5 -> (item &&& 32uy)
+                | 6 -> (item &&& 64uy)
+                | 7 -> (item &&& 128uy)
+                | _ -> 0uy
+        b > 0uy
 
-    let get_bit1d (bytes:Span<byte>) n = get_bit (&bytes[n / 8]) n    
-    let get_bit2d (bytes:Span<byte>) n = get_bit (&bytes[n / 8 / 8]) n    
-    let get_bit3d (bytes:Span<byte>) n = get_bit (&bytes[n / 8 / 8 / 8]) n
+    // let get_bit1d (bytes:Span<byte>) n = get_bit (&bytes[n / 8]) n    
+    // let get_bit2d (bytes:Span<byte>) n = get_bit (&bytes[n / 8 / 8]) n    
+    // let get_bit3d (bytes:Span<byte>) n = get_bit (&bytes[n / 8 / 8 / 8]) n
 
-    let get_byte1d (bytes:Span<byte>) n = bytes[n / 8]
-    let get_byte2d (bytes:Span<byte>) n = bytes[n / 8 / 8]
-    let get_byte3d (bytes:Span<byte>) n = bytes[n / 8 / 8 / 8]
+    // let get_byte1d (bytes:Span<byte>) n = bytes[n / 8]
+    // let get_byte2d (bytes:Span<byte>) n = bytes[n / 8 / 8]
+    // let get_byte3d (bytes:Span<byte>) n = bytes[n / 8 / 8 / 8]
 
     let set_bit (item:byref<byte>) n value =
-    // let set_bit (bytes:Span<byte>) n value =
-        // let item = &bytes[n / 8]
         match value with
         | true -> 
             item <- match n % 8 with
@@ -374,7 +381,7 @@ module Bits =
 
 
     
-[<Extension>]
+[<Extension;Obsolete>]
 type NArrayExtensions() =
 
     [<Extension>] 
@@ -383,41 +390,48 @@ type NArrayExtensions() =
 
     [<Extension>] 
     static member GetBit(bits:narray<byte>, i:int) =
-        let ni = i / 8
-        Bits.get_bit (&bits.AsSpan()[ni]) i 
+        (bits.AsSpan()[i / 8] &&& (1uy <<< (i % 8))) <> 0uy
     
     [<Extension>] 
     static member SetBit(bits:narray<byte>, i:int, value:bool) =
-        let ni = i / 8
-        Bits.set_bit (&bits.AsSpan()[ni]) i value
+        let item = &bits.AsSpan()[i / 8]
+        if value then
+            item <- item ||| (1uy <<< (i % 8))
+        else
+            item <- item &&& ~~~(1uy <<< (i % 8))
     
     [<Extension>] 
     static member GetByte(bits:narray<byte>, i:int) = bits.AsSpan()[i/8]
 
+
+
     [<Extension>] 
     static member GetBit(bits:narray2d<byte>, i:int, j:int) =
-        let ni = i / 8
-        let nj = j / 8
-        Bits.get_bit (&bits.AsSpan()[ni*bits.J + nj]) j
+        let idx = i*8*bits.J + j
+        (bits.AsSpan()[idx / 64] &&& (1uy <<< (idx % 64))) <> 0uy
     
     [<Extension>] 
     static member SetBit(bits:narray2d<byte>, i:int, j:int, value:bool) =
-        let ni = i / 8
-        let nj = j / 8
-        Bits.set_bit (&bits.AsSpan()[ni*bits.J + nj]) j value
+        let idx = i*8*bits.J + j
+        let item = &bits.AsSpan()[idx / 64]
+        if value then
+            item <- item ||| (1uy <<< (idx % 64))
+        else
+            item <- item &&& ~~~(1uy <<< (idx % 64))
     
     [<Extension>] 
     static member GetByte(bits:narray2d<byte>, i:int, j:int) = 
-        let ni = i / 8
-        let nj = j / 8
-        bits.AsSpan()[ni*bits.J + nj]
+        let idx = i*8*bits.J + j
+        bits.AsSpan()[idx / 64]
+
+        
 
     [<Extension>] 
     static member GetBit(bits:narray3d<byte>, i:int, j:int, k:int) =
         let ni = i / 8
         let nj = j / 8
         let nk = k / 8
-        Bits.get_bit (&bits.AsSpan()[ni*bits.J*bits.K + nj*bits.K + nk]) j
+        Bits.get_bit (bits.AsSpan()[ni*bits.J*bits.K + nj*bits.K + nk]) j
     
     [<Extension>] 
     static member SetBit(bits:narray3d<byte>, i:int, j:int, k:int, value:bool) =
