@@ -367,16 +367,16 @@ type Octree<'T>(N:int, v_min:Vector3, v_max:Vector3, pred: 'T -> 'T -> bool) =
 
 module Quadtree2 =
     type Node<'T> =
-        | Node of parent:Node<'T> * children:Node<'T>[] * idx:int * v_min:Vector2 * v_max:Vector2
-        | Leaf of parent:Node<'T> * value:ref<ValueOption<'T>> * idx:int * v_min:Vector2 * v_max:Vector2 
+        | Node of parent:Node<'T> * children:Node<'T>[] * idx:int * level:int * v_min:Vector2 * v_max:Vector2
+        | Leaf of parent:Node<'T> * value:ref<ValueOption<'T>> * idx:int * level:int * v_min:Vector2 * v_max:Vector2 
         | Empty
         
     let rec write_vertices (node:Node<'T>) (fs:System.IO.StreamWriter) =
         match node with
-        | Node (_,c,_,_,_) ->
+        | Node (_,c,_,_,_,_) ->
             for ci in c do write_vertices ci fs
 
-        | Leaf (_,v,_,v_min,v_max) ->
+        | Leaf (_,v,_,_,v_min,v_max) ->
             let p = v_min + (v_max - v_min) / 2f
             fs.WriteLine($"{p.X}  {p.Y}")
             
@@ -384,10 +384,10 @@ module Quadtree2 =
         
     let rec write_rects (node:Node<'T>) (fs:System.IO.StreamWriter) =
         match node with
-        | Node (_,c,_,_,_) ->
+        | Node (_,c,_,_,_,_) ->
             for ci in c do write_rects ci fs
 
-        | Leaf (_,v,_,v_min,v_max) ->
+        | Leaf (_,v,_,_,v_min,v_max) ->
             let v1 = v_min
             let v2 = Vector2(v_min.X, v_max.Y)
             let v3 = v_max
@@ -413,10 +413,12 @@ module Quadtree2 =
     let create<'T> N (v_min:Vector2) (v_max:Vector2) =
         let n = log10 (double N) / log10 2. |> ceil |> int
         let j = 0
-        let node = Node (Empty, Array.create<Node<'T>> 4 Empty, 0, v_min, v_max)
+        let node = Node (Empty, Array.create<Node<'T>> 4 Empty, 0, 0, v_min, v_max)
         node
         
-    let children = function | Node (_,c,_,_,_) -> c | _ -> failwith "node has no children"
+    let parent = function | Node (p,_,_,_,_,_) | Leaf (p,_,_,_,_,_) -> p | Empty -> failwith "attempted to get parent on Empty Node"
+    
+    let children = function | Node (_,c,_,_,_,_) -> c | _ -> failwith "node has no children"
 
     let intersect (p:Vector2) (v_min:Vector2) (v_max:Vector2) =
         let x = v_min.X <= p.X && p.X <= v_max.X
@@ -424,51 +426,103 @@ module Quadtree2 =
         x && y
 
     let rec count_rec (j:byref<int>) = function
-        | Node (_,children,_,_,_) ->
+        | Node (_,children,_,_,_,_) ->
              for c in children do count_rec &j c
         | Leaf _ -> j <- j + 1
         | Empty -> ()
 
+    let rec count_total_rec (j:byref<int>) (node:Node<'T>) =
+        j <- j + 1
+        match node with 
+        | Node (_,children,_,_,_,_) ->
+            for c in children do count_total_rec &j c
+        | _ -> ()
 
-    let rec trim (node:Node<'T>) j k n =
-        match node with
-        | Node (_,c,_,_,_) ->  // traverse forward
-            for ci in c do
-                trim ci (j+1) k n
+    /// convert a Node to Leaf
+    let rec trim n k v (node:Node<'T>) =
+        match node with 
+        | Leaf (p,_,_,l,_,_) when n = l ->
+            if (Array.forall (function Node _ -> false | _ -> true) (children p)) then 
+                match p with
+                | Node (P,C,I,L,V1,V2) ->
+                    let mutable value: ValueOption<'T> = v
+                    for ci in C do
+                        match ci with
+                        | Leaf (_,V,_,_,_,_) when V.Value.IsSome -> value <- ValueSome V.Value.Value
+                        | _ -> ()
+                        
+                    (children P)[I] <- Leaf (P,ref value,I,L,V1,V2)
+                    (children P)[I]
+                    // trim n k v p
+                | _ -> node
+            else
+                node
 
-        | Leaf (p,_,i,_,_) ->  // trim deepest branch
-            match p with
-            | Node (gp,c,p_i,v_min,v_max) ->  // trim - replace Node with Leaf
-                // let is_all_c_leafs =
-                //     let mutable is_all_c_leafs = true
-                //     for ci in c do
-                //         is_all_c_leafs <- is_all_c_leafs && (match ci with | Leaf _ -> true |  _ -> false)
-                //     is_all_c_leafs
-                // if is_all_c_leafs then
-                if k > 1 then
-                    if (c |> Array.fold (fun b ci -> match ci with | Node _ -> false | _ -> b) true) then
-                        (children gp)[p_i] <- Leaf (gp, ref ValueNone, p_i, v_min, v_max)                
-                else
-                    if (c |> Array.fold (fun b ci -> match ci with | Leaf _ -> b | _ -> false) true) then
-                        (children gp)[p_i] <- Leaf (gp, ref ValueNone, p_i, v_min, v_max)                
-                    // printfn "trimmed branch"
-            | _ -> ()
+        | Leaf (p,_,_,l,_,_) when n - l < k ->
+            if (Array.forall (function Leaf _ -> true | _ -> false) (children p)) then 
+                match p with
+                | Node (P,C,I,L,V1,V2) ->
+                    let mutable value: ValueOption<'T> = v
+                    for ci in C do
+                        match ci with
+                        | Leaf (_,V,_,_,_,_) when V.Value.IsSome -> value <- ValueSome V.Value.Value
+                        | _ -> ()
+                        
+                    (children P)[I] <- Leaf (P,ref value,I,L,V1,V2)
+                    (children P)[I]
+                    // trim n k v p
+                | _ -> node
+            else
+                node
+        | Empty ->
+            failwith "tried to trim Empty Node"
+        | _ -> node
+
+    /// convert a Leaf to Node
+    let split n = function
+        | Leaf (p,v,i,l,v1,v2) when l < n ->
+            let _children = Array.create<Node<'T>> 4 Empty
+            let _this = Node (p, _children, i, l, v1, v2)
+            let _value = v.Value
+            (children p)[i] <- _this            
+
+            let o = v1 + (v2 - v1) / 2f
+            do
+                let v_min = Vector2(v1.X, o.Y)            
+                let v_max = Vector2(o.X, v2.Y) 
+                _children[0] <- Leaf (_this, ref _value, 0, (l+1), v_min, v_max)
+            do
+                let v_min = Vector2(o.X, o.Y)            
+                let v_max = Vector2(v2.X, v2.Y) 
+                _children[1] <- Leaf (_this, ref _value, 1, (l+1), v_min, v_max)
+            do
+                let v_min = Vector2(v1.X, v1.Y)            
+                let v_max = Vector2(o.X, o.Y) 
+                _children[2] <- Leaf (_this, ref _value, 2, (l+1), v_min, v_max)
+            do
+                let v_min = Vector2(o.X, v1.Y)            
+                let v_max = Vector2(v2.X, o.Y) 
+                _children[3] <- Leaf (_this, ref _value, 3, (l+1), v_min, v_max)
         | _ -> ()
 
 
-    let rec traverse (node:Node<'T>) (p:Vector2) j n =
+    let rec traverse (p:Vector2) n k (node:Node<'T>) =
         match node with
         | Empty -> failwith "traversed to empty node, make sure that root is not out of bounds"
 
-        | Leaf (parent,_,_,v_min,v_max) when not (intersect p v_min v_max) ->
-            traverse parent p (j-1) n
+        | Leaf (parent,_,_,l,v_min,v_max) when not (intersect p v_min v_max) ->
+            traverse p n k parent
+            |> trim n k ValueNone
             
-        | Leaf _ -> struct(node,j)
+        | Leaf _ ->
+            node
+            |> trim n k ValueNone
 
-        | Node (parent,_,_,v_min,v_max) when not (intersect p v_min v_max) ->
-            traverse parent p (j-1) n
+        | Node (parent,_,_,l,v_min,v_max) when not (intersect p v_min v_max) ->
+            traverse p n k parent
+            |> trim n k ValueNone
 
-        | Node (_,c,_,v1,v2) ->   // traverse forward 
+        | Node (_,c,_,l,v1,v2) ->   // traverse forward 
             let mutable v_min = v1
             let mutable v_max = v2
             let mutable idx = 0
@@ -494,22 +548,25 @@ module Quadtree2 =
                 failwith "improper idx value"
 
             match c[idx] with
-            | Empty when j >= n ->
-                c[idx] <- Leaf (node, ref ValueNone, idx, v_min, v_max)
-                traverse c[idx] p (j+1) n
+            | Empty when l >= n ->
+                c[idx] <- Leaf (node, ref ValueNone, idx, n, v_min, v_max)
+                traverse p n k c[idx]
+                |> trim n k ValueNone
 
             | Empty ->
-                c[idx] <- Node (node, Array.create<Node<'T>> 4 Empty, idx, v_min, v_max) 
-                traverse c[idx] p (j+1) n
+                c[idx] <- Node (node, Array.create<Node<'T>> 4 Empty, idx, (l+1), v_min, v_max) 
+                traverse p n k c[idx]
+                |> trim n k ValueNone
+                
             | _ ->
-                traverse c[idx] p (j+1) n
+                traverse p n k c[idx]
+                |> trim n k ValueNone
 
 
-    type Root<'T>(N:int, v_min:Vector2, v_max:Vector2) =
+    type Root<'T>(N:int, k:int, v_min:Vector2, v_max:Vector2) =
         let root = create<'T> N v_min v_max
         let n = log10 (float N) / log10 2. |> ceil |> int 
         let mutable cached_node = root
-        let mutable cached_j = 0
 
         let rec dd v _n = if _n < n then dd (v/2.f) (_n + 1) else v
 
@@ -518,9 +575,12 @@ module Quadtree2 =
             count_rec &c root
             c
 
-        member this.MaxLevel = n
+        member this.GetTotalCount() =
+            let mutable c = 0
+            count_total_rec &c root
+            c
 
-        member this.Trim(k:int) = trim root 0 k n
+        member this.MaxLevel = n
 
         member this.WritePoints(path:string) =
             use fs = System.IO.File.CreateText(path)
@@ -532,26 +592,22 @@ module Quadtree2 =
             write_rects root fs
             fs.Close()
 
-        member this.dX = match root with | Node (_,_,_,v_min,v_max) -> dd (v_max.X - v_min.X) 0 | _ -> Single.NaN    
-        member this.dY = match root with | Node (_,_,_,v_min,v_max) -> dd (v_max.Y - v_min.Y) 0 | _ -> Single.NaN    
+        member this.dX = match root with | Node (_,_,_,_,v_min,v_max) -> dd (v_max.X - v_min.X) 0 | _ -> Single.NaN    
+        member this.dY = match root with | Node (_,_,_,_,v_min,v_max) -> dd (v_max.Y - v_min.Y) 0 | _ -> Single.NaN    
 
         member this.Item
             with get (x:double, y:double) =
                 let p = Vector2(float32 x, float32 y)
-                let struct(node,j) = traverse cached_node p cached_j n
-                cached_node <- node
-                cached_j <- j
+                cached_node <- traverse p n k cached_node
                 match cached_node with
-                | Leaf (_,v,_,_,_) -> v.Value
+                | Leaf (_,v,_,_,_,_) -> v.Value
                 | _ -> failwith "Item.get failed"
 
             and set (x:double, y:double) value =
                 let p = Vector2(float32 x, float32 y)
-                let struct(node,j) = traverse cached_node p cached_j n
-                cached_node <- node
-                cached_j <- j
+                cached_node <- traverse p n k cached_node
                 match cached_node with
-                | Leaf (p,v,j,v_min,v_max) -> v.Value <- ValueSome value
+                | Leaf (_,v,_,_,_,_) -> v.Value <- ValueSome value
                 | _ -> failwith "Item.get failed"         
                     
  
@@ -721,6 +777,37 @@ module GridGeneration2D =
                 vertices.Add(Vector2(x,y))
         vertices.ToArray()
 
+    let read_from_file_multiple path =
+        let lines = System.IO.File.ReadAllLines(path)
+        let mutable vertices = ResizeArray<Vector2>(1000)
+        let blocks = ResizeArray<Vector2[]>(100)
+
+        let mutable i = 0
+        while i < lines.Length do
+            if lines[i].Length > 10 then
+                let values = lines[i].Split(',')
+                if values.Length >= 2 then
+                    let x = Single.Parse(values[1])
+                    let y = Single.Parse(values[2])
+                    vertices.Add(Vector2(x,y))
+            else
+                blocks.Add(vertices.ToArray())
+                vertices.Clear()
+                // vertices <- ResizeArray<Vector2>(1000)
+                while lines[i].Length < 10 && i < lines.Length-1 do i <- i + 1
+
+            i <- i + 1
+
+        if vertices.Count > 0 then blocks.Add(vertices.ToArray())
+        blocks.ToArray()
+        
+        // vertices <- ResizeArray<Vector2>(1000)
+        // for block in blocks do
+        //     for i in 0..block.Length-1 do vertices.Add(block[i])
+        //     vertices.Add(block[0])
+            
+        // vertices.ToArray()        
+
     let center (a:Vector2) (b:Vector2) =
         let x = a.X + (b.X - a.X) / 2.f
         let y = a.Y + (b.Y - a.Y) / 2.f
@@ -739,6 +826,27 @@ module GridGeneration2D =
             y_max <- max vertices[i].Y y_max
 
         (Vector2(x_min,y_min), Vector2(x_max,y_max))
+
+    let bounds_union (v1_min:Vector2) (v1_max:Vector2) (v2_min:Vector2) (v2_max:Vector2) =
+        let x_min = min v1_min.X v2_min.X
+        let y_min = min v1_min.Y v2_min.Y
+        let x_max = max v1_max.X v2_max.X
+        let y_max = max v1_max.Y v2_max.Y
+        (Vector2(x_min,y_min), Vector2(x_max,y_max))
+
+    let total_bounds (domains:array<Vector2[]>) =
+        let (v0_min,v0_max) = bounds domains[0]
+        let mutable v_min = v0_min
+        let mutable v_max = v0_max
+        
+        for domain in domains do
+            let (v1,v2) = bounds domain
+            let (v_min',v_max') = bounds_union v1 v2 v_min v_max
+            v_min <- v_min'
+            v_max <- v_max'
+
+        (v_min,v_max)
+        
 
     let to_cartesian_system i j N (v_min:Vector2) (v_max:Vector2) =
         let dx = (v_max.X - v_min.X) / float32 N
@@ -776,7 +884,6 @@ module GridGeneration2D =
 
     let bitstencil (domain:Vector2[]) N =
         if N % 8 <> 0 then failwith "N must be multiplicative of 8 / byte for bitstencil"
-        // let stencil = NativeArray2D.create<byte> (N/8) (N/8)
         let stencil = BitArray(N*N)
         let (v_min,v_max) = bounds domain
 
@@ -784,31 +891,36 @@ module GridGeneration2D =
             let a = domain[i+0]
             let b = domain[i+1]
             assign_stencil_element stencil N v_min v_max a b
-
-            // let c = center a b
-            // let (ci,cj) = to_stencil_system N c v_min v_max
-            // stencil.SetBit(ci,cj, true)
-        // for v in domain do
-        //     let (i,j) = to_stencil_system N v v_min v_max 
-        //     // stencil.SetBit(i,j, true)
-        //     stencil[i*N+j] <- true
-        //     // printfn "(%d,%d) bit_count: %d" i j (Bits.bits_count (stencil.GetByte(i,j)))
-            
+        stencil
+        
+    let bitstencil_overwrite (domain:Vector2[]) (stencil:BitArray) N v_min v_max =
+        for i in 0..domain.Length-2 do
+            let a = domain[i+0]
+            let b = domain[i+1]
+            assign_stencil_element stencil N v_min v_max a b
         stencil
         
     let measure_range (stencil:BitArray) N I = 
         let mutable lhs = 0
         let mutable rhs = N-1
 
-        while not (stencil[I*N + lhs]) do lhs <- lhs + 1  // advance
-        while not (stencil[I*N + rhs]) do rhs <- rhs - 1  // advance
+        while not (stencil[I*N + lhs]) && lhs < N-1 do lhs <- lhs + 1  // advance
+        while not (stencil[I*N + rhs]) && rhs > 1 do rhs <- rhs - 1  // advance
     
-        while (stencil[I*N + lhs]) do lhs <- lhs + 1  // advance
-        while (stencil[I*N + rhs]) do rhs <- rhs - 1  // advance
+        while (stencil[I*N + lhs]) && lhs < N-1 do lhs <- lhs + 1  // advance
+        while (stencil[I*N + rhs]) && rhs > 1 do rhs <- rhs - 1  // advance
 
         let a = min lhs rhs
         let b = max lhs rhs
         (a,b)
+
+    let fill_line_check (stencil:BitArray) N I =
+        let mutable b' = false
+        let mutable j = 0
+        while j < N && not b' do
+            if stencil[I*N+j] then b' <- true
+            j <- j + 1
+        b'
 
     let measure_marching_rows (stencil:BitArray) N I =
         let mutable n = 0
@@ -820,35 +932,21 @@ module GridGeneration2D =
             j <- j + 1
         n
 
+    let (|Even|Odd|) input = if input % 2 = 0 then Even else Odd
+
     let fill_bitstencil N (v_min:Vector2) (v_max:Vector2) (stencil:BitArray) =
         let mutable i = 0
         while i < N do
             let (a,b) = measure_range stencil N i
-            let mutable fill = true
+            let mutable fill = fill_line_check stencil N i
 
-            let current_row = measure_marching_rows stencil N i
-            match current_row with
-            | 2 -> 
-                for j = a to b do stencil[i*N+j] <- true
-            | 3 ->
-                if (i+1) < N then
-                    let lower_row = measure_marching_rows stencil N (i+1)
+            match (measure_marching_rows stencil N i) with
+            | Odd when i > 0 ->
+                for j in 0..N-1 do stencil[i*N+j] <- stencil[(i-1)*N+j] // copy the upper row
+                
+            | Odd -> () // ignore first line, keep only the upper boundaries
 
-                    if current_row = lower_row then
-                        for j = a to b do stencil[i*N+j] <- true                    
-                    else
-                        let mutable j = a
-                        while j <= b do
-                            if stencil[i*N+j] then
-                                while stencil[i*N+j] do j <- j + 1  // advance
-                                j <- j - 1
-                                fill <- not fill
-                    
-                            if fill then stencil[i*N+j] <- true
-                            j <- j + 1
-                else
-                    for j = a to b do stencil[i*N+j] <- true                    
-            | 4 ->
+            | Even ->
                 let mutable j = a
                 while j <= b do
                     if stencil[i*N+j] then
@@ -858,9 +956,6 @@ module GridGeneration2D =
                     
                     if fill then stencil[i*N+j] <- true
                     j <- j + 1
-
-            | _ -> ()
-
             i <- i + 1
         stencil
                 
