@@ -3,11 +3,16 @@ open System
 open System.Collections.Generic
 open System.IO
 open System.Drawing
-open StbImageSharp
 open OpenTK.Graphics.OpenGL4
 open OpenTK.Mathematics
 
+open SkiaSharp
+open FFMpegCore
+open FFMpegCore.Pipes
+
+open SE
     
+
 [<AllowNullLiteral>]
 type Shader(vertex_path:string, fragment_path:string) =
     let mutable handle = 0
@@ -167,30 +172,30 @@ type Camera(position:Vector3, aspectRatio:float32) =
     member this.GetProjectionMatrix() = Matrix4.CreatePerspectiveFieldOfView(fov, aspect_ratio, 0.01f, 100f)
             
             
-[<AllowNullLiteral>]        
-type Texture(gl_handle:int) =
-    member this.Handle = gl_handle
+// [<AllowNullLiteral>]        
+// type Texture(gl_handle:int) =
+//     member this.Handle = gl_handle
 
-    static member loadFromFile (path:string) =
-        let _handle = GL.GenTexture()
-        GL.ActiveTexture(TextureUnit.Texture0)
-        GL.BindTexture(TextureTarget.Texture2D, _handle)
-        StbImage.stbi_set_flip_vertically_on_load(1)
-        use stream = File.OpenRead(path)
-        let image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha)
-        let _rgba = OpenTK.Graphics.OpenGL4.PixelFormat.Rgba
-        let _rgba_internal = OpenTK.Graphics.OpenGL4.PixelInternalFormat.Rgba
-        GL.TexImage2D(TextureTarget.Texture2D, 0, _rgba_internal, image.Width, image.Height, 0, _rgba, PixelType.UnsignedByte, image.Data)
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int TextureMinFilter.Linear));
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int TextureMagFilter.Linear));
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int TextureWrapMode.Repeat));
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int TextureWrapMode.Repeat));
-        GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
-        Texture(_handle);
+//     static member loadFromFile (path:string) =
+//         let _handle = GL.GenTexture()
+//         GL.ActiveTexture(TextureUnit.Texture0)
+//         GL.BindTexture(TextureTarget.Texture2D, _handle)
+//         StbImage.stbi_set_flip_vertically_on_load(1)
+//         use stream = File.OpenRead(path)
+//         let image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha)
+//         let _rgba = OpenTK.Graphics.OpenGL4.PixelFormat.Rgba
+//         let _rgba_internal = OpenTK.Graphics.OpenGL4.PixelInternalFormat.Rgba
+//         GL.TexImage2D(TextureTarget.Texture2D, 0, _rgba_internal, image.Width, image.Height, 0, _rgba, PixelType.UnsignedByte, image.Data)
+//         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int TextureMinFilter.Linear));
+//         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int TextureMagFilter.Linear));
+//         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int TextureWrapMode.Repeat));
+//         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int TextureWrapMode.Repeat));
+//         GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
+//         Texture(_handle);
 
-    member this.Use(_unit:TextureUnit) =
-        GL.ActiveTexture(_unit)
-        GL.BindTexture(TextureTarget.Texture2D, this.Handle)
+    // member this.Use(_unit:TextureUnit) =
+    //     GL.ActiveTexture(_unit)
+    //     GL.BindTexture(TextureTarget.Texture2D, this.Handle)
         
 
 module Shaders =
@@ -220,4 +225,88 @@ module Shaders =
         shaders_map[tag]
     
 
+type SKBitmapFrame(bmp:SKBitmap, pixels:narray<byte>) =
+    let Source = bmp
+
+    do
+        if bmp.ColorType <> SKColorType.Bgra8888 then
+            printfn "colortype: %A" bmp.ColorType
+            failwith "only 'bgra' colortype is supported"
+
+    interface IDisposable with
+        member this.Dispose() =
+            Source.Dispose()
+            pixels.Dispose()
+
+    interface IVideoFrame with
+        member this.Width = Source.Width
+        member this.Height = Source.Height
+        member this.Format = "bgra"
+    
+        member this.Serialize(pipe:System.IO.Stream) =
+            pipe.Write(Source.Bytes, 0, Source.Bytes.Length)
+
+        member this.SerializeAsync(pipe:System.IO.Stream, token:System.Threading.CancellationToken) =
+            pipe.WriteAsync(Source.Bytes, 0, Source.Bytes.Length, token)
+
+    member this.Bitmap = Source
+    member this.Pixels = pixels
+
         
+
+module VideoCapture =
+    
+    let capture_frame (frames:ResizeArray<IVideoFrame>) (wnd:SE_Window) =
+        let size = wnd.FramebufferSize
+        let w = size.X
+        let h = size.Y
+        // use pixels = NativeArray.rent<byte> (w*h*4)
+        let pixels = NativeArray.create<byte> (w*h*4)  // This leaks memory, use regular arrays, DO NOT POOL
+        // let pixels = Array.zeroCreate<byte> (w*h*4)
+        GL.ReadPixels(0, 0, w, h, PixelFormat.Bgra, PixelType.UnsignedByte, pixels.ToInt())
+
+        let bitmap = new SKBitmap(w, h, SKColorType.Bgra8888, SKAlphaType.Premul)
+        // let bit = new SKBitmap(pixels)
+        // use pixels_ptr = fixed pixels
+        let success = bitmap.InstallPixels(new SKImageInfo(w, h, SKColorType.Bgra8888, SKAlphaType.Premul), pixels.ToInt(), w*4)
+
+        if not success then
+            failwith "failed to install pixels on SKBitmap"
+        
+        let frame = new SKBitmapFrame(bitmap, pixels)
+        frames.Add(frame :> IVideoFrame)
+
+
+    let create_video_from_frames (path:string) (frames:seq<IVideoFrame>) (wnd:SE_Window) =
+        if System.IO.File.Exists(path) then
+            System.IO.File.Delete(path)
+        if System.IO.File.Exists("./tmp.png") then
+            System.IO.File.Delete("./tmp.png")
+
+        let size = wnd.FramebufferSize
+        printfn "framebuffer: (%d, %d)" size.X size.Y
+        // save last frame as image
+        printfn "image png conversion"
+    
+        let last_frame = (Seq.last frames) :?> SKBitmapFrame
+        let bmp = last_frame.Bitmap
+        use tmp_img = SKImage.FromBitmap(bmp)
+        use tmp_dat = tmp_img.Encode(SKEncodedImageFormat.Png, 80)
+        use tmp_stm = System.IO.File.OpenWrite("./tmp.png")
+        tmp_dat.SaveTo(tmp_stm)
+        tmp_stm.Close()
+        printfn "image png saved"
+
+        let source = new RawVideoPipeSource(frames, FrameRate = 30)
+        let success = FFMpegArguments
+                        .FromPipeInput(source)
+                        .OutputToFile(path, true, (fun options -> options.WithVideoCodec("libvpx-vp9").WithVideoFilters(fun filter -> filter.Mirror(Enums.Mirroring.Vertical) |> ignore) |> ignore))
+                        // .ProcessSynchronously()
+
+        printfn "start processing video conversion on %d frames" (Seq.length frames)
+        let s = success.ProcessSynchronously()
+        // success
+        let str = if s then "video conversion done!" else "video conversion failed"
+        printfn "%s" str
+        
+

@@ -1,4 +1,5 @@
 #load "../src/unsafe.fs"
+#load "../src/grid_generation.fs"
 #load "../src/trees.fs"
 // #r "../bin/Release/net10.0/SE-core.dll"
 
@@ -11,41 +12,72 @@ open GridGeneration2D
 // let octree = Octree<double>(100, Vector3.Zero, Vector3.One, (fun a b -> a - b > 0.4))
 let N = 8*200
 
-let path = Environment.GetCommandLineArgs()[2]
-let domains = read_from_file_multiple path
-let stencil = BitArray(N*N)
+// let path = Environment.GetCommandLineArgs()[2]
+// let domains = read_from_file_multiple path
+// let stencil = System.Collections.BitArray(N*N)
 
-let (v0_min,v0_max) = bounds domains[0]
-let mutable v_min = v0_min
-let mutable v_max = v0_max
+// let (v0_min,v0_max) = bounds domains[0]
+// let mutable v_min = v0_min
+// let mutable v_max = v0_max
 
-for domain in domains do
-    let (v1,v2) = bounds domain
-    let (v_min',v_max') = bounds_union v1 v2 v_min v_max
-    v_min <- v_min'
-    v_max <- v_max'
+// for domain in domains do
+//     let (v1,v2) = bounds domain
+//     let (v_min',v_max') = bounds_union v1 v2 v_min v_max
+//     v_min <- v_min'
+//     v_max <- v_max'
     
-fill_bitstencil N v_min v_max stencil
-let quadtree = Quadtree2.Root<double>(N, 4, v_min, v_max)
+// fill_bitstencil N v_min v_max stencil
+// let quadtree = Quadtree.Root<double>(N, 4, v_min, v_max)
 
-#time
-// let quadtree = Quadtree2.Root<double>(N, 4, -1.5f * Vector2.One, 1.5f * Vector2.One)
-let mutable total_get_bits = 0
-for i in 0..N-1 do
-    for j in 0..N-1 do
-        let v = to_cartesian_system i j N v_min v_max
-        if stencil[i*N+j] then
-            total_get_bits <- total_get_bits + 1
-            quadtree[double v.X, double v.Y] <- 0.
-printfn "total_get_bits: %d" total_get_bits
+// #time
+// // let quadtree = Quadtree2.Root<double>(N, 4, -1.5f * Vector2.One, 1.5f * Vector2.One)
+// let mutable total_get_bits = 0
+// for i in 0..N-1 do
+//     for j in 0..N-1 do
+//         let v = to_cartesian_system i j N v_min v_max
+//         if stencil[i*N+j] then
+//             total_get_bits <- total_get_bits + 1
+//             quadtree[double v.X, double v.Y] <- 0.
+// printfn "total_get_bits: %d" total_get_bits
 
 // let count_full = quadtree.GetCount()
 // printfn "quadtree filled: done!, total_count: %d" count_full
-// for ix in 1..N-1 do
-//     for iy in 1..N-1 do
-//             let x = float ix / float N - 0.5 * (Random.Shared.NextDouble())
-//             let y = float iy / float N - 0.5 * (Random.Shared.NextDouble()) 
-//             quadtree[x,y] <- System.Random.Shared.NextDouble()
+#time
+let _v_min = -1f * Vector2.One
+let _v_max = 2f * Vector2.One
+// let quadtree = Quadtree.Root<double>(N, 5, _v_min, _v_max)
+let stencil = System.Collections.BitArray(N*N)
+// quadtree.Stencil <- stencil
+for ix in 1..N-1 do
+    for iy in 1..N-1 do
+            let x = float ix / float N - 0.5 * (Random.Shared.NextDouble())
+            let y = float iy / float N - 0.5 * (Random.Shared.NextDouble()) 
+            let (ii,jj) = to_stencil_system N (Vector2(float32 x, float32 y)) _v_min _v_max
+            stencil[ii*N+jj] <- true
+            // quadtree.Put(x,y, ValueSome (System.Random.Shared.NextDouble()))
+
+let quadtree =
+    Quadtree.ofStencil<double> N 3 _v_min _v_max stencil
+    |> Quadtree.init 0.55
+let u = quadtree.NodeAt(0.5, 0.5)
+u[0.5,0.5] <- 0.5 * u[-1,0] + u[0,1]
+// let c0 = Quadtree.center u[-2, -2]
+// let c1 = Quadtree.center u[-1, 0]
+// let c2 = Quadtree.center u[0, -1]
+// let c3 = Quadtree.center u[0, 0]
+// let c4 = Quadtree.center u[1, 0]
+// let c5 = Quadtree.center u[0, 2]
+// let c6 = Quadtree.center u[2, 2]
+#time
+
+printfn "u[x,y]: %g" (u[0.5,0.5]).Value
+// printfn "c0: %A" c0
+// printfn "c1: %A" c1
+// printfn "c2: %A" c2
+// printfn "c3: %A" c3
+// printfn "c4: %A" c4
+// printfn "c5: %A" c5
+// printfn "c6: %A" c6
 
 printfn "quadtree.count: %d" (quadtree.GetCount()) 
 printfn "quadtree.total_count: %d" (quadtree.GetTotalCount()) 
