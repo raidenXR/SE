@@ -1,30 +1,37 @@
-#load "../src/unsafe.fs"
-#load "../src/grid_generation.fs"
-#load "../src/trees.fs"
-// #r "../bin/Release/net10.0/SE-core.dll"
+// #load "../src/unsafe.fs"
+// #load "../src/grid_generation.fs"
+// #load "../src/trees.fs"
+// #load "../src/gnuplot.fs"
+#r "../bin/Debug/net10.0/SE-core.dll"
 
 open SE
 open SE.Core
 open System.Numerics
 open System
 open GridGeneration2D
+open Plotting
 
 // let octree = Octree<double>(100, Vector3.Zero, Vector3.One, (fun a b -> a - b > 0.4))
-let N = 8*200
+let N = 1000
 
-// let path = Environment.GetCommandLineArgs()[2]
-// let domains = read_from_file_multiple path
-// let stencil = System.Collections.BitArray(N*N)
+let path = Environment.GetCommandLineArgs()[2]
+let domains = read_from_file_multiple path
+let (v_min,v_max) = total_bounds domains
+
+// let stencil =
+//     let stencil = System.Collections.BitArray(N*N)
+//     for domain in domains do
+//         bitstencil_overwrite domain stencil N v_min v_max |> ignore
+//     fill_bitstencil N v_min v_max stencil
+        
+let stencil =
+    bitstencil domains[0] N
+    |> fill_bitstencil N v_min v_max 
 
 // let (v0_min,v0_max) = bounds domains[0]
 // let mutable v_min = v0_min
 // let mutable v_max = v0_max
 
-// for domain in domains do
-//     let (v1,v2) = bounds domain
-//     let (v_min',v_max') = bounds_union v1 v2 v_min v_max
-//     v_min <- v_min'
-//     v_max <- v_max'
     
 // fill_bitstencil N v_min v_max stencil
 // let quadtree = Quadtree.Root<double>(N, 4, v_min, v_max)
@@ -42,187 +49,62 @@ let N = 8*200
 
 // let count_full = quadtree.GetCount()
 // printfn "quadtree filled: done!, total_count: %d" count_full
-#time
-let _v_min = -1f * Vector2.One
-let _v_max = 2f * Vector2.One
-// let quadtree = Quadtree.Root<double>(N, 5, _v_min, _v_max)
-let stencil = System.Collections.BitArray(N*N)
-// quadtree.Stencil <- stencil
-for ix in 1..N-1 do
-    for iy in 1..N-1 do
-            let x = float ix / float N - 0.5 * (Random.Shared.NextDouble())
-            let y = float iy / float N - 0.5 * (Random.Shared.NextDouble()) 
-            let (ii,jj) = to_stencil_system N (Vector2(float32 x, float32 y)) _v_min _v_max
-            stencil[ii*N+jj] <- true
-            // quadtree.Put(x,y, ValueSome (System.Random.Shared.NextDouble()))
+
+// #time
+// let v_min = Vector2.Zero
+// let v_max = Vector2.One
+// let stencil = System.Collections.BitArray(N*N)
+// let dv = (v_max - v_min) / (float32 N)
+// for i in 0..N-1 do
+//     for j in 0..N-1 do
+//         if stencil[i*N+j] then
+//             let x = double j * double dv.X
+//             let y = double i * double dv.Y
+        // let (i,j) = to_stencil_system N (Vector2(float32 x, float32 y)) v_min v_max
 
 let quadtree =
-    Quadtree.ofStencil<double> N 3 _v_min _v_max stencil
-    |> Quadtree.init 0.55
-let u = quadtree.NodeAt(0.5, 0.5)
-u[0.5,0.5] <- 0.5 * u[-1,0] + u[0,1]
-// let c0 = Quadtree.center u[-2, -2]
-// let c1 = Quadtree.center u[-1, 0]
-// let c2 = Quadtree.center u[0, -1]
-// let c3 = Quadtree.center u[0, 0]
-// let c4 = Quadtree.center u[1, 0]
-// let c5 = Quadtree.center u[0, 2]
-// let c6 = Quadtree.center u[2, 2]
-#time
+    stencil
+    |> Quadtree.ofStencil<double> N 5 v_min v_max
+    |> Quadtree.init 0.00
 
-printfn "u[x,y]: %g" (u[0.5,0.5]).Value
-// printfn "c0: %A" c0
-// printfn "c1: %A" c1
-// printfn "c2: %A" c2
-// printfn "c3: %A" c3
-// printfn "c4: %A" c4
-// printfn "c5: %A" c5
-// printfn "c6: %A" c6
+// printfn "quadtree.max_level: %d" (quadtree.MaxLevel) 
+
+// assign values
+for i in 0..N-1 do
+    for j in 0..N-1 do
+        if stencil[i*N+j] then
+            let x = double j * double quadtree.dX
+            let y = double i * double quadtree.dY
+            let z = exp (-(x**2.) - (y**2))
+            // quadtree[x,y] <- z
+            // quadtree.Put(x,y,ValueSome z)
+            ()
+
+
+let _trim = (fun a b -> abs(a - b) < 0.01)
+let _dense = (fun a b -> abs(a - b) > 0.1)
+// Quadtree.update quadtree _trim _dense
 
 printfn "quadtree.count: %d" (quadtree.GetCount()) 
 printfn "quadtree.total_count: %d" (quadtree.GetTotalCount()) 
-#time
-
-
-
-// let octree = Octree<double>(N, Vector3.Zero, Vector3.One * float32 N)
-// let octree_2 = Octree2.Root<double>(N, Vector3.Zero, Vector3.One * float32 N)
-
-// let dx = octree.dX
-// let dy = octree.dY
-// let dz = octree.dZ
-
-// let dx' = octree_2.dX
-// let dy' = octree_2.dY
-// let dz' = octree_2.dZ
-
 // #time
-// for ix in 1..N-1 do
-//     for iy in 1..N-1 do
-//         for iz in 1..N-1 do
-//             // let x = float ix
-//             let x = float ix
-//             let y = float iy
-//             let z = float iz
-//             // let y = System.Random.Shared.NextDouble() * double iy
-//             // let z = System.Random.Shared.NextDouble() * double iz
-//             // let x = double N - System.Random.Shared.NextDouble() * double ix
-//             octree_2[x,y,z] <- System.Random.Shared.NextDouble()
-// #time
-// printfn "octree_2: dx: %g, dy: %g, dz: %g" dx' dy' dz'
-// printfn "octree_2: count: %d, %gMB" (octree_2.GetCount()) (double(octree_2.GetCount()) * 120. / 1024. / 1024.) 
-// printfn "octree_2: max_level: %d" (octree_2.MaxLevel) 
-// #time
-// for ix in 1..N-1 do
-//     for iy in 1..N-1 do
-//         for iz in 1..N-1 do
-//             // let x = float ix
-//             let x = float ix
-//             let y = float iy
-//             let z = float iz
-//             // let y = System.Random.Shared.NextDouble() * double iy
-//             // let z = System.Random.Shared.NextDouble() * double iz
-//             // let x = double N - System.Random.Shared.NextDouble() * double ix
-//             let v = octree_2[x,y,z]
-//             ignore v
-// #time
-// printfn "traversal on built tree ^^^^^"
+        
 
-// printfn "\n"
-// #time
-// for ix in 1..N-1 do
-//     for iy in 1..N-1 do
-//         for iz in 1..N-1 do
-//             let x = float ix
-//             let y = float iy
-//             let z = float iz
-//             // let y = System.Random.Shared.NextDouble() * double iy
-//             // let z = System.Random.Shared.NextDouble() * double iz
-//             // let x = double N - System.Random.Shared.NextDouble() * double ix
-//             octree[x,y,z] <- System.Random.Shared.NextDouble()
-// #time            
-// printfn "octree: dx: %g, dy: %g, dz: %g" dx dy dz
-// printfn "octree: count: %d, %gMB" (octree.GetCount()) (double(octree.GetCount()) * 120. / 1024. / 1024.) 
-// printfn "octree: max_level: %d" (octree.MaxLevel) 
-// printfn "octree: max_level: %d" (octree.MaxLevel) 
-
-// // ignore (octree[50.4,90.1,60.3])
-// // ignore (octree[40.4,70.1,60.3])
-// // ignore (octree[20.4,80.1,30.3])
-// // ignore (octree[20.4,70.1,50.3])
-
-// #time
-// for ix in 1..N-1 do
-//     for iy in 1..N-1 do
-//         for iz in 1..N-1 do
-//             // let x = float ix
-//             let x = float ix
-//             let y = float iy
-//             let z = float iz
-//             // let y = System.Random.Shared.NextDouble() * double iy
-//             // let z = System.Random.Shared.NextDouble() * double iz
-//             // let x = double N - System.Random.Shared.NextDouble() * double ix
-//             let v = octree[x,y,z]
-//             ignore v
-// #time
-// printfn "traversal on built tree ^^^^^"
+let points = quadtree.AsPoints()
+let xs = points |> Array.map (fun v -> double v.X)
+let ys = points |> Array.map (fun v -> double v.Y)
+let zs = quadtree.GetValues()
+        
+Gnuplot()
+|>> "set size ratio -1"
+|>> "unset key"
+|> Gnuplot.datablockXYZ xs ys zs "centers"
+|>> "set palette model RGB"
+|>> "plot $centers using 1:2:3 with points palette"
+|> Gnuplot.run
+|> ignore
 
 
-// printfn "\nbit-narray1d"
-// do
-//     let bits1 = NativeArray.create<byte> 100
-//     // System.Random.Shared.NextBytes(bits1.AsSpan())
-//     for i in 0..800-1 do
-//         if System.Random.Shared.NextDouble() < 0.5 then
-//             bits1.SetBit(i, true)
-//         else 
-//             bits1.SetBit(i, false)
-
-//     printfn "count: %d, 0b%B" (bits1.GetByte(10).BitCount()) (bits1.GetByte(10))    
-
-//     printfn "bits get: %b, 0b%B" (bits1.GetBit(300)) (bits1.GetByte(300))
-
-//     bits1.SetBit(300, not (bits1.GetBit(300)))
-//     printfn "bits get: %b, 0b%B" (bits1.GetBit(300)) (bits1.GetByte(300))
-//     NativeArray.delete bits1
-
-// printfn "\nbit-narray2d"
-// do
-//     let bits2 = NativeArray2D.create<byte> 100 100
-//     // System.Random.Shared.NextBytes(bits2.AsSpan())
-//     for i in 0..800-1 do
-//         for j in 0..800-1 do
-//         if System.Random.Shared.NextDouble() < 0.5 then
-//                 bits2.SetBit(i,j, true)
-//             else 
-//                 bits2.SetBit(i,j, false)
-
-//     printfn "count: %d, 0b%B" (bits2.GetByte(10,10).BitCount()) (bits2.GetByte(10,10))    
-
-//     printfn "bits get: %b, 0b%B" (bits2.GetBit(300,300)) (bits2.GetByte(300,300))
-
-//     bits2.SetBit(300,300, not (bits2.GetBit(300,300)))
-//     printfn "bits get: %b, 0b%B" (bits2.GetBit(300,300)) (bits2.GetByte(300,300))
-//     NativeArray2D.delete bits2
-
-// printfn "\nbit-narray3d"
-// do
-//     let bits3 = NativeArray3D.create<byte> 100 100 100
-//     System.Random.Shared.NextBytes(bits3.AsSpan())
-//     for i in 0..800-1 do
-//         for j in 0..800-1 do
-//             for k in 0..800-1 do
-//             if System.Random.Shared.NextDouble() < 0.5 then
-//                     bits3.SetBit(i,j,k, true)
-//                 else 
-//                     bits3.SetBit(i,j,k, false)
-
-//     printfn "count: %d, 0b%B" (bits3.GetByte(10,10,10).BitCount()) (bits3.GetByte(10,10,10))    
-
-//     printfn "bits get: %b, 0b%B" (bits3.GetBit(300,300,300)) (bits3.GetByte(300,300,300))
-
-//     bits3.SetBit(300,300,300, not (bits3.GetBit(300,300,300)))
-//     printfn "bits get: %b, 0b%B" (bits3.GetBit(300,300,300)) (bits3.GetByte(300,300,300))
-//     NativeArray3D.delete bits3
+Console.ReadKey()
 
 

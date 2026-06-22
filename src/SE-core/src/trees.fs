@@ -23,6 +23,29 @@ module Quadtree =
             
         | Empty -> ()
         
+    let rec vertices_to_points (node:Node<'T>) (points:ResizeArray<Vector2>) =
+        match node with
+        | Node (_,c,_,_,_,_) ->
+            for ci in c do vertices_to_points ci points
+
+        | Leaf (_,v,_,_,v_min,v_max) ->
+            let p = v_min + (v_max - v_min) / 2f
+            points.Add(p)
+            
+        | Empty -> ()
+        
+    let rec values_from_vertices (node:Node<'T>) (points:ResizeArray<'T>) =
+        match node with
+        | Node (_,c,_,_,_,_) ->
+            for ci in c do values_from_vertices ci points
+
+        | Leaf (_,v,_,_,v_min,v_max) ->
+            match v.Value with
+            | ValueSome V -> points.Add(V)
+            | ValueNone -> ()
+            
+        | Empty -> ()
+        
     let rec write_rects (node:Node<'T>) (fs:System.IO.StreamWriter) =
         match node with
         | Node (_,c,_,_,_,_) ->
@@ -83,6 +106,10 @@ module Quadtree =
             for c in children do count_total_rec &j c
         | _ -> ()
 
+    let is_quadant = function
+        | Node (p,c,_,_,_,_) -> Array.forall (function Leaf _ -> true | _ -> false) c 
+        | _ -> false
+
     /// convert a Node to Leaf
     let rec trim n k v (node:Node<'T>) =
         match node with 
@@ -124,7 +151,8 @@ module Quadtree =
         | _ -> node
 
     /// convert a Leaf to Node
-    let split n = function
+    let rec dense n (node:Node<'T>) =
+        match node with
         | Leaf (p,v,i,l,v1,v2) when l < n ->
             let _children = Array.create<Node<'T>> 4 Empty
             let _this = Node (p, _children, i, l, v1, v2)
@@ -148,7 +176,14 @@ module Quadtree =
                 let v_min = Vector2(o.X, v1.Y)            
                 let v_max = Vector2(v2.X, o.Y) 
                 _children[3] <- Leaf (_this, ref _value, 3, (l+1), v_min, v_max)
-        | _ -> ()
+
+            _this
+
+        | Node (_,c,_,_,_,_) ->
+            for ci in c do dense n ci |> ignore
+            c[0]
+
+        | _ -> node
 
 
     let rec traverse (p:Vector2) n k (node:Node<'T>) =
@@ -248,7 +283,9 @@ module Quadtree =
 
             match c[idx] with
             | Empty ->
+                printfn "idx: %d, level: %d" idx l
                 failwith "traversed to Empty node"
+                // c[idx]
                 
             | _ ->
                 traverse_retain p c[idx]
@@ -257,7 +294,6 @@ module Quadtree =
         0 <= i + j + idx && i + j + idx <= 3
 
     let iterate i j dx dy N (v_min:Vector2) (v_max:Vector2) (stencil:BitArray) (node:Node<'T>) =
-        // if (i < 1 || i > 1) || (j < 1 || j > 1) then failwith "[i,j] out of bounds, must be in [-1,1]"
         match node with
         | _ when i = 0 && j = 0 -> node
         
@@ -276,12 +312,13 @@ module Quadtree =
 
             while _n == tmp && (I > 0 || J > 0) do
                 _v <- _v + dv
-                _n <- traverse_retain _v _n              
+                let (ii,jj) = GridGeneration2D.to_stencil_system N _v v_min v_max 
 
-                // let (ii,jj) = GridGeneration2D.to_stencil_system N _v v_min v_max 
+                if not stencil[ii*N+jj] then
+                    failwith "[i,j] is out of bounds of the stencil"
+                else
+                    _n <- traverse_retain _v _n              
 
-                // if not stencil[ii*N+jj] then
-                //     failwith "[i,j] is out of bounds of the stencil"
                     
                 if not (tmp == _n) then
                     tmp <- _n
@@ -300,6 +337,28 @@ module Quadtree =
     //             let v = to_cartesian_system i j N v_min v_max
     //             if stencil[i*N+j] then
     //                 quadtree[double v.X, double v.Y] <- 0.
+
+    let get_value = function
+        | Leaf (_,v,_,_,_,_) -> v.Value.Value
+        | _ -> failwith "The tmp_node HAS to be a Leaf, with an ASSIGNED value!!"
+
+
+    /// traverses the whole tree and trims / denses the quadants
+    let rec update n k (node:Node<'T>) (pred_trim:Node<'T> -> bool) (pred_dense:Node<'T> -> bool) (set_value:Node<'T> -> 'T) =
+        match node with
+        | Node (p,c,i,_,_,_) when is_quadant node ->
+            if pred_trim node then
+                printfn "trimmed"
+                trim n k (ValueSome(set_value node)) node |> ignore
+
+            elif pred_dense node then
+                printfn "densed"
+                dense n node |> ignore
+
+        | Node (_,c,_,_,_,_) ->
+            for ci in c do update n k ci pred_trim pred_dense set_value
+
+        | _ -> ()
 
 
 
@@ -326,6 +385,8 @@ module Quadtree =
 
         member this.Rank = N
 
+        member this.TrimLevel = k
+
         member this.Vmin = v_min
         member this.Vmax = v_max
 
@@ -339,9 +400,23 @@ module Quadtree =
             write_rects root fs
             fs.Close()
 
+        /// returns the Elements (their centers) of the quadtree as a list of points
+        member this.AsPoints () =
+            let points = ResizeArray<Vector2>(1000)
+            vertices_to_points root points
+            points.ToArray()
+
+        member this.GetValues () =
+            let values = ResizeArray<'T>(1000)
+            values_from_vertices root values
+            values.ToArray()
+
         member this.dX = match root with | Node (_,_,_,_,v_min,v_max) -> dd (v_max.X - v_min.X) 0 | _ -> Single.NaN    
         member this.dY = match root with | Node (_,_,_,_,v_min,v_max) -> dd (v_max.Y - v_min.Y) 0 | _ -> Single.NaN    
         member this.Stencil with get() = stencil and set(value) = stencil <- value
+
+        member internal this.Tmp_node with get() = tmp_node and set value = tmp_node <- value
+        member internal this.Cached_node with get() = cached_node and set value = cached_node <- value
 
         member this.Put(x:double, y:double, value:voption<'T>) =
             let p = Vector2(float32 x, float32 y)
@@ -350,14 +425,16 @@ module Quadtree =
             | Leaf (_,v,_,_,_,_) -> v.Value <- value
             | _ -> failwith "Item.get failed"         
 
+        member this.Update(pred_trim: Node<'T> -> bool, pred_dense: Node<'T> -> bool, set_value: Node<'T> -> 'T) =
+            update n k root pred_trim pred_dense set_value
 
+        /// Caches the Tmp_node of the Quadtree for the designated location
         member this.NodeAt(x:double, y:double) =
             let p = Vector2(float32 x, float32 y)
             tmp_node <- traverse_retain p tmp_node
             match tmp_node with
-            | Leaf _ -> ()
+            | Leaf _ -> tmp_node
             | _ -> failwith "Item.get failed"
-            this            
 
         member this.Item
             with get (x:double, y:double) =
@@ -375,16 +452,18 @@ module Quadtree =
                 | _ -> failwith "Item.get failed"         
                     
  
-        member this.Item
-            with get(i:int,j:int) =
-                if stencil = null then failwith "must assign stencil to iterate"
-                match (iterate i j (this.dX) (this.dY) N v_min v_max stencil tmp_node) with
-                | Leaf (_,v,_,_,_,_) when v.Value.IsSome -> v.Value.Value
-                | Leaf (_,v,_,_,_,_) -> failwith "Item.get Value is None"
-                | _ -> failwith "Item.get failed"
+        // member this.Item
+        //     with get(i:int,j:int) =
+        //         if stencil = null then failwith "must assign stencil to iterate"
+        //         match (iterate i j (this.dX) (this.dY) N v_min v_max stencil tmp_node) with
+        //         | Leaf (_,v,_,_,_,_) when v.Value.IsSome -> v.Value.Value
+        //         | Leaf (_,v,_,_,_,_) -> failwith "Item.get Value is None"
+        //         | _ -> failwith "Item.get failed"
 
     
 
+    /// Builds a Quadtree out of a filled stencil
+    /// The values of the Leafs are undefined
     let ofStencil<'T> N k (v_min:Vector2) (v_max:Vector2) (stencil:BitArray) =
         let quadtree = Root<'T>(N,k,v_min,v_max)
         quadtree.Stencil <- stencil        
@@ -395,16 +474,17 @@ module Quadtree =
                     quadtree.Put(double v.X, double v.Y, ValueNone)
         quadtree
         
-    let ofStencilInit<'T> N k (v_min:Vector2) (v_max:Vector2) (value:'T) (stencil:BitArray) =
-        let quadtree = Root<'T>(N,k,v_min,v_max)
-        quadtree.Stencil <- stencil        
-        for i in 0..N-1 do
-            for j in 0..N-1 do
-                let v = GridGeneration2D.to_cartesian_system i j N v_min v_max
-                if stencil[i*N+j] then
-                    quadtree.Put(double v.X, double v.Y, ValueSome value)
-        quadtree
+    // let ofStencilInit<'T> N k (v_min:Vector2) (v_max:Vector2) (value:'T) (stencil:BitArray) =
+    //     let quadtree = Root<'T>(N,k,v_min,v_max)
+    //     quadtree.Stencil <- stencil        
+    //     for i in 0..N-1 do
+    //         for j in 0..N-1 do
+    //             let v = GridGeneration2D.to_cartesian_system i j N v_min v_max
+    //             if stencil[i*N+j] then
+    //                 quadtree.Put(double v.X, double v.Y, ValueSome value)
+    //     quadtree
 
+    /// sets initial values at the Leaf s of a built Quadtree
     let init (value:'T) (quadtree:Root<'T>) =
         let N = quadtree.Rank
         let v_min = quadtree.Vmin
@@ -418,3 +498,81 @@ module Quadtree =
                 //     quadtree.Put(double v.X, double v.Y, ValueSome value)
         quadtree
         
+
+    /// walks towards the direction indicated by I and J and updates i j while return the current node tmp
+    /// It walks ONLY to next neighbour node
+    let walk I J (i:byref<int>) (j:byref<int>) (root:Root<'T>) =
+        let N  = root.Rank
+        let dx = root.dX
+        let dy = root.dY
+        let stencil = root.Stencil
+        let v_min = root.Vmin
+        let v_max = root.Vmax 
+
+        let c = v_min + (v_max - v_min) / 2.f
+        let dv = Vector2(float32 I * dx, float32 J * dy)
+        let tmp = root.Tmp_node
+        
+        let mutable v = c
+        let mutable n = tmp
+
+        printfn "before walk: i: %d, j: %d" i j
+        while n == tmp do
+            v <- v + dv
+            i <- i + I
+            j <- j + J
+            n <- traverse_retain v n
+        printfn "after walk:  i: %d, j: %d" i j
+        n
+        
+
+
+    // let update (tree:Root<'T>) (pred_trim:'T -> 'T -> bool) (pred_dense: 'T -> 'T -> bool) =
+    //     let N = tree.Rank
+    //     let stencil = tree.Stencil
+    //     let v_min = tree.Vmin
+    //     let v_max = tree.Vmax
+
+    //     // let mutable i = 0
+    //     // let mutable j = 0
+
+    //     for i in 0..N-1 do
+    //         for j in 0..N-1 do
+    //             if stencil[i*N+j] then
+    //                 printfn "walk in i,j: %d,%d" i j
+    //                 let v = GridGeneration2D.to_cartesian_system i j N v_min v_max
+    //                 let u = tree.NodeAt(double v.X, double v.Y)
+    //                 ignore tree[1,0] 
+    //                 let u_rhs = tree.Tmp_node
+                    
+    //                 ignore tree[0,1]
+    //                 let u_dhs = tree.Tmp_node
+    //                 // let mutable i0 = i
+    //                 // let mutable j0 = j
+    //                 // let mutable i1 = i
+    //                 // let mutable j1 = j
+    //                 // let u_rhs = walk 1 0 &j0 &i0 tree
+    //                 // let u_dhs = walk 0 1 &j1 &i1 tree
+    //                 // i <- ii
+    //                 // j <- jj
+
+    //                 // tree.Tmp_node <- dense tree.MaxLevel u   
+
+    //                 if pred_trim (get_value u) (get_value u_rhs) then
+    //                     let (Leaf (_,v,_,_,_,_)) = u
+    //                     tree.Tmp_node <- trim tree.MaxLevel tree.TrimLevel v.Value u
+
+    //                 elif pred_dense (get_value u) (get_value u_rhs) then
+    //                     tree.Tmp_node <- dense tree.MaxLevel u   
+
+    //                 if pred_trim (get_value u) (get_value u_dhs) then
+    //                     let (Leaf (_,v,_,_,_,_)) = u
+    //                     tree.Tmp_node <- trim tree.MaxLevel tree.TrimLevel v.Value u
+
+    //                 elif pred_dense (get_value u) (get_value u_dhs) then
+    //                     tree.Tmp_node <- dense tree.MaxLevel u   
+
+
+
+
+                    
