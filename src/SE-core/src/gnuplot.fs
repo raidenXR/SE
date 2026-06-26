@@ -146,26 +146,32 @@ module Plotting =
             gnu.writeln "EOD\n"
             gnu
 
+        let datablockString (str:string) (tag:string) (gnu:Gnuplot) =
+            gnu.writeln $"\n${tag} << EOD"
+            gnu.writeln str
+            gnu.writeln "EOD\n"
+            gnu
+
         let datablockPolygons2 (p:array<Vector3>) (tag:string) (gnu:Gnuplot) =
             gnu.writeln $"\n${tag} << EOD"
-            // let l = Array.length p / 4
-            // for i in 0..l-1 do
-            //     gnu.writeln $"{p[4*i+0].X}  {p[4*i+0].Y}  {p[4*i+0].Z}"
-            //     gnu.writeln $"{p[4*i+1].X}  {p[4*i+1].Y}  {p[4*i+1].Z}"
-            //     gnu.writeln $"{p[4*i+2].X}  {p[4*i+2].Y}  {p[4*i+2].Z}"
-            //     gnu.writeln $"{p[4*i+3].X}  {p[4*i+3].Y}  {p[4*i+3].Z}"
-            //     gnu.writeln "\n"
-
-            let l = Array.length p / 6
+            let l = Array.length p / 4
             for i in 0..l-1 do
-                gnu.writeln $"{p[6*i+0].X}  {p[6*i+0].Y}  {p[6*i+0].Z}"
-                gnu.writeln $"{p[6*i+1].X}  {p[6*i+1].Y}  {p[6*i+1].Z}"
-                gnu.writeln $"{p[6*i+2].X}  {p[6*i+2].Y}  {p[6*i+2].Z}"
+                gnu.writeln $"{p[4*i+0].X}  {p[4*i+0].Y}  {p[4*i+0].Z}"
+                gnu.writeln $"{p[4*i+1].X}  {p[4*i+1].Y}  {p[4*i+1].Z}"
+                gnu.writeln $"{p[4*i+2].X}  {p[4*i+2].Y}  {p[4*i+2].Z}"
+                gnu.writeln $"{p[4*i+3].X}  {p[4*i+3].Y}  {p[4*i+3].Z}"
                 gnu.writeln "\n"
-                gnu.writeln $"{p[6*i+3].X}  {p[6*i+3].Y}  {p[6*i+3].Z}"
-                gnu.writeln $"{p[6*i+4].X}  {p[6*i+4].Y}  {p[6*i+4].Z}"
-                gnu.writeln $"{p[6*i+5].X}  {p[6*i+5].Y}  {p[6*i+5].Z}"
-                gnu.writeln "\n"
+
+            // let l = Array.length p / 6
+            // for i in 0..l-1 do
+            //     gnu.writeln $"{p[6*i+0].X}  {p[6*i+0].Y}  {p[6*i+0].Z}"
+            //     gnu.writeln $"{p[6*i+1].X}  {p[6*i+1].Y}  {p[6*i+1].Z}"
+            //     gnu.writeln $"{p[6*i+2].X}  {p[6*i+2].Y}  {p[6*i+2].Z}"
+            //     gnu.writeln "\n"
+            //     gnu.writeln $"{p[6*i+3].X}  {p[6*i+3].Y}  {p[6*i+3].Z}"
+            //     gnu.writeln $"{p[6*i+4].X}  {p[6*i+4].Y}  {p[6*i+4].Z}"
+            //     gnu.writeln $"{p[6*i+5].X}  {p[6*i+5].Y}  {p[6*i+5].Z}"
+            //     gnu.writeln "\n"
             gnu.writeln "EOD\n"
             gnu
             
