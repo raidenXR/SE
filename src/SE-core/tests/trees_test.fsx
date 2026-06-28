@@ -49,6 +49,7 @@ let get_pixels (N:int) (path:string) =
     (stencil, N, Vector2(float32 x_min, float32 y_min), Vector2(float32 x_max, float32 y_max))
 
 let valueof = Quadtree.valueof
+let kindof  = Quadtree.kindof
 
 let _trim node =
     match node with
@@ -83,7 +84,7 @@ let _set (node:Quadtree.Node<double>) =
     | _ -> -100.0
     
 // get a domain from some hand-drawn image
-let (stencil,N,v_min,v_max) = get_pixels 800 "cool_image.png"
+let (stencil,N,v_min,v_max) = get_pixels 400 "cool_image.png"
 
 // create a quadtree over the domain
 let quadtree =
@@ -117,7 +118,7 @@ type Node<'T> with
 for n in 1..10 do
     printfn "iter: %d" n
     quadtree.Root |> Quadtree.iter (fun u ->
-        match (Quadtree.ofState DX DY u) with
+        match (kindof DX DY u) with
         | Quadtree.Internal ->  // apply the Partial Differential equation
             let (Quadtree.Leaf (_,_,_,_,v_min,v_max)) = u
             let dv = v_max - v_min
@@ -145,31 +146,39 @@ for n in 1..10 do
 
         
 let quadtree_copy = quadtree.Copy()
+// let mutable quadtree_tmp = quadtree.Copy()
 printfn "quadtree.count: %d, copy.count: %d" (quadtree_copy.GetCount()) (quadtree_copy.GetCount())
 printfn "quadtree.total_count: %d, copy.total_count: %d" (quadtree_copy.GetTotalCount()) (quadtree_copy.GetTotalCount())
 
+// let heat flow
+let KAPPA =  210.
+let SPH = 900.
+let RHO = 2700.
+let DT = 0.5
 
-for n in 1..10 do
+for n in 1..100 do
     printfn "iter: %d" n
-    quadtree_copy.Root |> Quadtree.iter (fun u ->
-        match (Quadtree.ofState DX DY u) with
+    quadtree.Root |> Quadtree.iter (fun T ->
+        match (kindof DX DY T) with
         | Quadtree.Internal ->  // apply the Partial Differential equation
-            let (Quadtree.Leaf (_,_,_,_,v_min,v_max)) = u
+            let (Quadtree.Leaf (_,_,_,_,v_min,v_max)) = T
             let dv = v_max - v_min
             let c = v_min + (v_max - v_min) / 2f
-            let x = double c.X
-            let y = double c.Y 
-            let dx = (double dv.X)**2
-            let dy = (double dv.Y)**2        
-            u[0,0] <- u[-1,0] + 0.1*System.Random.Shared.NextDouble()
+            let constant = KAPPA / (SPH * RHO) * DT
+            let T_old = quadtree_copy[double c.X, double c.Y].Value
+            T[0,0] <- DT*constant*((T[1,0] + T[-1,0] - 2.*T_old)*double(dv.Y*dv.Y) + (T[0,1] + T[0,-1] - 2.*T_old)*double(dv.X*dv.X))
+            // T[0,0] <- (T[1,0] + T[-1,0] + T[0,1] + T[0,-1]) / 4.
             
         | Quadtree.Boundary ->  // apply dirichlet conditions
-            u[0,0] <- 5.00  
+            T[0,0] <- 5.00  
         
         | Quadtree.External -> // do nothing, ignore external nodes
             ()
     )
+    Quadtree.copy_value quadtree.Root quadtree_copy.Root
+    quadtree.Update(_trim, _dense, _set)
     quadtree_copy.Update(_trim, _dense, _set)
+    // quadtree_tmp <- quadtree_copy.Copy()
     printfn "quadtree.count: %d" (quadtree_copy.GetCount()) 
     printfn "quadtree.total_count: %d" (quadtree_copy.GetTotalCount()) 
 // ^^ It fails miserably to converge, test some other PDE
@@ -185,6 +194,9 @@ let ys = points |> Array.map (fun v -> double v.Y)
 let zs = quadtree.GetValues()
 
 let elements_copy = quadtree_copy.AsPolygons(fun d -> float32 d)
+let points_copy = quadtree_copy.AsPoints()
+let xs_copy = points_copy |> Array.map (fun v -> double v.X)
+let ys_copy = points_copy |> Array.map (fun v -> double v.Y)
 let zs_copy = quadtree_copy.GetValues()
 let sb_copy = System.Text.StringBuilder(1024*1024)
 Quadtree.write_rects_to_sb quadtree_copy.Root sb_copy
@@ -202,11 +214,12 @@ Gnuplot()
 |>> "set palette defined (0 'navy', 1 'blue', 2 'cyan', 3 'green', 4 'yellow', 5 'orange', 6 'red')"
 |>> $"set cbrange[{Array.min zs}:{Array.max zs}]"
 // |>> "set view map"
-// |> Gnuplot.datablockPolygons2 elements "elements"
+|> Gnuplot.datablockPolygons2 elements "elements"
 |> Gnuplot.datablockString (string sb) "grid"
-// |> Gnuplot.datablockXY xs ys "centers"
-// |>> "plot $elements using 1:2:3 with filledcurves closed fc palette z"
-|>> "plot $grid with lines lc rgb 'white'"
+|> Gnuplot.datablockXY xs ys "centers"
+// |>> "plot $elements using 1:2:3 with filledcurves closed fc palette z, \\"
+// |>> "$grid with lines lc rgb 'white'"
+|>> "plot $centers with points lc rgb 'white'"
 |> Gnuplot.run
 |> ignore
 
@@ -222,11 +235,12 @@ Gnuplot()
 |>> "set palette defined (0 'navy', 1 'blue', 2 'cyan', 3 'green', 4 'yellow', 5 'orange', 6 'red')"
 |>> $"set cbrange[{Array.min zs_copy}:{Array.max zs_copy}]"
 // |>> "set view map"
-// |> Gnuplot.datablockPolygons2 elements_copy "elements"
+|> Gnuplot.datablockPolygons2 elements_copy "elements"
 |> Gnuplot.datablockString (string sb_copy) "grid"
-// |> Gnuplot.datablockXY xs ys "centers"
-// |>> "plot $elements using 1:2:3 with filledcurves closed fc palette z"
-|>> "plot $grid with lines lc rgb 'white'"
+|> Gnuplot.datablockXY xs_copy ys_copy "centers"
+// |>> "plot $elements using 1:2:3 with filledcurves closed fc palette z, \\"
+|>> "$centers with points lc rgb 'white'"
+// |>> "plot $centers using 1:2:3 with points pt 5 lc palette"
 |> Gnuplot.run
 |> ignore
 
