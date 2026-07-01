@@ -16,3 +16,12 @@ gltf -bin files. And also some simple `Unnamed-Body.gltf` object for helping wit
 
 TODO: At some point, I will try to implement some basic algorithms for grid generation, solvers, etc    
 as a physics engine for the project, to make working with the imported gltf CAD files easier.
+
+**UPDATE**: The `SE-core/src` updated and now it contains Quadtree and Octree implementations for descretizing      
+geometries, and solving PDEs on them. Take a look at `tests/` directories for examples of the API.   
+
+
+- `SE-renderer/tests/octree_test.fsx` (for octree example)
+- `SE-core/tests/animation_test.fsx` (for quadtree example)
+
+![swall_pde](images/Laplace_swallow_volume.gif)

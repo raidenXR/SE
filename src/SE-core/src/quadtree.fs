@@ -343,9 +343,35 @@ module Quadtree =
             | Empty -> c[idx]                
             | _ -> traverse_retain p c[idx]              
                
+        
+    /// return the node closest to the point
+    /// NOT nessesary a leaf node, just the furthest lavel that intersects x,y from the root
+    let rec traverse_map (p:Vector2) (node:Node<'T>) =
+        match node with
+        | Empty -> failwith "MUST not traverse to EMPTY"
 
-    let contains i j idx =        
-        0 <= i + j + idx && i + j + idx <= 3
+        | Leaf (parent,_,_,l,v_min,v_max) when not (intersect p v_min v_max) ->
+            traverse_map p parent
+            
+        | Leaf _ -> node
+
+        | Node (parent,_,_,l,v_min,v_max) when not (intersect p v_min v_max) ->
+            traverse_map p parent
+
+        | Node (_,c,_,l,v_min,v_max) ->   // traverse forward 
+            let mutable idx = 0
+            let o = v_min + (v_max - v_min) / 2f
+            idx <- idx + if p.X < o.X then 0 else 1
+            idx <- idx + if p.Y > o.Y then 0 else 2
+
+            if idx < 0 || idx > 3 then failwith "improper idx value"
+
+            match c[idx] with
+            | Empty -> node                
+            | _ -> traverse_map p c[idx]              
+
+    // let contains i j idx =        
+    //     0 <= i + j + idx && i + j + idx <= 3
 
     /// dx and dy are the minumum dv elements of the tree
     let iterate i j dx dy (node:Node<'T>) =
@@ -353,7 +379,7 @@ module Quadtree =
         | _ when i = 0 && j = 0 -> node
         
         // | Empty -> failwith "cannot iterate on Empty node"
-        | Empty -> node
+        // | Empty -> node
 
         | Leaf (_,_,_,_,v_min,v_max) | Node (_,_,_,_,v_min,v_max) ->
             let c = v_min + (v_max - v_min) / 2.f
@@ -377,6 +403,8 @@ module Quadtree =
                     J <- J - 1
 
             traverse_retain v node 
+            
+        | Empty -> failwith "run iterate on EMPTY node, failed"
 
             // while n == tmp && (I > 0 || J > 0) do
             //     v <- v + dv
@@ -476,6 +504,8 @@ module Quadtree =
         let mutable cached_node = root
         // let mutable tmp_node = root
         let mutable stencil: BitArray = null
+        let mutable add: ('T -> 'T -> 'T) = (fun a _ -> a)
+        let mutable div: ('T -> double -> 'T) = (fun a _ -> a)
 
         let rec dd v _n = if _n < n then dd (v/2.f) (_n + 1) else v
 
@@ -540,9 +570,12 @@ module Quadtree =
             values.ToArray()
 
         member this.CurrentNode with get() = cached_node and set value = cached_node <- value
-        member this.dX = match root with | Node (_,_,_,_,v_min,v_max) -> dd (v_max.X - v_min.X) 0 | _ -> Single.NaN    
-        member this.dY = match root with | Node (_,_,_,_,v_min,v_max) -> dd (v_max.Y - v_min.Y) 0 | _ -> Single.NaN    
+        member this.dX = match root with | Node (_,_,_,_,v_min,v_max) -> dd (v_max.X - v_min.X) 0 | _ -> failwith "Root MUST be Node"    
+        member this.dY = match root with | Node (_,_,_,_,v_min,v_max) -> dd (v_max.Y - v_min.Y) 0 | _ -> failwith "Root MUST be Node"    
         member this.Stencil with get() = stencil and set(value) = stencil <- value
+
+        member this.Add with set value = add <- value
+        member this.Div with set value = div <- value
 
         // member internal this.Tmp_node with get() = tmp_node and set value = tmp_node <- value
         member internal this.Cached_node with get() = cached_node and set value = cached_node <- value
@@ -578,12 +611,27 @@ module Quadtree =
             with get(i:int,j:int) =
                 match (iterate i j this.dX this.dY cached_node) with
                 | Leaf (_,v,_,_,_,_) -> v.Value.Value
-                | _ -> failwith "should always traverse to a leaf node"
+                | Node (_,c,_,_,_,_) ->
+                    let mutable _n = 0
+                    let mutable _t = Operators.Unchecked.defaultof<'T>
+                    iterate_sum add &_n &_t cached_node
+                    div _t (double _n)                    
+                // | Empty -> valueof cached_node
+                | Empty ->                
+                    let mutable _n = 0
+                    let mutable _t = Operators.Unchecked.defaultof<'T>
+                    iterate_sum add &_n &_t cached_node    // if current node is EMPTY use the values of rest Leafs of quadant(?)
+                    div _t (double _n)                    
+                // | Empty -> failwith "should always traverse to a leaf node"
+                // | _ -> failwith "should always traverse to a leaf node"
 
             and set(i:int,j:int) value =
                 match (iterate i j this.dX this.dY cached_node) with
                 | Leaf (_,v,_,_,_,_) -> v.Value <- ValueSome value
                 | _ -> failwith "should always traverse to a leaf node"
+
+        member this.MapTo(x:double, y:double) =
+            cached_node <- traverse_map (Vector2(float32 x, float32 y)) root
     
 
     /// Builds a Quadtree out of a filled stencil
@@ -627,6 +675,21 @@ module Quadtree =
         | Leaf _, Leaf _, Leaf _, Leaf _, Leaf _ -> Internal
         | _,_,_,_,_ -> Boundary
 
+    // let kindof (quadtree:Root<'T>) =
+    //     let u = quadtree.Cached_node
+    //     let dx = quadtree.dX
+    //     let dy = quadtree.dY
+    //     let b = iterate -1 0 dx dy u
+    //     let d = iterate 0 -1 dx dy u
+    //     let e = iterate 0 0 dx dy u
+    //     let f = iterate 0 1 dx dy u
+    //     let h = iterate 1 0 dx dy u
+
+    //     match (b,d,e,f,h) with
+    //     | _,_,Empty,_,_ -> External
+    //     | Leaf _, Leaf _, Leaf _, Leaf _, Leaf _ -> Internal
+    //     | _,_,_,_,_ -> Boundary
+        
     /// iterate all the leaf nodes of the tree
     /// The equivalent of a for-loop for the quadtree
     let rec iter (fn:Node<'T> -> unit) (node:Node<'T>) =
@@ -636,16 +699,15 @@ module Quadtree =
         | Empty -> ()
 
 
-    // let rec iter (fn:Root<'T> -> unit) (quadtree:Root<'T>) =
-    //     let node = quadtree.Cached_node
-    //     match node with
+    // let rec iter (fn:Node<'T> -> unit) (quadtree:Root<'T>) =
+    //     match quadtree.Cached_node with
     //     | Node (_,c,_,_,_,_) ->
     //         for ci in c do
     //             quadtree.Cached_node <- ci
     //             iter fn quadtree            
     //     | Leaf _ ->
-                // quadtree.Cached_node <- ci
-                // fn quadtree
+    //          // quadtree.Cached_node <- ci
+    //          fn quadtree.Cached_node
     //     | Empty -> ()
         
 
@@ -657,7 +719,9 @@ module Quadtree =
             for j in 0..c.Length-1 do morph c[j] c'[j] add div
 
         | Node (_,c,i,l,_,_), Node (_,c',i',l',_,_) ->
-            failwith "The case Node, Node of different i,l should not happen (?)"
+            // for j in 0..c'.Length-1 do morph c[j] c'[j] add div   //  keep the source constant and traverse-forward the dest
+            for j in 0..c'.Length-1 do morph source c'[j] add div   //  keep the source constant and traverse-forward the dest
+            // failwith "The case Node, Node of different i,l should not happen (?)"
         
         // | Leaf (_,v,i,l,_,_), Leaf (_,v',i',l',_,_) when i = i' && l = l' ->
         | Leaf (_,v,i,l,_,_), Leaf (_,v',i',l',_,_) ->
@@ -677,47 +741,50 @@ module Quadtree =
 
         | _, Empty -> ()
 
-    /// map the x,y coordinates to a tree, when they are not included in leafs
-    let rec map (node:Node<'T>) (x':double) (y':double) add div =
-        match node with
-        | Node (p,_,_,_,v_min,v_max) when not (intersect (Vector2(float32 x', float32 y')) v_min v_max) ->
-            let mutable _n = 0
-            let mutable _t = Operators.Unchecked.defaultof<'T>
+    // /// map the x,y coordinates to a tree, when they are not included in leafs
+    // let rec map (node:Node<'T>) (x':double) (y':double) add div =
+    //     match node with
+    //     | Node (p,_,_,_,v_min,v_max) when not (intersect (Vector2(float32 x', float32 y')) v_min v_max) ->
+    //         let mutable _n = 0
+    //         let mutable _t = Operators.Unchecked.defaultof<'T>
 
-            iterate_sum add &_n &_t p
-            printfn "_t: %A" _t
-            div _t (double _n)
+    //         iterate_sum add &_n &_t p
+    //         printfn "_t: %A" _t
+    //         div _t (double _n)
             
-        | Node (_,c,_,l,v_min,v_max) ->   // traverse forward 
-            let mutable idx = 0
-            let p = Vector2(float32 x', float32 y')
-            let o = v_min + (v_max - v_min) / 2f
-            idx <- idx + if p.X < o.X then 0 else 1
-            idx <- idx + if p.Y > o.Y then 0 else 2
+    //     | Node (_,c,_,l,v_min,v_max) ->   // traverse forward 
+    //         let mutable idx = 0
+    //         let p = Vector2(float32 x', float32 y')
+    //         let o = v_min + (v_max - v_min) / 2f
+    //         idx <- idx + if p.X < o.X then 0 else 1
+    //         idx <- idx + if p.Y > o.Y then 0 else 2
 
-            if idx < 0 || idx > 3 then failwith "improper idx value"
+    //         if idx < 0 || idx > 3 then failwith "improper idx value"
 
-            match c[idx] with
-            | Empty ->
-                let mutable _n = 0
-                let mutable _t = Operators.Unchecked.defaultof<'T>
+    //         match c[idx] with
+    //         | Empty ->
+    //             let mutable _n = 0
+    //             let mutable _t = Operators.Unchecked.defaultof<'T>
 
-                iterate_sum add &_n &_t node
-                div _t (double _n)
+    //             iterate_sum add &_n &_t node
+    //             div _t (double _n)
                 
-            | _ ->
-                map c[idx] x' y' add div              
+    //         | _ ->
+    //             map c[idx] x' y' add div              
 
-        | Leaf (p,v,_,_,v_min,v_max) when not (intersect (Vector2(float32 x', float32 y')) v_min v_max) ->
-            let mutable _n = 0
-            let mutable _t = Operators.Unchecked.defaultof<'T>
+    //     | Leaf (p,v,_,_,v_min,v_max) when not (intersect (Vector2(float32 x', float32 y')) v_min v_max) ->
+    //         let mutable _n = 0
+    //         let mutable _t = Operators.Unchecked.defaultof<'T>
 
-            iterate_sum add &_n &_t p
-            printfn "_t: %A" _t
-            div _t (double _n)
+    //         iterate_sum add &_n &_t p
+    //         printfn "_t: %A" _t
+    //         div _t (double _n)
             
         
-        | Leaf (_,v,_,_,v_min,v_max) -> v.Value.Value
+    //     | Leaf (_,v,_,_,v_min,v_max) -> v.Value.Value
 
-        | Empty -> failwith "map traversed to empty node"
+    //     | Empty -> failwith "map traversed to empty node"
+
+
+       
                    
