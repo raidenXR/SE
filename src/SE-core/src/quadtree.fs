@@ -373,6 +373,38 @@ module Quadtree =
     // let contains i j idx =        
     //     0 <= i + j + idx && i + j + idx <= 3
 
+    
+    /// dx and dy are the minumum dv elements of the tree
+    let iterate_node i j (node:Node<'T>) =
+        match node with
+        | _ when i = 0 && j = 0 -> node
+
+        | Leaf (_,_,_,_,v_min,v_max) | Node (_,_,_,_,v_min,v_max) ->
+            let c = v_min + (v_max - v_min) / 2.f
+            let dx = (v_max - v_min).X / 2.f
+            let dy = (v_max - v_min).Y / 2.f
+            let dx' = float32(sign i) * (dx * 1.125f)
+            let dy' = float32(sign j) * (dy * 1.125f)
+            let dv = Vector2(dx', dy')
+            
+            let mutable v = c
+
+            let mutable I = abs i
+            let mutable J = abs j
+
+            // this will work only for on cell displacement
+            while intersect v v_min v_max  && (I > 0 || J > 0) do
+                v <- v + dv   // displace the point until it does not intersect the cell
+
+                if not (intersect v v_min v_max) then
+                    I <- I - 1
+                    J <- J - 1
+
+            traverse_retain v node 
+            
+        | Empty -> failwith "run iterate on EMPTY node, failed"
+
+
     /// dx and dy are the minumum dv elements of the tree
     let iterate i j dx dy (node:Node<'T>) =
         match node with
@@ -479,6 +511,15 @@ module Quadtree =
         | _ -> failwith "The tmp_node HAS to be a Leaf, with an ASSIGNED value!!"
 
 
+    /// iterate all the leaf nodes of the tree
+    /// The equivalent of a for-loop for the quadtree
+    let rec iter (fn:Node<'T> -> unit) (node:Node<'T>) =
+        match node with
+        | Node (_,c,_,_,_,_) -> for ci in c do iter fn ci            
+        | Leaf _ -> fn node
+        | Empty -> ()
+
+
     /// traverses the whole tree and trims / denses the quadants
     let rec update n k (node:Node<'T>) (pred_trim:Node<'T> -> bool) (pred_dense:Node<'T> -> bool) (set_value:Node<'T> -> 'T) =
         match node with
@@ -497,6 +538,37 @@ module Quadtree =
         | _ -> ()
 
 
+    let rec morph (source:Node<'T>) (dest:Node<'T>) add div =
+    // let rec morph (source:Node<'T>) (dest:Node<'T>) (add:'T -> 'T -> 'T) (div: 'T -> double -> 'T) =
+        match (source,dest) with
+        | Node (_,c,i,l,_,_), Node (_,c',i',l',_,_) when i = i' && l = l' ->
+            for j in 0..c.Length-1 do morph c[j] c'[j] add div
+
+        | Node (_,c,i,l,_,_), Node (_,c',i',l',_,_) ->
+            // for j in 0..c'.Length-1 do morph c[j] c'[j] add div   //  keep the source constant and traverse-forward the dest
+            for j in 0..c'.Length-1 do morph source c'[j] add div   //  keep the source constant and traverse-forward the dest
+            // failwith "The case Node, Node of different i,l should not happen (?)"
+        
+        // | Leaf (_,v,i,l,_,_), Leaf (_,v',i',l',_,_) when i = i' && l = l' ->
+        | Leaf (_,v,i,l,_,_), Leaf (_,v',i',l',_,_) ->
+            v'.Value <- ValueSome v.Value.Value
+
+        | Node (_,c,i,l,_,_), Leaf (_,v,_,_,_,_) ->
+            let mutable _n = 0
+            let mutable _t = Operators.Unchecked.defaultof<'T> 
+
+            iterate_sum add &_n &_t source
+            v.Value <- ValueSome (div _t (double _n)) 
+
+        | Leaf (_,v,_,_,_,_), Node (_,c,_,_,_,_) ->
+            for ci in c do morph dest ci add div
+
+        | Empty, _ -> ()
+
+        | _, Empty -> ()
+
+
+    let private task_new (fn:unit -> unit) = System.Threading.Tasks.Task.Factory.StartNew(fn)
 
     type Root<'T>(N:int, k:int, v_min:Vector2, v_max:Vector2) =
         let root = create<'T> N v_min v_max
@@ -628,11 +700,23 @@ module Quadtree =
             and set(i:int,j:int) value =
                 match (iterate i j this.dX this.dY cached_node) with
                 | Leaf (_,v,_,_,_,_) -> v.Value <- ValueSome value
-                | _ -> failwith "should always traverse to a leaf node"
+                | _ -> morph root cached_node add div 
+                // | _ -> failwith "should always traverse to a leaf node"
 
         member this.MapTo(x:double, y:double) =
             cached_node <- traverse_map (Vector2(float32 x, float32 y)) root
-    
+
+        /// Experimental method, DOT NOT take for granted that it works...
+        member this.IterParallel(fn:Node<'T> -> unit) =
+            let c = children root
+            let t0 = task_new (fun _ -> iter fn c[0])
+            let t1 = task_new (fun _ -> iter fn c[1])
+            let t2 = task_new (fun _ -> iter fn c[2])
+            let t3 = task_new (fun _ -> iter fn c[3])
+            t0.Wait()
+            t1.Wait()
+            t2.Wait()
+            t3.Wait()
 
     /// Builds a Quadtree out of a filled stencil
     /// The values of the Leafs are undefined
@@ -666,11 +750,11 @@ module Quadtree =
         // let dy = quadtree.dY
         let b = iterate -1 0 dx dy u
         let d = iterate 0 -1 dx dy u
-        let e = iterate 0 0 dx dy u
+        // let e = iterate 0 0 dx dy u
         let f = iterate 0 1 dx dy u
         let h = iterate 1 0 dx dy u
 
-        match (b,d,e,f,h) with
+        match (b,d,u,f,h) with
         | _,_,Empty,_,_ -> External
         | Leaf _, Leaf _, Leaf _, Leaf _, Leaf _ -> Internal
         | _,_,_,_,_ -> Boundary
@@ -690,13 +774,6 @@ module Quadtree =
     //     | Leaf _, Leaf _, Leaf _, Leaf _, Leaf _ -> Internal
     //     | _,_,_,_,_ -> Boundary
         
-    /// iterate all the leaf nodes of the tree
-    /// The equivalent of a for-loop for the quadtree
-    let rec iter (fn:Node<'T> -> unit) (node:Node<'T>) =
-        match node with
-        | Node (_,c,_,_,_,_) -> for ci in c do iter fn ci            
-        | Leaf _ -> fn node
-        | Empty -> ()
 
 
     // let rec iter (fn:Node<'T> -> unit) (quadtree:Root<'T>) =
@@ -710,36 +787,6 @@ module Quadtree =
     //          fn quadtree.Cached_node
     //     | Empty -> ()
         
-
-
-    let rec morph (source:Node<'T>) (dest:Node<'T>) add div =
-    // let rec morph (source:Node<'T>) (dest:Node<'T>) (add:'T -> 'T -> 'T) (div: 'T -> double -> 'T) =
-        match (source,dest) with
-        | Node (_,c,i,l,_,_), Node (_,c',i',l',_,_) when i = i' && l = l' ->
-            for j in 0..c.Length-1 do morph c[j] c'[j] add div
-
-        | Node (_,c,i,l,_,_), Node (_,c',i',l',_,_) ->
-            // for j in 0..c'.Length-1 do morph c[j] c'[j] add div   //  keep the source constant and traverse-forward the dest
-            for j in 0..c'.Length-1 do morph source c'[j] add div   //  keep the source constant and traverse-forward the dest
-            // failwith "The case Node, Node of different i,l should not happen (?)"
-        
-        // | Leaf (_,v,i,l,_,_), Leaf (_,v',i',l',_,_) when i = i' && l = l' ->
-        | Leaf (_,v,i,l,_,_), Leaf (_,v',i',l',_,_) ->
-            v'.Value <- ValueSome v.Value.Value
-
-        | Node (_,c,i,l,_,_), Leaf (_,v,_,_,_,_) ->
-            let mutable _n = 0
-            let mutable _t = Operators.Unchecked.defaultof<'T> 
-
-            iterate_sum add &_n &_t source
-            v.Value <- ValueSome (div _t (double _n)) 
-
-        | Leaf (_,v,_,_,_,_), Node (_,c,_,_,_,_) ->
-            for ci in c do morph dest ci add div
-
-        | Empty, _ -> ()
-
-        | _, Empty -> ()
 
     // /// map the x,y coordinates to a tree, when they are not included in leafs
     // let rec map (node:Node<'T>) (x':double) (y':double) add div =

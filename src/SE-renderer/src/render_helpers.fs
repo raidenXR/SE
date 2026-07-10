@@ -16,6 +16,42 @@ open FSharp.NativeInterop
 
 open SE
 
+module Imaging =
+    open SkiaSharp
+
+    let get_pixels (N:int) (path:string) =
+        let is_black (p:SKColor) =
+            p.Blue < 80uy && p.Green < 80uy && p.Red < 80uy
+
+        use image = SKImage.FromEncodedData(path)
+        use bitmap = SKBitmap.FromImage(image)
+        let w = bitmap.Width
+        let h = bitmap.Height
+        let stencil = System.Collections.BitArray(N*N)
+
+        let mutable x_min = double N
+        let mutable y_min = double N
+        let mutable x_max = 0.0
+        let mutable y_max = 0.0
+        let mutable total_pixels = 0
+
+        for j in 0..w-1 do
+            for i in 0..h-1 do
+                if is_black (bitmap.GetPixel(i,j)) then
+                    let ii = int(double i * double N / double h)
+                    let jj = int(double j * double N / double w)
+                    stencil[(N-jj)*N+ii] <- true
+                    x_min <- min (double j) x_min
+                    y_min <- min (double i) y_min
+                    x_max <- max (double j) x_max
+                    y_max <- max (double i) y_max
+                    total_pixels <- total_pixels + 1
+
+        // printfn "N: %d, total_pixels: %d" N total_pixels
+        (stencil, N, Vector2(float32 x_min, float32 y_min), Vector2(float32 x_max, float32 y_max))
+
+
+
 
 module Helpers =
     let createMesh (model:Model) =

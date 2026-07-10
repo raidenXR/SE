@@ -24,6 +24,8 @@ let mesh =
 let (v_min,v_max) = GridGeneration3D.bounds_SIMD (mesh.vertices.AsSpan()) L
 printfn "%A, %A" v_min v_max
 
+// TODO: create better fill logic for Octree (and Quadtree has issues too)
+
 
 #time
 let stencil = 

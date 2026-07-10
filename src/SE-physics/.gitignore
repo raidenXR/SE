@@ -1,0 +1,8 @@
+*.txt
+*.mp4
+*.gif
+*.png
+*.jpg
+
+/videos
+/runtimes
