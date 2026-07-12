@@ -466,6 +466,41 @@ module Octree =
     //     0 <= i + j + idx && i + j + idx <= 7
 
     /// dx and dy are the minumum dv elements of the tree
+    let iterate_node i j k (node:Node<'T>) =
+        match node with
+        | _ when i = 0 && j = 0 -> node
+
+        | Leaf (_,_,_,_,v_min,v_max) | Node (_,_,_,_,v_min,v_max) ->
+            let c = v_min + (v_max - v_min) / 2.f
+            let dx = (v_max - v_min).X / 2.f
+            let dy = (v_max - v_min).Y / 2.f
+            let dz = (v_max - v_min).Z / 2.f
+            let dx' = float32(sign i) * (dx * 1.125f)
+            let dy' = float32(sign j) * (dy * 1.125f)
+            let dz' = float32(sign k) * (dz * 1.125f)
+            let dv = Vector3(dx', dy', dz')
+            
+            let mutable v = c + dv
+
+            let mutable I = abs i
+            let mutable J = abs j
+            let mutable K = abs k
+
+            // this will work only for on cell displacement
+            while intersect v v_min v_max  && (I > 0 || J > 0 || K > 0) do
+                v <- v + dv   // displace the point until it does not intersect the cell
+
+                if not (intersect v v_min v_max) then
+                    I <- I - 1
+                    J <- J - 1
+                    K <- K - 1
+
+            traverse_retain v node 
+            
+        | Empty -> failwith "run iterate on EMPTY node, failed"
+
+
+    /// dx and dy are the minumum dv elements of the tree
     let iterate i j k dx dy dz (node:Node<'T>) =
         match node with
         | _ when i = 0 && j = 0 -> node
@@ -518,6 +553,14 @@ module Octree =
         | Leaf (_,v,_,_,_,_) -> v.Value.Value
         | _ -> failwith "The tmp_node HAS to be a Leaf, with an ASSIGNED value!!"
 
+    /// iterate all the leaf nodes of the tree
+    /// The equivalent of a for-loop for the quadtree
+    let rec iter (fn:Node<'T> -> unit) (node:Node<'T>) =
+        match node with
+        | Node (_,c,_,_,_,_) -> for ci in c do iter fn ci            
+        | Leaf _ -> fn node
+        | Empty -> ()
+
 
     /// traverses the whole tree and trims / denses the quadants
     let rec update n k (node:Node<'T>) (pred_trim:Node<'T> -> bool) (pred_dense:Node<'T> -> bool) (set_value:Node<'T> -> 'T) =
@@ -535,6 +578,41 @@ module Octree =
         | _ -> ()
 
 
+    let rec morph (source:Node<'T>) (dest:Node<'T>) add div =
+        match (source,dest) with
+        | Node (_,c,i,l,_,_), Node (_,c',i',l',_,_) when i = i' && l = l' ->
+            for j in 0..c.Length-1 do morph c[j] c'[j] add div
+
+        | Node (_,c,i,l,_,_), Node (_,c',i',l',_,_) ->
+            // for j in 0..c'.Length-1 do morph c[j] c'[j] add div   //  keep the source constant and traverse-forward the dest
+            for j in 0..c'.Length-1 do morph source c'[j] add div   //  keep the source constant and traverse-forward the dest
+        
+        // | Leaf (_,v,i,l,_,_), Leaf (_,v',i',l',_,_) when i = i' && l = l' ->
+        | Leaf (_,v,i,l,_,_), Leaf (_,v',i',l',_,_) ->
+            v'.Value <- ValueSome v.Value.Value
+
+        | Node (_,c,i,l,_,_), Leaf (_,v,_,_,_,_) ->
+            let mutable _n = 0
+            let mutable _t = Operators.Unchecked.defaultof<'T> 
+
+            iterate_sum add &_n &_t source
+            v.Value <- ValueSome (div _t (double _n)) 
+
+        | Leaf (_,v,_,_,_,_), Node (_,c,_,_,_,_) ->
+            for ci in c do morph dest ci add div
+
+        | Empty, _ -> ()
+
+        | _, Empty -> ()
+
+
+    let private task_new (fn:unit -> unit) = System.Threading.Tasks.Task.Factory.StartNew(fn)
+
+
+    type Node<'T> with
+        /// indexer on Node<'T> returns the local neighbours of the node
+        member this.Item
+            with get (i:int, j:int, k:int) = iterate_node i j k this
 
     type Root<'T>(N:int, _k:int, v_min:Vector3, v_max:Vector3) =
         let root = create<'T> N v_min v_max
@@ -672,6 +750,96 @@ module Octree =
         member this.MapTo(x:double, y:double, z:double) =
             cached_node <- traverse_map (Vector3(float32 x, float32 y, float32 z)) root
     
+        /// Experimental method, DOT NOT take for granted that it works...
+        member this.IterParallel (num_threads:int) (fn:Node<'T> -> unit) =
+            match num_threads with
+            | 1 ->
+                iter fn root
+            | 2 ->
+                let c = children root
+                let t0 = task_new (fun _ -> iter fn c[0]; iter fn c[1]; iter fn c[2]; iter fn c[3])
+                let t1 = task_new (fun _ -> iter fn c[4]; iter fn c[5]; iter fn c[6]; iter fn c[7])
+                t0.Wait()
+                t1.Wait()
+            | 3 ->
+                let c = children root
+                let t0 = task_new (fun _ -> iter fn c[0]; iter fn c[1]; iter fn c[2])
+                let t1 = task_new (fun _ -> iter fn c[3]; iter fn c[4]; iter fn c[5])
+                let t2 = task_new (fun _ -> iter fn c[6]; iter fn c[7])
+                t0.Wait()
+                t1.Wait()
+                t2.Wait()
+            | 4 ->
+                let c = children root
+                let t0 = task_new (fun _ -> iter fn c[0]; iter fn c[1])
+                let t1 = task_new (fun _ -> iter fn c[2]; iter fn c[3])
+                let t2 = task_new (fun _ -> iter fn c[4]; iter fn c[5])
+                let t3 = task_new (fun _ -> iter fn c[6]; iter fn c[7])
+                t0.Wait()
+                t1.Wait()
+                t2.Wait()
+                t3.Wait()
+            | 5 ->
+                let c = children root
+                let t0 = task_new (fun _ -> iter fn c[0]; iter fn c[1])
+                let t1 = task_new (fun _ -> iter fn c[2]; iter fn c[3])
+                let t2 = task_new (fun _ -> iter fn c[4]; iter fn c[5])
+                let t3 = task_new (fun _ -> iter fn c[6])
+                let t4 = task_new (fun _ -> iter fn c[7])
+                t0.Wait()
+                t1.Wait()
+                t2.Wait()
+                t3.Wait()
+                t4.Wait()
+            | 6 ->
+                let c = children root
+                let t0 = task_new (fun _ -> iter fn c[0]; iter fn c[1])
+                let t1 = task_new (fun _ -> iter fn c[2]; iter fn c[3])
+                let t2 = task_new (fun _ -> iter fn c[4])
+                let t3 = task_new (fun _ -> iter fn c[5])
+                let t4 = task_new (fun _ -> iter fn c[6])
+                let t5 = task_new (fun _ -> iter fn c[7])
+                t0.Wait()
+                t1.Wait()
+                t2.Wait()
+                t3.Wait()
+                t4.Wait()
+                t5.Wait()
+            | 7 ->
+                let c = children root
+                let t0 = task_new (fun _ -> iter fn c[0]; iter fn c[1])
+                let t1 = task_new (fun _ -> iter fn c[2])
+                let t2 = task_new (fun _ -> iter fn c[3])
+                let t3 = task_new (fun _ -> iter fn c[4])
+                let t4 = task_new (fun _ -> iter fn c[5])
+                let t5 = task_new (fun _ -> iter fn c[6])
+                let t6 = task_new (fun _ -> iter fn c[7])
+                t0.Wait()
+                t1.Wait()
+                t2.Wait()
+                t3.Wait()
+                t4.Wait()
+                t5.Wait()
+                t6.Wait()
+            | _ ->
+                let c = children root
+                let t0 = task_new (fun _ -> iter fn c[0])
+                let t1 = task_new (fun _ -> iter fn c[1])
+                let t2 = task_new (fun _ -> iter fn c[2])
+                let t3 = task_new (fun _ -> iter fn c[3])
+                let t4 = task_new (fun _ -> iter fn c[4])
+                let t5 = task_new (fun _ -> iter fn c[5])
+                let t6 = task_new (fun _ -> iter fn c[6])
+                let t7 = task_new (fun _ -> iter fn c[7])
+                t0.Wait()
+                t1.Wait()
+                t2.Wait()
+                t3.Wait()
+                t4.Wait()
+                t5.Wait()
+                t6.Wait()
+                t7.Wait()
+
 
 
     /// Builds a Quadtree out of a filled stencil
@@ -702,54 +870,32 @@ module Octree =
                         quadtree.Put(double v.X, double v.Y, double v.Z, ValueSome value)
         quadtree
         
-    let kindof dx dy dz (u:Node<'T>) =
-        let b = iterate -1 0 0 dx dy dz u
-        let d = iterate 0 -1 0 dx dy dz u
-        let k = iterate 0 0 -1 dx dy dz u
-        let e = iterate 0 0 0 dx dy dz u
-        let f = iterate 0 1 0 dx dy dz u
-        let h = iterate 1 0 0 dx dy dz u
-        let j = iterate 0 0 1 dx dy dz u
+    // let kindof dx dy dz (u:Node<'T>) =
+    //     let b = iterate -1 0 0 dx dy dz u
+    //     let d = iterate 0 -1 0 dx dy dz u
+    //     let k = iterate 0 0 -1 dx dy dz u
+    //     let e = iterate 0 0 0 dx dy dz u
+    //     let f = iterate 0 1 0 dx dy dz u
+    //     let h = iterate 1 0 0 dx dy dz u
+    //     let j = iterate 0 0 1 dx dy dz u
 
-        match (b,d,e,f,h,k,j) with
+    //     match (b,d,e,f,h,k,j) with
+    //     | _,_,Empty,_,_,_,_ -> External
+    //     | Leaf _, Leaf _, Leaf _, Leaf _, Leaf _, Leaf _, Leaf _ -> Internal
+    //     | _,_,_,_,_,_,_ -> Boundary
+
+    let kindof (u:Node<'T>) =
+        let b = iterate_node -1 0 0 u
+        let d = iterate_node 0 -1 0 u
+        let k = iterate_node 0 0 -1 u
+        // let e = iterate_node 0 0 0 u
+        let f = iterate_node 0 1 0 u
+        let h = iterate_node 1 0 0 u
+        let j = iterate_node 0 0 1 u
+
+        match (b,d,u,f,h,k,j) with
         | _,_,Empty,_,_,_,_ -> External
         | Leaf _, Leaf _, Leaf _, Leaf _, Leaf _, Leaf _, Leaf _ -> Internal
         | _,_,_,_,_,_,_ -> Boundary
 
     
-    /// iterate all the leaf nodes of the tree
-    /// The equivalent of a for-loop for the quadtree
-    let rec iter (fn:Node<'T> -> unit) (node:Node<'T>) =
-        match node with
-        | Node (_,c,_,_,_,_) -> for ci in c do iter fn ci            
-        | Leaf _ -> fn node
-        | Empty -> ()
-
-
-    let rec morph (source:Node<'T>) (dest:Node<'T>) add div =
-        match (source,dest) with
-        | Node (_,c,i,l,_,_), Node (_,c',i',l',_,_) when i = i' && l = l' ->
-            for j in 0..c.Length-1 do morph c[j] c'[j] add div
-
-        | Node (_,c,i,l,_,_), Node (_,c',i',l',_,_) ->
-            // for j in 0..c'.Length-1 do morph c[j] c'[j] add div   //  keep the source constant and traverse-forward the dest
-            for j in 0..c'.Length-1 do morph source c'[j] add div   //  keep the source constant and traverse-forward the dest
-        
-        // | Leaf (_,v,i,l,_,_), Leaf (_,v',i',l',_,_) when i = i' && l = l' ->
-        | Leaf (_,v,i,l,_,_), Leaf (_,v',i',l',_,_) ->
-            v'.Value <- ValueSome v.Value.Value
-
-        | Node (_,c,i,l,_,_), Leaf (_,v,_,_,_,_) ->
-            let mutable _n = 0
-            let mutable _t = Operators.Unchecked.defaultof<'T> 
-
-            iterate_sum add &_n &_t source
-            v.Value <- ValueSome (div _t (double _n)) 
-
-        | Leaf (_,v,_,_,_,_), Node (_,c,_,_,_,_) ->
-            for ci in c do morph dest ci add div
-
-        | Empty, _ -> ()
-
-        | _, Empty -> ()
-

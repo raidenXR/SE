@@ -219,7 +219,7 @@ module GridGeneration2D =
                 
             | Odd -> () // ignore first line, keep only the upper boundaries
 
-            | Even when collisions = 2 && i > 0 ->
+            | Even when collisions = 2 && i > 0 && i < N-1 ->
                 for j in 0..N-1 do
                     let upper_row = stencil[(i-1)*N+j]
                     let lower_row = stencil[(i+1)*N+j]
@@ -471,7 +471,7 @@ module GridGeneration3D =
                 
                 | Odd -> () // ignore first line, keep only the upper boundaries
 
-                | Even when collisions = 2 && i > 0 && j > 0 ->
+                | Even when collisions = 2 && i > 0 && j > 0 && i < N-1 && j < N-1 ->
                     // printfn "Even_when called"
                     for k in 0..N-1 do
                         let upper_row = stencil[(i-1)*N*N+(j-1)*N+k]

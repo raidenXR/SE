@@ -387,7 +387,7 @@ module Quadtree =
             let dy' = float32(sign j) * (dy * 1.125f)
             let dv = Vector2(dx', dy')
             
-            let mutable v = c
+            let mutable v = c + dv
 
             let mutable I = abs i
             let mutable J = abs j
@@ -570,6 +570,12 @@ module Quadtree =
 
     let private task_new (fn:unit -> unit) = System.Threading.Tasks.Task.Factory.StartNew(fn)
 
+
+    type Node<'T> with
+        /// indexer on Node<'T> returns the local neighbours of the node
+        member this.Item
+            with get (i:int, j:int) = iterate_node i j this
+
     type Root<'T>(N:int, k:int, v_min:Vector2, v_max:Vector2) =
         let root = create<'T> N v_min v_max
         let n = log10 (float N) / log10 2. |> ceil |> int 
@@ -707,16 +713,34 @@ module Quadtree =
             cached_node <- traverse_map (Vector2(float32 x, float32 y)) root
 
         /// Experimental method, DOT NOT take for granted that it works...
-        member this.IterParallel(fn:Node<'T> -> unit) =
-            let c = children root
-            let t0 = task_new (fun _ -> iter fn c[0])
-            let t1 = task_new (fun _ -> iter fn c[1])
-            let t2 = task_new (fun _ -> iter fn c[2])
-            let t3 = task_new (fun _ -> iter fn c[3])
-            t0.Wait()
-            t1.Wait()
-            t2.Wait()
-            t3.Wait()
+        member this.IterParallel (num_threads:int) (fn:Node<'T> -> unit) =
+            match num_threads with
+            | 1 ->
+                iter fn root
+            | 2 ->
+                let c = children root
+                let t0 = task_new (fun _ -> iter fn c[0]; iter fn c[1])
+                let t1 = task_new (fun _ -> iter fn c[2]; iter fn c[3])
+                t0.Wait()
+                t1.Wait()
+            | 3 ->
+                let c = children root
+                let t0 = task_new (fun _ -> iter fn c[0])
+                let t1 = task_new (fun _ -> iter fn c[1])
+                let t2 = task_new (fun _ -> iter fn c[2]; iter fn c[3])
+                t0.Wait()
+                t1.Wait()
+                t2.Wait()
+            | _ ->
+                let c = children root
+                let t0 = task_new (fun _ -> iter fn c[0])
+                let t1 = task_new (fun _ -> iter fn c[1])
+                let t2 = task_new (fun _ -> iter fn c[2])
+                let t3 = task_new (fun _ -> iter fn c[3])
+                t0.Wait()
+                t1.Wait()
+                t2.Wait()
+                t3.Wait()
 
     /// Builds a Quadtree out of a filled stencil
     /// The values of the Leafs are undefined

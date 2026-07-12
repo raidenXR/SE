@@ -2,12 +2,14 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- <Compile Include="benchmarks/benchmarks.fs" /> -->
-    <Compile Include="benchmarks/renderer.fs" />
+    <!-- <Compile Include="benchmarks/renderer.fs" /> -->
+    <!-- <Compile Include="benchmarks/quadtree.fs" /> -->
+    <Compile Include="benchmarks/octree.fs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -17,9 +19,13 @@
 
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.15.2" />
+    <PackageReference Include="SkiaSharp" Version="3.119.0" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.0" />
   </ItemGroup>
 
   <ItemGroup>
     <None Include="bun_zipper.ply" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="cool_image_00.png" CopyToOutputDirectory="PreserveNewest" />
+    <!-- <None Include="runtimes/*.*" CopyToOutputDirectory="PreserveNewest" /> -->
   </ItemGroup>
 </Project>

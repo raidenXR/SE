@@ -1,0 +1,10 @@
+BenchmarkDotNet.Artifacts/
+runtimes/
+bin/
+obj/
+
+*.ply
+*.png
+*.so
+*.txt
+
