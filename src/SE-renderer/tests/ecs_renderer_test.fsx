@@ -1,5 +1,7 @@
 #r "../bin/Debug/net10.0/SE-renderer.dll"
 #r "../bin/Debug/net10.0/SE-core.dll"
+// #r "../bin/Release/net10.0/SE-renderer.dll"
+// #r "../bin/Release/net10.0/SE-core.dll"
 #r "nuget: OpenTK, 4.9.4"
 #r "nuget: SkiaSharp, 2.88.6"
 #r "nuget: FFMPegCore, 5.4.0"
@@ -24,6 +26,7 @@ open FFMpegCore
 open FFMpegCore.Pipes
 
 open SE
+open SE.Core
 open SE.ECS
 open SE.Spatial
 open SE.Renderer
@@ -52,11 +55,13 @@ type [<Struct>] DiscretizedVolume = {
 let path = "../models/bun_zipper.ply"
 // let gltf: option<GLTF.Deserializer> = Some (new GLTF.Deserializer(path))
 let gltf: option<GLTF.Deserializer> = None
-let N = 50
+let N = 100
 
 let mutable camera: Camera = null
 let mutable state: Entity = 0u
 
+let mutable model_on = true
+let mutable model_prev = false
 let mutable wireframe_on = false
 let mutable wireframe_prev = false
 let mutable animation_on = true
@@ -76,6 +81,8 @@ system OnExit [] (fun _ ->
 )
 
 let frames = ResizeArray<IVideoFrame>(1000)
+let mutable octree: Octree.Root<double> option = None
+
 
 type SKBitmapFrame(bmp:SKBitmap) =
     let Source = bmp
@@ -106,36 +113,39 @@ let frame_options (options:FFMpegArgumentOptions) = options.WithVideoCodec("libv
 // let action = Action frame_options
     
 let create_video_from_frames (path:string) (frames:seq<IVideoFrame>) (wnd:SE_Window) =
-    if System.IO.File.Exists(path) then
-        System.IO.File.Delete(path)
-    if System.IO.File.Exists("./tmp.png") then
-        System.IO.File.Delete("./tmp.png")
+    if Seq.length frames > 0 then 
+        if System.IO.File.Exists(path) then
+            System.IO.File.Delete(path)
+        if System.IO.File.Exists("./tmp.png") then
+            System.IO.File.Delete("./tmp.png")
 
-    let size = wnd.FramebufferSize
-    printfn "framebuffer: (%d, %d)" size.X size.Y
-    // save last frame as image
-    printfn "image png conversion"
+        let size = wnd.FramebufferSize
+        printfn "framebuffer: (%d, %d)" size.X size.Y
+        // save last frame as image
+        printfn "image png conversion"
     
-    let last_frame = (Seq.last frames) :?> SKBitmapFrame
-    let bmp = last_frame.Bitmap
-    use tmp_img = SKImage.FromBitmap(bmp)
-    use tmp_dat = tmp_img.Encode(SKEncodedImageFormat.Png, 80)
-    use tmp_stm = System.IO.File.OpenWrite("./tmp.png")
-    tmp_dat.SaveTo(tmp_stm)
-    tmp_stm.Close()
-    printfn "image png saved"
+        let last_frame = (Seq.last frames) :?> SKBitmapFrame
+        let bmp = last_frame.Bitmap
+        use tmp_img = SKImage.FromBitmap(bmp)
+        use tmp_dat = tmp_img.Encode(SKEncodedImageFormat.Png, 80)
+        use tmp_stm = System.IO.File.OpenWrite("./tmp.png")
+        tmp_dat.SaveTo(tmp_stm)
+        tmp_stm.Close()
+        printfn "image png saved"
 
-    let source = new RawVideoPipeSource(frames, FrameRate = 30)
-    let success = FFMpegArguments
-                    .FromPipeInput(source)
-                    .OutputToFile(path, true, (fun options -> options.WithVideoCodec("libvpx-vp9").WithVideoFilters(fun filter -> filter.Mirror(Enums.Mirroring.Vertical) |> ignore) |> ignore))
-                    // .ProcessSynchronously()
+        let source = new RawVideoPipeSource(frames, FrameRate = 30)
+        let success = FFMpegArguments
+                        .FromPipeInput(source)
+                        .OutputToFile(path, true, (fun options -> options.WithVideoCodec("libvpx-vp9").WithVideoFilters(fun filter -> filter.Mirror(Enums.Mirroring.Vertical) |> ignore) |> ignore))
+                        // .ProcessSynchronously()
 
-    printfn "start processing video conversion on %d frames" (Seq.length frames)
-    let s = success.ProcessSynchronously()
-    // success
-    let str = if s then "video conversion done!" else "video conversion failed"
-    printfn "%s" str
+        printfn "start processing video conversion on %d frames" (Seq.length frames)
+        let s = success.ProcessSynchronously()
+        // success
+        let str = if s then "video conversion done!" else "video conversion failed"
+        printfn "%s" str
+    else
+        printfn "frame.len is 0. It must be > 0 to create_video."
         
 
 let capture_frame (wnd:SE_Window) =
@@ -172,6 +182,33 @@ system OnLoad [] (fun _ ->
     |> ignore
 )
 
+system OnLoad [] (fun _ ->
+    let path = "../models/bun_zipper.ply"
+    let gltf: option<GLTF.Deserializer> = None
+    // let N = 500
+    let L = 10
+
+    let mesh =
+        match gltf with
+        | Some gltf -> gltf.ReadMeshF(0)
+        | None -> RGeometry.load_ply_unmanaged (path, 0.55f, 0.55f, 0.53f, 1.0f)
+
+    let (v_min,v_max) = GridGeneration3D.bounds_SIMD (mesh.vertices.AsSpan()) L
+
+    let stencil = 
+        // GridGeneration3D.bitstencil vertices indices v_min v_max N
+        System.Collections.BitArray(N*N*N)
+        |> GridGeneration3D.assign_voxels_SIMD (mesh.vertices.AsSpan()) (mesh.indices.AsSpan()) L N 
+        // |> GridGeneration3D.fill_bitstencil N
+
+    let tree_1 =
+        stencil
+        |> Octree.ofStencil<double> N 3 v_min v_max
+        |> Octree.init 0.00
+
+    octree <- Some tree_1
+)
+
 // create entities on load
 system OnLoad [] (fun _ -> 
     let mesh =
@@ -182,14 +219,32 @@ system OnLoad [] (fun _ ->
     let mesh = Helpers.createMesh ob_model
 
     // create particles
-    let voxels = Geometry.voxels ob_model.mesh N        
-    let particles = RGeometry.particles_SIMD 7 voxels
+    // let voxels = Geometry.voxels ob_model.mesh N        
+    // let particles = RGeometry.particles_SIMD 7 voxels
+    let particles_len = octree.Value.GetCount()
+    let particles_array = Array.zeroCreate<float32> (particles_len*7)
+    let mutable i = 0
+    octree.Value.IterParallel 2 (fun node ->
+        match (Octree.kindof node) with
+        | Octree.Internal | Octree.Boundary ->
+            let pos = Octree.center node
+            particles_array[i+0] <- pos.X
+            particles_array[i+1] <- pos.Y
+            particles_array[i+2] <- pos.Z
+            particles_array[i+3] <- 0.55f
+            particles_array[i+4] <- 0.55f
+            particles_array[i+5] <- 0.53f
+            particles_array[i+6] <- 1.f
+            i <- i + 7
+        | Octree.External -> ()
+    )
 
+    let particles = particles_array |> NativeArray.ofArray
     
     let pt_model = new Model(particles,[3;4])
-    let prim = Helpers.createPrim_sliced pt_model voxels.filled
+    let prim = Helpers.createPrim_sliced pt_model particles_len
 
-    printfn "for N: %d, filled_voxels: %d, particles_size: %d" N voxels.filled (particles.Length / 7)
+    printfn "for N: %d, filled_voxels: %d, particles_size: %d" N particles_len (particles.Length / 7)
     GL.ClearColor(0.2f, 0.2f, 0.2f, 1.0f)
     GL.Enable(EnableCap.DepthTest)
     GL.Enable(EnableCap.ProgramPointSize)
@@ -206,7 +261,7 @@ system OnLoad [] (fun _ ->
         entity()
         |> Entity.set ob_model
         |> Entity.set mesh
-        |> Entity.set voxels
+        // |> Entity.set voxels
         |> Entity.set (Matrix4.CreateScale(10.f))
         |> Entity.set {wireframe_active = true; prev_key = false}
         |> Entity.add<HasAnimation>
@@ -215,7 +270,7 @@ system OnLoad [] (fun _ ->
         entity()
         |> Entity.set pt_model
         |> Entity.set prim
-        |> Entity.set {count = voxels.filled * 7}
+        |> Entity.set {count = particles_len * 7 - 700}
         |> Entity.set (Matrix4.CreateScale(10.f))
 
     // create relation between a and b -> paticles depend on model
@@ -333,6 +388,12 @@ system OnUpdate [] (fun _ ->
     elif not (input.IsKeyDown(Keys.W)) then
         wireframe_prev <- false
 
+    if input.IsKeyDown(Keys.M) && not model_prev then
+        model_prev <- true
+        model_on <- not model_on
+    elif not (input.IsKeyDown(Keys.M)) then
+        model_prev <- false
+
     if input.IsKeyDown(Keys.K) && not animation_prev then
         animation_prev <- true
         animation_on <- not animation_on        
@@ -378,7 +439,8 @@ system OnUpdate [] (fun _ ->
 system OnRender [typeof<Model>] (fun q -> 
     window.Update(fun _ ->
         GL.Clear(ClearBufferMask.ColorBufferBit ||| ClearBufferMask.DepthBufferBit)
-        render_ply ()
+        if model_on then
+            render_ply ()
         render_particles ()
         window.Context.SwapBuffers()
     )
@@ -400,9 +462,9 @@ system OnExit [] (fun _ ->
     for model in models do
         model.Dispose()
 
-    let voxels = Components.get<Voxels>().Entries
-    for v in voxels do             
-        v.voxels.Dispose()
+    // let voxels = Components.get<Voxels>().Entries
+    // for v in voxels do             
+    //     v.voxels.Dispose()
 
     let meshes = Components.get<GLMesh>().Entries
     for mesh in meshes do

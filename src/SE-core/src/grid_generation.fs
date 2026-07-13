@@ -118,7 +118,7 @@ module GridGeneration2D =
         let dx = (v_max.X - v_min.X) / float32 N
         let dy = (v_max.Y - v_min.Y) / float32 N
         
-        if abs(a.Y - b.Y) > dy then
+        if abs(a.Y - b.Y) > dy || abs(a.X - b.X) > dx then
             assign_stencil_element stencil N v_min v_max a (center a b)
             assign_stencil_element stencil N v_min v_max (center a b) b       
         else

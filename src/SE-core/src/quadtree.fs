@@ -768,49 +768,92 @@ module Quadtree =
                 //     quadtree.Put(double v.X, double v.Y, ValueSome value)
         quadtree
         
-    let kindof dx dy (u:Node<'T>) =
-        // let u = quadtree.Cached_node
-        // let dx = quadtree.dX
-        // let dy = quadtree.dY
-        let b = iterate -1 0 dx dy u
-        let d = iterate 0 -1 dx dy u
+    // let kindof dx dy (u:Node<'T>) =
+    //     // let u = quadtree.Cached_node
+    //     // let dx = quadtree.dX
+    //     // let dy = quadtree.dY
+    //     let b = iterate -1 0 dx dy u
+    //     let d = iterate 0 -1 dx dy u
+    //     // let e = iterate 0 0 dx dy u
+    //     let f = iterate 0 1 dx dy u
+    //     let h = iterate 1 0 dx dy u
+
+    //     match (b,d,u,f,h) with
+    //     | _,_,Empty,_,_ -> External
+    //     | Leaf _, Leaf _, Leaf _, Leaf _, Leaf _ -> Internal
+    //     | _,_,_,_,_ -> Boundary
+
+    let kindof (u:Node<'T>) =
+        let b = iterate_node -1 0 u
+        let d = iterate_node 0 -1 u
         // let e = iterate 0 0 dx dy u
-        let f = iterate 0 1 dx dy u
-        let h = iterate 1 0 dx dy u
+        let f = iterate_node 0 1 u
+        let h = iterate_node 1 0 u
 
         match (b,d,u,f,h) with
         | _,_,Empty,_,_ -> External
         | Leaf _, Leaf _, Leaf _, Leaf _, Leaf _ -> Internal
         | _,_,_,_,_ -> Boundary
 
-    // let kindof (quadtree:Root<'T>) =
-    //     let u = quadtree.Cached_node
-    //     let dx = quadtree.dX
-    //     let dy = quadtree.dY
-    //     let b = iterate -1 0 dx dy u
-    //     let d = iterate 0 -1 dx dy u
-    //     let e = iterate 0 0 dx dy u
-    //     let f = iterate 0 1 dx dy u
-    //     let h = iterate 1 0 dx dy u
+     
 
-    //     match (b,d,e,f,h) with
-    //     | _,_,Empty,_,_ -> External
-    //     | Leaf _, Leaf _, Leaf _, Leaf _, Leaf _ -> Internal
-    //     | _,_,_,_,_ -> Boundary
+    let contains (p:Vector2) (node:Node<'T>) =
+        match (traverse_retain p node) with
+        | Leaf _ -> true
+        | Empty -> false
+        | Node _ -> failwith "contains SHOULD traverse to deepest level"
+
+
+    let fill_raycast N (v_min:Vector2) (v_max:Vector2) (boundaries:Vector2[]) (stencil:BitArray) =
+        let dx = (v_max.X - v_min.X) / float32 N
+        let dy = (v_max.Y - v_min.Y) / float32 N
+        let vs = ResizeArray<Vector2>(1024)
+        let tree = Root<byte>(N, 0, v_min, v_max)
+
+        let center = GridGeneration2D.center
+            
+        let rec subdivide (a:Vector2) (b:Vector2) =
+            if abs(a.Y - b.Y) > dy || abs(a.X - b.X) > dx then
+                subdivide a (center a b)
+                subdivide (center a b) b       
+            else
+                vs.Add(center a b)            
         
+        printfn "start subdividing"
+        for i in 1..boundaries.Length-1 do
+            let a = boundaries[i-1]
+            let b = boundaries[i-0]
+            subdivide a b
 
+        printfn "constructing boundaries quadtree"
+        for v in vs do
+            tree.Put(double v.X, double v.Y, ValueNone)
 
-    // let rec iter (fn:Node<'T> -> unit) (quadtree:Root<'T>) =
-    //     match quadtree.Cached_node with
-    //     | Node (_,c,_,_,_,_) ->
-    //         for ci in c do
-    //             quadtree.Cached_node <- ci
-    //             iter fn quadtree            
-    //     | Leaf _ ->
-    //          // quadtree.Cached_node <- ci
-    //          fn quadtree.Cached_node
-    //     | Empty -> ()
-        
+        printfn "start raycasting, vs.len: %d" (vs.Count)
+        for I in 1..vs.Count-1 do
+            let a = vs[I-1]
+            let b = vs[I-0]
+            let c = center a b
+            let n = Vector2((b - a).Y, -(b - a).X)
+            let (i,j) = GridGeneration2D.to_stencil_system N c v_min v_max 
+            let i' = sign(n.Y)
+            let j' = sign(n.X)
+
+            let mutable ii = i + i'
+            let mutable jj = j + j'
+            let mutable r = GridGeneration2D.to_cartesian_system ii jj N v_min v_max
+            let mutable J = 1
+
+            printfn "i: %d" I
+            while not (contains r tree.Root) && J < N do
+                if (ii >= 0 && ii < N && jj >= 0 && jj < N) then
+                    stencil[ii*N+jj] <- true
+                ii <- ii + i'
+                jj <- jj + j'
+                r <- GridGeneration2D.to_cartesian_system ii jj N v_min v_max
+                J <- J + 1              
+        (vs.ToArray(),stencil)
+            
 
     // /// map the x,y coordinates to a tree, when they are not included in leafs
     // let rec map (node:Node<'T>) (x':double) (y':double) add div =

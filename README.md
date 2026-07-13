@@ -24,6 +24,8 @@ geometries, and solving PDEs on them. Take a look at `tests/` directories for ex
 - `SE-renderer/tests/octree_test.fsx` (for octree example)
 - `SE-core/tests/animation_test.fsx` (for quadtree example)
 
+**WARNING:** failed **-totaly broken-** raycast algorithm, TODO: FIX IT!!!
+
 (to compile a gif from a series of images use the cmd)
 ```
 convert -delay 20 -loop 0 *.png swallow_volume.gif  

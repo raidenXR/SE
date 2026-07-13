@@ -5,6 +5,8 @@ open System
 open System.Numerics
 open System.Collections
 open FSharp.Core
+open System.Runtime.InteropServices
+open System.Runtime.CompilerServices
 
 module Octree =
 
@@ -899,3 +901,82 @@ module Octree =
         | _,_,_,_,_,_,_ -> Boundary
 
     
+    let contains (p:Vector3) (node:Node<'T>) =
+        match (traverse_retain p node) with
+        | Leaf _ -> true
+        | Empty -> false
+        | Node _ -> failwith "contains SHOULD traverse to deepest level"
+
+
+    let fill_raycast N L (v_min:Vector3) (v_max:Vector3) (vertices:Span<float32>) (indices:Span<uint32>) (stencil:BitArray) =
+        let dx = (v_max.X - v_min.X) / float32 N
+        let dy = (v_max.Y - v_min.Y) / float32 N
+        let dz = (v_max.Z - v_min.Z) / float32 N
+        let vs = ResizeArray<Vector3>(1024)
+        let tree = Root<byte>(N, 0, v_min, v_max)
+        
+        let center = GridGeneration3D.center
+        let triangle_center = GridGeneration3D.triangle_center
+            
+        let rec subdivide (a:Vector3) (b:Vector3) (c:Vector3) =
+            if abs(b.X - c.X) > dx || abs(b.Y - c.Y) > dy || abs(b.Z - c.Z) > dz then
+                let ab = center a b
+                let ac = center a c
+                let bc = center b c
+                subdivide a ab ac 
+                subdivide ab b bc       
+                subdivide ab bc ac       
+                subdivide ac bc c     
+            else
+                vs.Add(triangle_center a b c)                
+                
+        printfn "start subdividing"
+        let indices_count = indices.Length / 3
+        let p = &MemoryMarshal.GetReference(vertices)
+        for i in 1..indices_count-1 do
+            let i0 = int32 (indices[3*i+0])
+            let i1 = int32 (indices[3*i+1])
+            let i2 = int32 (indices[3*i+2])
+
+            let v0 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i0))
+            let v1 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i1))
+            let v2 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i2))
+
+            subdivide v0 v1 v2
+
+        printfn "constructing boundaries quadtree"
+        for v in vs do
+            tree.Put(double v.X, double v.Y, double v.Z, ValueNone)
+
+        printfn "start raycasting, vs.len: %d" (vs.Count)
+        for I in 2..vs.Count-1 do
+            let a = vs[I-2]
+            let b = vs[I-1]
+            let c = vs[I-0]
+            let d = triangle_center a b c
+            // Nx = Ay * Bz - Az * By
+            // Ny = Az * Bx - Ax * Bz
+            // Nz = Ax * By - Ay * Bx
+            let n = -Vector3(a.Y*b.Z - a.Z*b.Y, a.Z*b.X - a.X*b.Z, a.X*b.Y - a.Y*b.X)
+            let (i,j,k) = GridGeneration3D.to_stencil_system N d v_min v_max 
+            let i' = sign(n.Y)
+            let j' = sign(n.X)
+            let k' = sign(n.Z)
+
+            let mutable ii = i + i'
+            let mutable jj = j + j'
+            let mutable kk = k + k'
+            let mutable r = GridGeneration3D.to_cartesian_system ii jj kk N v_min v_max
+            let mutable J = 1
+            
+            // printfn "i: %d" I
+            while not (contains r tree.Root) && J < N do
+                if (ii >= 0 && ii < N && jj >= 0 && jj < N && kk >= 0 && kk < N) then
+                    stencil[ii*N*N+jj*N+kk] <- true
+                ii <- ii + i'
+                jj <- jj + j'
+                kk <- kk + k'
+                r <- GridGeneration3D.to_cartesian_system ii jj kk N v_min v_max
+                J <- J + 1              
+        (vs.ToArray(),stencil)
+
