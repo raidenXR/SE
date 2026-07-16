@@ -10,7 +10,7 @@ open System.Runtime.CompilerServices
 
 module Octree =
 
-    type [<Struct>] NodeKind = | Internal | Boundary | External
+    // type [<Struct>] NodeKind = | Internal | Boundary | External
 
     type Node<'T> =
         | Node of parent:Node<'T> * children:Node<'T>[] * idx:int * level:int * v_min:Vector3 * v_max:Vector3
@@ -410,6 +410,70 @@ module Octree =
                 traverse p n k c[idx]
                 |> trim n k ValueNone
 
+    /// inserts a node to a tree without trimming
+    let rec insert (p:Vector3) n (node:Node<'T>) =
+        match node with
+        | Empty -> failwith "traversed to empty node, make sure that root is not out of bounds"
+
+        | Leaf (parent,_,_,l,v_min,v_max) when not (intersect p v_min v_max) ->
+            insert p n parent
+            
+        | Leaf _ ->
+            node
+
+        | Node (parent,_,_,l,v_min,v_max) when not (intersect p v_min v_max) ->
+            insert p n parent
+
+        | Node (_,c,_,l,v1,v2) ->   // traverse forward 
+            let mutable v_min = v1
+            let mutable v_max = v2
+            let mutable idx = 0
+
+            let o = v_min + (v_max - v_min) / 2f
+            idx <- idx + if p.X < o.X then 0 else 1
+            idx <- idx + if p.Y > o.Y then 0 else 2
+            idx <- idx + if p.Z < o.Z then 0 else 4
+
+            match idx with
+            | 0 ->
+                v_min <- Vector3(v_min.X, o.Y, v_min.Z)            
+                v_max <- Vector3(o.X, v_max.Y, o.Z) 
+            | 1 -> 
+                v_min <- Vector3(o.X, o.Y, v_min.Z)            
+                v_max <- Vector3(v_max.X, v_max.Y, o.Z) 
+            | 2 -> 
+                v_min <- Vector3(v_min.X, v_min.Y, v_min.Z)            
+                v_max <- Vector3(o.X, o.Y, o.Z) 
+            | 3 -> 
+                v_min <- Vector3(o.X, v_min.Y, v_min.Z)            
+                v_max <- Vector3(v_max.X, o.Y, o.Z) 
+            | 4 ->
+                v_min <- Vector3(v_min.X, o.Y, o.Z)
+                v_max <- Vector3(o.X, v_max.Y, v_max.Z)
+            | 5 ->
+                v_min <- Vector3(o.X, o.Y, o.Z)
+                v_max <- Vector3(v_max.X, v_max.Y, v_max.Z)
+            | 6 ->
+                v_min <- Vector3(v_min.X, v_min.Y, o.Z)
+                v_max <- Vector3(o.X, o.Y, v_max.Z)
+            | 7 ->
+                v_min <- Vector3(o.X, v_min.Y, o.Z)
+                v_max <- Vector3(v_max.X, o.Y, v_max.Z)
+            | _ ->
+                failwith "improper idx value"
+
+            match c[idx] with
+            | Empty when l >= n ->
+                c[idx] <- Leaf (node, ref ValueNone, idx, n, v_min, v_max)
+                insert p n c[idx]
+
+            | Empty ->
+                c[idx] <- Node (node, Array.create<Node<'T>> 8 Empty, idx, (l+1), v_min, v_max) 
+                insert p n c[idx]
+                
+            | _ ->
+                insert p n c[idx]
+
         
     let rec traverse_retain (p:Vector3) (node:Node<'T>) =
         match node with
@@ -551,6 +615,29 @@ module Octree =
         | Empty -> ()
 
 
+    // let (|Internal|External|Boundary|) kindof (u:Node<'T>) =
+    let (|Internal|External|Boundary|) (u:Node<'T>) =
+        let b = iterate_node -1 0 0 u
+        let d = iterate_node 0 -1 0 u
+        let k = iterate_node 0 0 -1 u
+        // let e = iterate_node 0 0 0 u
+        let f = iterate_node 0 1 0 u
+        let h = iterate_node 1 0 0 u
+        let j = iterate_node 0 0 1 u
+
+        match (b,d,u,f,h,k,j) with
+        | _,_,Empty,_,_,_,_ -> External
+        | Leaf _, Leaf _, Leaf _, Leaf _, Leaf _, Leaf _, Leaf _ -> Internal
+        | _,_,_,_,_,_,_ -> Boundary
+
+    
+    let contains (p:Vector3) (node:Node<'T>) =
+        match (traverse_retain p node) with
+        | Leaf _ -> true
+        | Empty -> false
+        | Node _ -> failwith "contains SHOULD traverse to deepest level"
+
+
     let valueof = function
         | Leaf (_,v,_,_,_,_) -> v.Value.Value
         | _ -> failwith "The tmp_node HAS to be a Leaf, with an ASSIGNED value!!"
@@ -636,6 +723,18 @@ module Octree =
             count_total_rec &c root
             c
 
+        member this.GetInternalCount() =
+            let mutable c = 0
+            let is_internal = function | Internal -> c <- c + 1 | _ -> ()
+            iter is_internal root
+            c
+
+        member this.GetBoundaryCount() =
+            let mutable c = 0
+            let is_boundary = function | Boundary -> c <- c + 1 | _ -> ()
+            iter is_boundary root
+            c
+
         member this.MaxLevel = n
 
         member this.Rank = N
@@ -704,6 +803,13 @@ module Octree =
             cached_node <- traverse p n _k cached_node
             match cached_node with
             | Leaf (_,v,_,_,_,_) -> v.Value <- value
+            | _ -> failwith "Item.get failed"         
+
+        member this.Insert(x:double, y:double, z:double) =
+            let p = Vector3(float32 x, float32 y, float32 z)
+            cached_node <- insert p n cached_node
+            match cached_node with
+            | Leaf (_,v,_,_,_,_) -> v.Value <- ValueNone
             | _ -> failwith "Item.get failed"         
 
         member this.Update(pred_trim: Node<'T> -> bool, pred_dense: Node<'T> -> bool, set_value: Node<'T> -> 'T) =
@@ -886,33 +992,95 @@ module Octree =
     //     | Leaf _, Leaf _, Leaf _, Leaf _, Leaf _, Leaf _, Leaf _ -> Internal
     //     | _,_,_,_,_,_,_ -> Boundary
 
-    let kindof (u:Node<'T>) =
-        let b = iterate_node -1 0 0 u
-        let d = iterate_node 0 -1 0 u
-        let k = iterate_node 0 0 -1 u
-        // let e = iterate_node 0 0 0 u
-        let f = iterate_node 0 1 0 u
-        let h = iterate_node 1 0 0 u
-        let j = iterate_node 0 0 1 u
+    let fill_scanlines N L (v_min:Vector3) (v_max:Vector3) (vertices:Span<float32>) (indices:Span<uint>) (bits:BitArray) =
+        let dx = (v_max.X - v_min.X) / float32 N
+        let dy = (v_max.Y - v_min.Y) / float32 N
+        let dz = (v_max.Z - v_min.Z) / float32 N
+        let dr = Vector3(dx,dy,dz)
+        // let vs = ResizeArray<Vector2>(1024)
+        // let tree = Root<byte>(N, 0, v_min, v_max)
+        let center = GridGeneration3D.center
 
-        match (b,d,u,f,h,k,j) with
-        | _,_,Empty,_,_,_,_ -> External
-        | Leaf _, Leaf _, Leaf _, Leaf _, Leaf _, Leaf _, Leaf _ -> Internal
-        | _,_,_,_,_,_,_ -> Boundary
+        let rec subdivide (a:Vector3) (b:Vector3) (c:Vector3) =        
+            // let t = GridGeneration3D.triangle_center a b c
+            let R = dr.Length()
+            if (b-a).Length() >= R || (a-c).Length() >= R || (c-b).Length() >= R then 
+                let ab = center a b
+                let ac = center a c
+                let bc = center b c
+                subdivide a ab ac 
+                subdivide ab b bc       
+                subdivide ab bc ac       
+                subdivide ac bc c     
+            else
+                let d = GridGeneration3D.triangle_center a b c
+                let (ai,aj,ak) = GridGeneration3D.to_stencil_system N a v_min v_max
+                let (bi,bj,bk) = GridGeneration3D.to_stencil_system N b v_min v_max
+                let (ci,cj,ck) = GridGeneration3D.to_stencil_system N c v_min v_max
+                let (di,dj,dk) = GridGeneration3D.to_stencil_system N d v_min v_max
+                bits[ai*N*N+aj*N+ak] <- true
+                bits[bi*N*N+bj*N+bk] <- true
+                bits[ci*N*N+cj*N+ck] <- true
+                bits[di*N*N+dj*N+dk] <- true
 
-    
-    let contains (p:Vector3) (node:Node<'T>) =
-        match (traverse_retain p node) with
-        | Leaf _ -> true
-        | Empty -> false
-        | Node _ -> failwith "contains SHOULD traverse to deepest level"
+        let indices_count = indices.Length / 3
+        let p = &MemoryMarshal.GetReference(vertices)
+        for i in 0..indices_count-1 do
+            let i0 = int32 (indices[3*i+0])
+            let i1 = int32 (indices[3*i+1])
+            let i2 = int32 (indices[3*i+2])
+            let v0 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i0))
+            let v1 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i1))
+            let v2 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i2))            
+            subdivide v0 v1 v2
+        
+        let mutable i = 0
+        while i < N do
+            let mutable j = 0
+            while j < N do
+                let (a,b) = GridGeneration3D.measure_range bits N i j
+                let mutable fill = GridGeneration3D.fill_line_check bits N i j
 
+                let collisions = GridGeneration3D.measure_marching_rows bits N i j
+                match collisions with
+                | GridGeneration3D.Zero -> ()
+
+                | GridGeneration3D.Odd when i > 0 && i < N - 1 && j > 0 && j < N - 1 ->                
+                    // printfn "Odd called"
+                    for k in 0..N-1 do
+                        let upper_row = bits[(i-1)*N*N+(j-1)*N+k]
+                        let lower_row = bits[(i+1)*N*N+(j+1)*N+k]
+                        bits[i*N*N+j*N+k] <- bits[i*N*N+j*N+k] || (upper_row || lower_row)
+            
+                | GridGeneration3D.Odd -> () // ignore first line, keep only the upper boundaries
+
+                // | GridGeneration3D.Even when collisions = 2 && i > 0 && j > 0 && i < N-1 && j < N-1 ->
+                //     // printfn "Even_when called"
+                //     for k in 0..N-1 do
+                //         let upper_row = stencil[(i-1)*N*N+(j-1)*N+k]
+                //         let lower_row = stencil[(i+1)*N*N+(j+1)*N+k]
+                //         stencil[i*N*N+j*N+k] <- stencil[i*N*N+j*N+k] || (upper_row || lower_row)
+            
+                | GridGeneration3D.Even ->
+                    let mutable k = a
+                    while k <= b do
+                        if bits[i*N*N+j*N+k] then
+                            while bits[i*N*N+j*N+k] do k <- k + 1  // advance
+                            // printfn "Even called"
+                            k <- k - 1
+                            fill <- not fill
+                
+                        if fill then bits[i*N*N+j*N+k] <- true
+                        k <- k + 1
+                j <- j + 1
+            i <- i + 1
+        bits
 
     let fill_raycast N L (v_min:Vector3) (v_max:Vector3) (vertices:Span<float32>) (indices:Span<uint32>) (stencil:BitArray) =
         let dx = (v_max.X - v_min.X) / float32 N
         let dy = (v_max.Y - v_min.Y) / float32 N
         let dz = (v_max.Z - v_min.Z) / float32 N
-        let vs = ResizeArray<Vector3>(1024)
+        // let vs = ResizeArray<Vector3>(1024)
         let tree = Root<byte>(N, 0, v_min, v_max)
         
         let center = GridGeneration3D.center
@@ -928,7 +1096,12 @@ module Octree =
                 subdivide ab bc ac       
                 subdivide ac bc c     
             else
-                vs.Add(triangle_center a b c)                
+                let d = triangle_center a b c
+                tree.Put(double a.X, double a.Y, double a.Z, ValueNone)
+                tree.Put(double b.X, double a.Y, double b.Z, ValueNone)
+                tree.Put(double c.X, double c.Y, double c.Z, ValueNone)
+                tree.Put(double d.X, double d.Y, double d.Z, ValueNone)
+                // vs.Add(triangle_center a b c)                
                 
         printfn "start subdividing"
         let indices_count = indices.Length / 3
@@ -944,12 +1117,14 @@ module Octree =
 
             subdivide v0 v1 v2
 
-        printfn "constructing boundaries quadtree"
-        for v in vs do
-            tree.Put(double v.X, double v.Y, double v.Z, ValueNone)
+        // printfn "constructing boundaries quadtree"
+        // for v in vs do
+        //     tree.Put(double v.X, double v.Y, double v.Z, ValueNone)
+        
+        let vs = tree.AsPoints()
 
-        printfn "start raycasting, vs.len: %d" (vs.Count)
-        for I in 2..vs.Count-1 do
+        printfn "start raycasting, vs.len: %d" (vs.Length)
+        for I in 2..vs.Length-1 do
             let a = vs[I-2]
             let b = vs[I-1]
             let c = vs[I-0]
@@ -978,5 +1153,14 @@ module Octree =
                 kk <- kk + k'
                 r <- GridGeneration3D.to_cartesian_system ii jj kk N v_min v_max
                 J <- J + 1              
-        (vs.ToArray(),stencil)
+        (vs,stencil)
+
+
+    let ofSurface<'T> (N:int) L k (vertices:Span<float32>) (indices:Span<uint>) =
+        let (v_min,v_max) = GridGeneration3D.bounds_SIMD vertices L
+        let bits = fill_scanlines N L v_min v_max vertices indices (BitArray(N*N*N))
+        ofStencil<'T> N k v_min v_max bits        
+
+
+
 

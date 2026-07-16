@@ -193,20 +193,7 @@ system OnLoad [] (fun _ ->
         | Some gltf -> gltf.ReadMeshF(0)
         | None -> RGeometry.load_ply_unmanaged (path, 0.55f, 0.55f, 0.53f, 1.0f)
 
-    let (v_min,v_max) = GridGeneration3D.bounds_SIMD (mesh.vertices.AsSpan()) L
-
-    let stencil = 
-        // GridGeneration3D.bitstencil vertices indices v_min v_max N
-        System.Collections.BitArray(N*N*N)
-        |> GridGeneration3D.assign_voxels_SIMD (mesh.vertices.AsSpan()) (mesh.indices.AsSpan()) L N 
-        // |> GridGeneration3D.fill_bitstencil N
-
-    let tree_1 =
-        stencil
-        |> Octree.ofStencil<double> N 3 v_min v_max
-        |> Octree.init 0.00
-
-    octree <- Some tree_1
+    octree <- Some (Octree.ofSurface<double> N L 4 (mesh.vertices.AsSpan()) (mesh.indices.AsSpan()))
 )
 
 // create entities on load

@@ -8,7 +8,7 @@ open FSharp.Core
 
 module Quadtree =
     
-    type [<Struct>] NodeKind = | Internal | Boundary | External
+    // type [<Struct>] NodeKind = | Internal | Boundary | External
 
     type Node<'T> =
         | Node of parent:Node<'T> * children:Node<'T>[] * idx:int * level:int * v_min:Vector2 * v_max:Vector2
@@ -318,6 +318,58 @@ module Quadtree =
                 traverse p n k c[idx]
                 |> trim n k ValueNone
 
+
+    /// inserts a node to a tree without trimming
+    let rec insert (p:Vector2) n (node:Node<'T>) =
+        match node with
+        | Empty -> failwith "traversed to empty node, make sure that root is not out of bounds"
+
+        | Leaf (parent,_,_,l,v_min,v_max) when not (intersect p v_min v_max) ->
+            insert p n parent
+            
+        | Leaf _ ->
+            node
+
+        | Node (parent,_,_,l,v_min,v_max) when not (intersect p v_min v_max) ->
+            insert p n parent
+
+        | Node (_,c,_,l,v1,v2) ->   // traverse forward 
+            let mutable v_min = v1
+            let mutable v_max = v2
+            let mutable idx = 0
+
+            let o = v_min + (v_max - v_min) / 2f
+            idx <- idx + if p.X < o.X then 0 else 1
+            idx <- idx + if p.Y > o.Y then 0 else 2
+
+            match idx with
+            | 0 ->
+                v_min <- Vector2(v_min.X, o.Y)            
+                v_max <- Vector2(o.X, v_max.Y) 
+            | 1 -> 
+                v_min <- Vector2(o.X, o.Y)            
+                v_max <- Vector2(v_max.X, v_max.Y) 
+            | 2 -> 
+                v_min <- Vector2(v_min.X, v_min.Y)            
+                v_max <- Vector2(o.X, o.Y) 
+            | 3 -> 
+                v_min <- Vector2(o.X, v_min.Y)            
+                v_max <- Vector2(v_max.X, o.Y) 
+            | _ ->
+                failwith "improper idx value"
+
+            match c[idx] with
+            | Empty when l >= n ->
+                c[idx] <- Leaf (node, ref ValueNone, idx, n, v_min, v_max)
+                insert p n c[idx]
+
+            | Empty ->
+                c[idx] <- Node (node, Array.create<Node<'T>> 4 Empty, idx, (l+1), v_min, v_max) 
+                insert p n c[idx]
+                
+            | _ ->
+                insert p n c[idx]
+
         
     let rec traverse_retain (p:Vector2) (node:Node<'T>) =
         match node with
@@ -505,6 +557,26 @@ module Quadtree =
     //     | Leaf _, Leaf _, Leaf _, Leaf _, Leaf _ -> Internal
     //     | _,_,_,_,_ -> Boundary
    
+    // let kindof (u:Node<'T>) =
+    let (|Internal|External|Boundary|) (u:Node<'T>) =
+        let b = iterate_node -1 0 u
+        let d = iterate_node 0 -1 u
+        // let e = iterate 0 0 dx dy u
+        let f = iterate_node 0 1 u
+        let h = iterate_node 1 0 u
+
+        match (b,d,u,f,h) with
+        | _,_,Empty,_,_ -> External
+        | Leaf _, Leaf _, Leaf _, Leaf _, Leaf _ -> Internal
+        | _,_,_,_,_ -> Boundary
+     
+
+    let contains (p:Vector2) (node:Node<'T>) =
+        match (traverse_retain p node) with
+        | Leaf _ -> true
+        | Empty -> false
+        | Node _ -> failwith "contains SHOULD traverse to deepest level"
+
 
     let valueof = function
         | Leaf (_,v,_,_,_,_) -> v.Value.Value
@@ -597,6 +669,17 @@ module Quadtree =
             count_total_rec &c root
             c
 
+        member this.GetInternalCount() =
+            let mutable c = 0
+            let is_internal = function | Internal -> c <- c + 1 | _ -> ()
+            iter is_internal root
+            c
+
+        member this.GetBoundaryCount() =
+            let mutable c = 0
+            let is_boundary = function | Boundary -> c <- c + 1 | _ -> ()
+            iter is_boundary root
+            c
         member this.MaxLevel = n
 
         member this.Rank = N
@@ -663,6 +746,13 @@ module Quadtree =
             cached_node <- traverse p n k cached_node
             match cached_node with
             | Leaf (_,v,_,_,_,_) -> v.Value <- value
+            | _ -> failwith "Item.get failed"         
+
+        member this.Insert(x:double, y:double) =
+            let p = Vector2(float32 x, float32 y)
+            cached_node <- insert p n cached_node
+            match cached_node with
+            | Leaf (_,v,_,_,_,_) -> v.Value <- ValueNone
             | _ -> failwith "Item.get failed"         
 
         member this.Update(pred_trim: Node<'T> -> bool, pred_dense: Node<'T> -> bool, set_value: Node<'T> -> 'T) =
@@ -783,77 +873,267 @@ module Quadtree =
     //     | Leaf _, Leaf _, Leaf _, Leaf _, Leaf _ -> Internal
     //     | _,_,_,_,_ -> Boundary
 
-    let kindof (u:Node<'T>) =
-        let b = iterate_node -1 0 u
-        let d = iterate_node 0 -1 u
-        // let e = iterate 0 0 dx dy u
-        let f = iterate_node 0 1 u
-        let h = iterate_node 1 0 u
-
-        match (b,d,u,f,h) with
-        | _,_,Empty,_,_ -> External
-        | Leaf _, Leaf _, Leaf _, Leaf _, Leaf _ -> Internal
-        | _,_,_,_,_ -> Boundary
-
-     
-
-    let contains (p:Vector2) (node:Node<'T>) =
-        match (traverse_retain p node) with
-        | Leaf _ -> true
-        | Empty -> false
-        | Node _ -> failwith "contains SHOULD traverse to deepest level"
-
-
-    let fill_raycast N (v_min:Vector2) (v_max:Vector2) (boundaries:Vector2[]) (stencil:BitArray) =
+        
+    let fill_scanlines_from_bits N (v_min:Vector2) (v_max:Vector2) (bits:BitArray) =
         let dx = (v_max.X - v_min.X) / float32 N
         let dy = (v_max.Y - v_min.Y) / float32 N
+        let dr = Vector2(dx,dy)
+        // let vs = ResizeArray<Vector2>(1024)
+        // let tree = Root<byte>(N, 0, v_min, v_max)
+
+        let center = GridGeneration2D.center
+
+        // for i in 0..N-1 do
+        //     for j in 0..N-1 do
+        //         if bits[i*N+j] then
+        //             let v = GridGeneration2D.to_cartesian_system i j N v_min v_max
+                    // tree.Insert(double v.X, double v.Y)
+                    // vs.Add(v)
+                            
+        // let vs = vs.ToArray()
+
+        let mutable i = 0
+        while i < N do
+            let (a,b) = GridGeneration2D.measure_range bits N i
+            let mutable fill = GridGeneration2D.fill_line_check bits N i
+
+            let collisions = GridGeneration2D.measure_marching_rows bits N i
+            match collisions with
+            | GridGeneration2D.Zero -> ()
+
+            | GridGeneration2D.Odd when i > 0 && i < N - 1 ->                
+                for j in 0..N-1 do
+                    let upper_row = bits[(i-1)*N+j]
+                    let lower_row = bits[(i+1)*N+j]
+                    // bits[i*N+j] <- bits[i*N+j] || (upper_row || lower_row)
+                    // bits[i*N+j] <- bits[i*N+j] || upper_row
+                    bits[i*N+j] <- bits[i*N+j] || lower_row
+                
+            | GridGeneration2D.Odd -> () // ignore first line, keep only the upper boundaries
+                
+            | GridGeneration2D.Even ->
+                let mutable j = a
+                while j <= b do
+                    if bits[i*N+j] then
+                        while bits[i*N+j] do j <- j + 1  // advance
+                        j <- j - 1
+                        fill <- not fill
+                    
+                    if fill then bits[i*N+j] <- true
+                    j <- j + 1
+            i <- i + 1
+        // (vs,tree,bits)
+        bits
+
+
+    let fill_scanlines N (v_min:Vector2) (v_max:Vector2) (boundaries:Vector2[]) (bits:BitArray) =
+        let dx = (v_max.X - v_min.X) / float32 N
+        let dy = (v_max.Y - v_min.Y) / float32 N
+        let dr = Vector2(dx,dy)
+        // let vs = ResizeArray<Vector2>(1024)
+        // let tree = Root<byte>(N, 0, v_min, v_max)
+
+        let center = GridGeneration2D.center
+
+        let rec subdivide (a:Vector2) (b:Vector2) =
+            // if abs(a.Y - b.Y) >= abs(dy) || abs(a.X - b.X) >= abs(dx) || (b - a).Length() >= dr.Length() then
+            if (b - a).Length() >= dr.Length() then
+                let c = center a b
+                subdivide a c
+                subdivide c b       
+            else
+                let c = center a b
+                // tree.Insert(double a.X, double a.Y)
+                // tree.Insert(double c.X, double c.Y)
+                // tree.Insert(double b.X, double b.Y)
+                // vs.Add(a)
+                // vs.Add(c)            
+                // vs.Add(b)
+                let (ia,ja) = GridGeneration2D.to_stencil_system N a v_min v_max 
+                let (ic,jc) = GridGeneration2D.to_stencil_system N c v_min v_max 
+                let (ib,jb) = GridGeneration2D.to_stencil_system N b v_min v_max 
+                bits[ia*N+ja] <- true
+                bits[ic*N+jc] <- true
+                bits[ib*N+jb] <- true
+
+        // printfn "start subdividing"
+        for i in 1..boundaries.Length-1 do
+            let a = boundaries[i-1]
+            let b = boundaries[i-0]
+            subdivide a b
+
+        // printfn "constructing boundaries quadtree"
+        // for v in vs do
+        //     tree.Insert(double v.X, double v.Y)
+
+        // let vs = tree.AsPoints()
+        // let vs = vs.ToArray()
+                
+        let mutable i = 0
+        while i < N do
+            let (a,b) = GridGeneration2D.measure_range bits N i
+            let mutable fill = GridGeneration2D.fill_line_check bits N i
+            // let mutable fill = true
+
+            let collisions = GridGeneration2D.measure_marching_rows bits N i
+            match collisions with
+            | GridGeneration2D.Zero -> ()
+
+            | GridGeneration2D.Odd when i > 0 && i < N - 1 ->                
+                for j in 0..N-1 do
+                    let upper_row = bits[(i-1)*N+j]
+                    let lower_row = bits[(i+1)*N+j]
+                    ()
+                    bits[i*N+j] <- bits[i*N+j] || (upper_row || lower_row)
+                    // bits[i*N+j] <- bits[i*N+j] || upper_row
+                    // stencil[i*N+j] <- stencil[(i-1)*N+j] // copy the upper row
+                
+            | GridGeneration2D.Odd -> () // ignore first line, keep only the upper boundaries
+
+            // | Even when collisions = 2 && i > 0 && i < N-1 ->
+            //     for j in 0..N-1 do
+            //         let upper_row = bits[(i-1)*N+j]
+            //         let lower_row = bits[(i+1)*N+j]
+            //         ()
+                    // bits[i*N+j] <- bits[i*N+j] || (upper_row || lower_row)
+                    // bits[i*N+j] <- bits[i*N+j] || upper_row
+                // for j in 0..N-1 do stencil[i*N+j] <- stencil[(i-1)*N+j] // copy the upper row
+                
+            | GridGeneration2D.Even ->
+                let mutable j = a
+                while j <= b do
+                    if bits[i*N+j] then
+                        while bits[i*N+j] do j <- j + 1  // advance
+                        j <- j - 1
+                        fill <- not fill
+                    
+                    if fill then bits[i*N+j] <- true
+                    j <- j + 1
+            i <- i + 1
+        // (vs,tree,bits)
+        bits
+
+
+    let fill_raycast N (v_min:Vector2) (v_max:Vector2) (boundaries:Vector2[]) (bits:BitArray) =
+        let dx = (v_max.X - v_min.X) / float32 N
+        let dy = (v_max.Y - v_min.Y) / float32 N
+        let dr = Vector2(dx,dy)
         let vs = ResizeArray<Vector2>(1024)
         let tree = Root<byte>(N, 0, v_min, v_max)
 
         let center = GridGeneration2D.center
             
         let rec subdivide (a:Vector2) (b:Vector2) =
-            if abs(a.Y - b.Y) > dy || abs(a.X - b.X) > dx then
-                subdivide a (center a b)
-                subdivide (center a b) b       
+            // if abs(a.Y - b.Y) >= abs(dy) || abs(a.X - b.X) >= abs(dx) || (b - a).Length() >= dr.Length() then
+            if (b - a).Length() >= dr.Length() / 4.f then
+                let c = center a b
+                subdivide a c
+                subdivide c b       
             else
-                vs.Add(center a b)            
+                let c = center a b
+                tree.Insert(double a.X, double a.Y)
+                tree.Insert(double b.X, double b.Y)
+                tree.Insert(double c.X, double c.Y)
+                vs.Add(a)
+                vs.Add(c)            
+                vs.Add(b)
         
-        printfn "start subdividing"
+        // printfn "start subdividing"
         for i in 1..boundaries.Length-1 do
             let a = boundaries[i-1]
             let b = boundaries[i-0]
             subdivide a b
 
-        printfn "constructing boundaries quadtree"
-        for v in vs do
-            tree.Put(double v.X, double v.Y, ValueNone)
+        // printfn "constructing boundaries quadtree"
+        // for v in vs do
+        //     tree.Insert(double v.X, double v.Y)
 
-        printfn "start raycasting, vs.len: %d" (vs.Count)
-        for I in 1..vs.Count-1 do
+        // let vs = tree.AsPoints()
+        let vs = vs.ToArray()
+
+        printfn "start raycasting, vs.len: %d" (vs.Length)
+        for I in 1..vs.Length-1 do
             let a = vs[I-1]
             let b = vs[I-0]
             let c = center a b
             let n = Vector2((b - a).Y, -(b - a).X)
+            // let mutable r = c + n
             let (i,j) = GridGeneration2D.to_stencil_system N c v_min v_max 
+            bits[i*N+j] <- true
             let i' = sign(n.Y)
             let j' = sign(n.X)
 
+            // let mutable ii = i
             let mutable ii = i + i'
             let mutable jj = j + j'
             let mutable r = GridGeneration2D.to_cartesian_system ii jj N v_min v_max
             let mutable J = 1
 
-            printfn "i: %d" I
+            // printfn "i: %d" I
             while not (contains r tree.Root) && J < N do
+                // let (ii,jj) = GridGeneration2D.to_stencil_system N r v_min v_max 
                 if (ii >= 0 && ii < N && jj >= 0 && jj < N) then
-                    stencil[ii*N+jj] <- true
-                ii <- ii + i'
-                jj <- jj + j'
-                r <- GridGeneration2D.to_cartesian_system ii jj N v_min v_max
+                    bits[ii*N+jj] <- true
+                // ii <- ii + i'
+                // jj <- jj + j'
+                // r <- GridGeneration2D.to_cartesian_system ii jj N v_min v_max
+                // r <- r + (dr / dr.Length())
+                r <- r + dr
+                let (_i,_j) = GridGeneration2D.to_stencil_system N r v_min v_max
+                ii <- _i
+                jj <- _j
                 J <- J + 1              
-        (vs.ToArray(),stencil)
+        (vs,tree,bits)
+
             
+    let normals N (v_min:Vector2) (v_max:Vector2) (boundaries:Vector2[]) =
+        let dx = (v_max.X - v_min.X) / float32 N
+        let dy = (v_max.Y - v_min.Y) / float32 N
+        let dr = Vector2(dx,dy)
+        let vs = ResizeArray<Vector2>(1024)
+        let norms = ResizeArray<Vector4>(1024)
+
+        let center = GridGeneration2D.center
+            
+        let rec subdivide (a:Vector2) (b:Vector2) =
+            // if abs(a.Y - b.Y) >= abs(dy) || abs(a.X - b.X) >= abs(dx) then
+            if (b - a).Length() >= dr.Length() / 2.f then
+                let c = center a b
+                subdivide a c
+                subdivide c b       
+            else
+                let c = center a b
+                vs.Add(a)
+                vs.Add(b)
+
+        for i in 1..boundaries.Length-1 do
+            let a = boundaries[i-1]
+            let b = boundaries[i-0]
+            subdivide a b
+            
+        let vs = vs.ToArray()
+        for I in 1..vs.Length-1 do
+            let a = vs[I-1]
+            let b = vs[I-0]
+            let c = center a b
+            let n = Vector2((b - a).Y, -(b - a).X)
+            norms.Add(Vector4(c.X, c.Y, n.X, n.Y))
+        norms.ToArray()
+
+
+    /// uses the fill_scanlines algorithm as the default to create the internal nodes 
+    let ofBoundaries<'T> (N:int) k (boundary_points:Vector2[]) =
+        let (v_min,v_max) = GridGeneration2D.bounds boundary_points
+        BitArray(N*N)
+        |> fill_scanlines N v_min v_max boundary_points
+        |> ofStencil<'T> N k v_min v_max        
+
+    /// uses the fill_scanlines algorithm as the default to create the internal nodes 
+    let ofBits<'T> (N:int) k v_min v_max (bits:BitArray) =
+        bits
+        |> fill_scanlines_from_bits N v_min v_max
+        |> ofStencil<'T> N k v_min v_max        
+
 
     // /// map the x,y coordinates to a tree, when they are not included in leafs
     // let rec map (node:Node<'T>) (x':double) (y':double) add div =

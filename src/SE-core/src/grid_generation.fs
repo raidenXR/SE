@@ -180,7 +180,8 @@ module GridGeneration2D =
         let mutable b' = false
         let mutable j = 0
         while j < N && not b' do
-            if stencil[I*N+j] then b' <- true
+            // if stencil[I*N+j] then b' <- true
+            b' <- stencil[I*N+j]
             j <- j + 1
         b'
 
@@ -196,7 +197,7 @@ module GridGeneration2D =
         n
 
     let (|Even|Odd|Zero|) input =
-        if input = 0 && input = 1 then Zero elif input % 2 = 0 then Even else Odd
+        if input = 0 || input = 1 then Zero elif input % 2 = 0 then Even else Odd
 
     // let fill_bitstencil N (v_min:Vector2) (v_max:Vector2) (stencil:BitArray) =
     let fill_bitstencil N (stencil:BitArray) =
@@ -447,7 +448,7 @@ module GridGeneration3D =
         n
 
     let (|Even|Odd|Zero|) input =
-        if input = 0 && input = 1 then Zero elif input % 2 = 0 then Even else Odd
+        if input = 0 || input = 1 then Zero elif input % 2 = 0 then Even else Odd
 
         
     let fill_bitstencil N (stencil:BitArray) =
