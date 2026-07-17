@@ -1,6 +1,45 @@
 
 = Computational Physics
 
+== Differentiation
+
+=== Central Differences Algorithm with Non-Uniform Node Spacing
+The central differences method can be extended to handle non-uniform node spacing,
+though it requires a more careful derivation than the standard uniform-spacing case.
+
+=== Standard Central Differences (Uniform Spacing)
+When nodes are equally spaced with distance $h$, the second derivative approximation is:
+$
+  f''(x_i) approx (f(x_(i+1)) - 2f(x_i) + f(x_(i-1)))/(h^2)
+$
+This has *O($h^2$)* accuracy.
+
+=== Non-Uniform Node Spacing
+When spacing is non-uniform, denote:
+- $h_1 = x_i - x_(i-1)$ (distance to left neighbor)  
+- $h_2 = x_(i+1) - x_i$ (distance to right neighbor)
+
+The generalized second derivative formula becomes:
+$
+  f''(x_i) approx (2)/(h_1 (h_1 + h_2)) f(x_i - 1) - (2)/(h_1 h_2) f(x_i) + (2)/(h_2 (h_1 + h_2)) f(x_(i+1))
+$
+
+This maintains *O(h)* accuracy (first-order) in the non-uniform case, unless the spacing variation is carefully controlled.
+
+=== First Derivative with Non-Uniform Spacing
+For the first derivative, you can use:
+
+$
+  f'(x_i) approx (h^2_2 f(x_(i-1)) - (h^2_2 - h^2_1)f(x_i) - h_1^2f(x_(i+1))) / (h_1 h_2 (h_1 + h_2))
+$
+
+=== Practical Implementation Tips
+Derive locally: For each node $i$, use Taylor series expansions around $x_i$ to derive the coefficients. This ensures accuracy for whatever the local spacing happens to be.
+Higher accuracy variants: If you want to maintain O(h²) accuracy with non-uniform nodes, you may need to use more points (4-point or 5-point stencils) or accept reduced accuracy.
+Quasi-uniform grids: If your nodes are "nearly uniform" (spacing variations are small), the non-uniform formula above works well. If spacing is highly irregular, consider remeshing to a more regular grid if possible.
+Boundary handling: Non-uniform spacing makes boundary approximations trickier—you'll need one-sided or skewed stencils at edges, derived similarly using Taylor series.
+
+
 == 24 Heat Flow
 A basic fact of nature is that heat flows from hot to cold, that is, from regions of
 high temperature to regions of low temperature. We give these words math-

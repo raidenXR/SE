@@ -9,11 +9,11 @@ open System
 open System.Numerics
 
 
-// let path = "../models/animated_object.gltf"
-let path = "../models/bun_zipper.ply"
-// let gltf: option<GLTF.Deserializer> = Some (new GLTF.Deserializer(path))
-let gltf: option<GLTF.Deserializer> = None
-let N = 200
+let path = "../models/animated_object.gltf"
+// let path = "../models/bun_zipper.ply"
+let gltf: option<GLTF.Deserializer> = Some (new GLTF.Deserializer(path))
+// let gltf: option<GLTF.Deserializer> = None
+let N = 50
 let L = 10
 
 let mesh =
@@ -21,7 +21,7 @@ let mesh =
     | Some gltf -> gltf.ReadMeshF(0)
     | None -> RGeometry.load_ply_unmanaged (path, 0.55f, 0.55f, 0.53f, 1.0f)
 
-let tree = Octree.ofSurface<double> N L 4 (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
+let tree = Octree.ofSurface<double> N L 3 (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
 let points = ResizeArray<Vector3>(1000)
 let bounds = ResizeArray<Vector3>(1000)
 

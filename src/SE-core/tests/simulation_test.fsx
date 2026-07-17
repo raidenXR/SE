@@ -2,7 +2,7 @@
 #load "../src/gnuplot.fs"
 
 open System
-open SE.Core
+open SE.ECS
 open SE.Plotting
 open FSharp.Data.UnitSystems.SI.UnitSymbols
 

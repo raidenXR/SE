@@ -5,7 +5,7 @@
 // ****************************************************
 #set page(
   paper: "a4",
-  numbering: "1",
+  numbering: "1.",
   header: align(right)[notes] + line(length: 100%)
 )
 
@@ -17,5 +17,6 @@
 #show link: set text(blue)
 #show table: set align(right)
 
+#include "kinetics.typ"
 #include "reference.typ"
-#include "combustion.typ"
+#include "bibliography.typ"

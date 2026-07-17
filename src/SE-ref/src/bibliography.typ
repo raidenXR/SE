@@ -14,6 +14,7 @@
 
 // Wiley
 - Computational Physics (Landau - 2010)
+- Kinetics of Chemical Reactions - Decoding Complexity (2019)
 
 // βιβλιοθήκη
 - Computational Methods in Chemical Engineering

@@ -23,7 +23,7 @@ module UnsafeOps =
     /// stack allocates a Span<T>() with legth N
     let inline stackalloc<'T when 'T:unmanaged> (n:int) =
         let ptr = NativePtr.stackalloc<'T> n |> NativePtr.toVoidPtr
-        Span<'T>(ptr, n * sizeof<'T>)
+        Span<'T>(ptr, n)
 
     let inline cast<'T when 'T:unmanaged> ptr = NativePtr.ofVoidPtr<'T> ptr
 
