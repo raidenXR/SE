@@ -200,11 +200,13 @@ module Octree =
         | Empty -> ()
 
     let rec count_total_rec (j:byref<int>) (node:Node<'T>) =
-        j <- j + 1
         match node with 
         | Node (_,children,_,_,_,_) ->
+            j <- j + 1
             for c in children do count_total_rec &j c
-        | _ -> ()
+        | Leaf _ ->
+            j <- j + 1        
+        | Empty -> ()
 
     let rec copy (source:Node<'T>) (dest:Node<'T>) =
         match (source,dest) with
@@ -534,7 +536,7 @@ module Octree =
     /// dx and dy are the minumum dv elements of the tree
     let iterate_node i j k (node:Node<'T>) =
         match node with
-        | _ when i = 0 && j = 0 -> node
+        | _ when i = 0 && j = 0 && k = 0 -> node
 
         | Leaf (_,_,_,_,v_min,v_max) | Node (_,_,_,_,v_min,v_max) ->
             let c = v_min + (v_max - v_min) / 2.f

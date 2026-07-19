@@ -17,18 +17,19 @@ let mesh =
     match gltf with
     | Some gltf -> gltf.ReadMeshF(0)
     | None -> RGeometry.load_ply_unmanaged (path_3d, 0.55f, 0.55f, 0.53f, 1.0f)
-let (v_min_3d,v_max_3d) = GridGeneration3D.bounds_SIMD (mesh.vertices.AsSpan()) L
+// let (v_min_3d,v_max_3d) = GridGeneration3D.bounds_SIMD (mesh.vertices.AsSpan()) L
 
-let stencil_3d = 
-    // GridGeneration3D.bitstencil vertices indices v_min v_max N
-    System.Collections.BitArray(N*N*N)
-    |> GridGeneration3D.assign_voxels_SIMD (mesh.vertices.AsSpan()) (mesh.indices.AsSpan()) L N 
-    |> GridGeneration3D.fill_bitstencil N
+// let stencil_3d = 
+//     // GridGeneration3D.bitstencil vertices indices v_min v_max N
+//     System.Collections.BitArray(N*N*N)
+//     |> GridGeneration3D.assign_voxels_SIMD (mesh.vertices.AsSpan()) (mesh.indices.AsSpan()) L N 
+//     |> GridGeneration3D.fill_bitstencil N
 
 let valueof = Quadtree.valueof
-let kindof  = Quadtree.kindof
+// let kindof  = Quadtree.kindof
 
 let tree_2d =
+    // Quadtree.ofBoundaries<double> N 4 points
     stencil_2d
     |> Quadtree.ofStencil<double> N 4 v_min_2d v_max_2d
     |> Quadtree.init 0.00
@@ -39,9 +40,10 @@ do
     tree_2d.Div <- (/)
 
 let tree_3d =
-    stencil_3d
-    |> Octree.ofStencil<double> N 4 v_min_3d v_max_3d
-    |> Octree.init 0.00
+    Octree.ofSurface<double> N L 4 (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
+    // stencil_3d
+    // |> Octree.ofStencil<double> N 4 v_min_3d v_max_3d
+    // |> Octree.init 0.00
 
 do
     if N <> N' then failwith "N cannot differ"

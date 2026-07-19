@@ -3,25 +3,31 @@
 
 open SE
 open SE.Core
+open SE.Spatial
 open SE.Renderer
 open SE.Plotting
 open System
 open System.Numerics
 
 
-let path = "../models/animated_object.gltf"
-// let path = "../models/bun_zipper.ply"
-let gltf: option<GLTF.Deserializer> = Some (new GLTF.Deserializer(path))
-// let gltf: option<GLTF.Deserializer> = None
-let N = 50
+let path = System.Environment.GetCommandLineArgs()[2]
+let gltf = if path.Contains(".gltf") then Some (new GLTF.Deserializer(path)) else None
+let N = 100
 let L = 10
 
 let mesh =
     match gltf with
+    | _ when path.Contains(".txt") ->
+        let (vertices,indices) = RGeometry.load_txt(path, 0.55f, 0.55f, 0.55f, 1.0f)
+        {
+            vertices = NativeArray.ofArray vertices
+            indices = NativeArray.ofArray indices
+            L = 10
+        }
     | Some gltf -> gltf.ReadMeshF(0)
     | None -> RGeometry.load_ply_unmanaged (path, 0.55f, 0.55f, 0.53f, 1.0f)
 
-let tree = Octree.ofSurface<double> N L 3 (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
+let tree = Octree.ofSurface<double> N L 4 (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
 let points = ResizeArray<Vector3>(1000)
 let bounds = ResizeArray<Vector3>(1000)
 

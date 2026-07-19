@@ -20,32 +20,32 @@ type OctreeBenchmarks() =
         | Some gltf -> gltf.ReadMeshF(0)
         | None -> RGeometry.load_ply_unmanaged (path, 0.55f, 0.55f, 0.53f, 1.0f)
 
-    let (v_min,v_max) = GridGeneration3D.bounds_SIMD (mesh.vertices.AsSpan()) L
+    // let (v_min,v_max) = GridGeneration3D.bounds_SIMD (mesh.vertices.AsSpan()) L
 
-    let stencil = 
-        // GridGeneration3D.bitstencil vertices indices v_min v_max N
-        System.Collections.BitArray(N*N*N)
-        |> GridGeneration3D.assign_voxels_SIMD (mesh.vertices.AsSpan()) (mesh.indices.AsSpan()) L N 
-        |> GridGeneration3D.fill_bitstencil N
+    // let stencil = 
+    //     // GridGeneration3D.bitstencil vertices indices v_min v_max N
+    //     System.Collections.BitArray(N*N*N)
+    //     |> GridGeneration3D.assign_voxels_SIMD (mesh.vertices.AsSpan()) (mesh.indices.AsSpan()) L N 
+    //     |> GridGeneration3D.fill_bitstencil N
 
     let N' = N
     let valueof = Octree.valueof
-    let kindof  = Octree.kindof
+    // let kindof  = Octree.kindof
 
-    let tree_1 =
-        stencil
-        |> Octree.ofStencil<double> N 5 v_min v_max
-        |> Octree.init 0.00
+    let tree_1 = Octree.ofSurface<double> N L 4 (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
+        // stencil
+        // |> Octree.ofStencil<double> N 5 v_min v_max
+        // |> Octree.init 0.00
 
     do
         if N <> N' then failwith "N cannot differ"
         tree_1.Add <- (+)
         tree_1.Div <- (/)
 
-    let tree_2 =
-        stencil
-        |> Octree.ofStencil<double> N 5 v_min v_max
-        |> Octree.init 0.00
+    let tree_2 = Octree.ofSurface<double> N L 4 (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
+        // stencil
+        // |> Octree.ofStencil<double> N 5 v_min v_max
+        // |> Octree.init 0.00
 
     do
         if N <> N' then failwith "N cannot differ"
@@ -53,10 +53,10 @@ type OctreeBenchmarks() =
         tree_2.Div <- (/)
 
         
-    let tree_3 =
-        stencil
-        |> Octree.ofStencil<double> N 5 v_min v_max
-        |> Octree.init 0.00
+    let tree_3 = OctreeExperimental.ofSurface<double> N L 4 (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
+        // stencil
+        // |> Octree.ofStencil<double> N 5 v_min v_max
+        // |> Octree.init 0.00
 
     do
         if N <> N' then failwith "N cannot differ"
@@ -64,10 +64,10 @@ type OctreeBenchmarks() =
         tree_3.Div <- (/)
 
 
-    let tree_4 =
-        stencil
-        |> Octree.ofStencil<double> N 5 v_min v_max
-        |> Octree.init 0.00
+    let tree_4 = OctreeExperimental.ofSurface<double> N L 4 (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
+        // stencil
+        // |> Octree.ofStencil<double> N 5 v_min v_max
+        // |> Octree.init 0.00
 
     do
         if N <> N' then failwith "N cannot differ"
@@ -75,9 +75,9 @@ type OctreeBenchmarks() =
         tree_4.Div <- (/)
 
     [<Benchmark>]
-    member this.Iter1 () =
-        tree_1.IterParallel 1 (fun node ->
-            match (kindof node) with
+    member this.Iter2 () =
+        tree_1.IterParallel 2 (fun node ->
+            match node with
             | Octree.Internal ->
                 let c = Octree.center node
                 let x = double c.X
@@ -94,12 +94,9 @@ type OctreeBenchmarks() =
         // Quadtree.morph tree.Root tree'.Root (+) (/)
 
     [<Benchmark>]
-    member this.Iter2 () =
-        let dx = tree_2.dX
-        let dy = tree_2.dY
-        let dz = tree_2.dZ
-        tree_2.IterParallel 2 (fun node ->
-            match (kindof node) with
+    member this.Iter4 () =
+        tree_2.IterParallel 4 (fun node ->
+            match node with
             | Octree.Internal ->
                 let c = Octree.center node
                 let x = double c.X
@@ -114,43 +111,37 @@ type OctreeBenchmarks() =
         )
 
     [<Benchmark>]
-    member this.Iter3 () =
-        let dx = tree_3.dX
-        let dy = tree_3.dY
-        let dz = tree_3.dZ
-        tree_3.IterParallel 4 (fun node ->
-            match (kindof node) with
-            | Octree.Internal ->
-                let c = Octree.center node
+    member this.IterExperimental2 () =
+        tree_3.IterParallel 2 (fun node ->
+            match node with
+            | OctreeExperimental.Internal ->
+                let c = OctreeExperimental.center node
                 let x = double c.X
                 let y = double c.Y
                 let z = double c.Z
-                tree_3[0,0,0] <- 150.0
+                node.value <- ValueSome 150.0
                 
-            | Octree.Boundary ->
-                tree_3[0,0,0] <- 300.
+            | OctreeExperimental.Boundary ->
+                node.value <- ValueSome 300.
 
-            | Octree.External -> ()                            
+            | OctreeExperimental.External -> ()                            
         )
 
     [<Benchmark>]
-    member this.Iter4 () =
-        let dx = tree_4.dX
-        let dy = tree_4.dY
-        let dz = tree_4.dZ
-        tree_2.IterParallel 8 (fun node ->
-            match (kindof node) with
-            | Octree.Internal ->
-                let c = Octree.center node
+    member this.IterExperimental4 () =
+        tree_4.IterParallel 4 (fun node ->
+            match node with
+            | OctreeExperimental.Internal ->
+                let c = OctreeExperimental.center node
                 let x = double c.X
                 let y = double c.Y
                 let z = double c.Z
-                tree_4[0,0,0] <- 150.0
+                node.value <- ValueSome 150.0
                 
-            | Octree.Boundary ->
-                tree_4[0,0,0] <- 300.
+            | OctreeExperimental.Boundary ->
+                node.value <- ValueSome 300.
 
-            | Octree.External -> ()                            
+            | OctreeExperimental.External -> ()                            
         )
 
 BenchmarkRunner.Run<OctreeBenchmarks>() |> ignore

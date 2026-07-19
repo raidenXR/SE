@@ -1,2 +1,7 @@
 *.png
 *.mp4
+
+traces/
+runtimes/
+
+

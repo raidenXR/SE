@@ -31,12 +31,15 @@ open SE.ECS
 open SE.Spatial
 open SE.Renderer
 
+open SE.Renderer.VideoCapture
+
 type HasAnimation = struct end
 type HasParticles = struct end
 
 type [<Struct>] AnimationActive = {animation_active:bool; prev_key:bool}
 type [<Struct>] WireFrameActice = {wireframe_active:bool; prev_key:bool}
 type [<Struct>] SliceLen = {count:int}
+type [<Struct>] DefaultTransform = {T:Matrix4}
 
 type [<Struct>] State = {
     mutable wireframe_on:bool
@@ -51,11 +54,9 @@ type [<Struct>] DiscretizedVolume = {
     m_transform: Matrix4
 }
 
-// let path = "../models/animated_object.gltf"
-let path = "../models/bun_zipper.ply"
-// let gltf: option<GLTF.Deserializer> = Some (new GLTF.Deserializer(path))
-let gltf: option<GLTF.Deserializer> = None
-let N = 100
+let path = System.Environment.GetCommandLineArgs()[2]
+let gltf = if path.Contains(".gltf") then Some (new GLTF.Deserializer(path)) else None
+let N = 200
 
 let mutable camera: Camera = null
 let mutable state: Entity = 0u
@@ -83,90 +84,21 @@ system OnExit [] (fun _ ->
 let frames = ResizeArray<IVideoFrame>(1000)
 let mutable octree: Octree.Root<double> option = None
 
-
-type SKBitmapFrame(bmp:SKBitmap) =
-    let Source = bmp
-
-    do
-        if bmp.ColorType <> SKColorType.Bgra8888 then
-            printfn "colortype: %A" bmp.ColorType
-            failwith "only 'bgra' colortype is supported"
-
-    interface IDisposable with
-        member this.Dispose() = Source.Dispose()
-
-    interface IVideoFrame with
-        member this.Width = Source.Width
-        member this.Height = Source.Height
-        member this.Format = "bgra"
+let mean_vector (vertices:Span<float32>) =
+    let mutable v_min = System.Numerics.Vector3.Zero
+    let mutable v_max = System.Numerics.Vector3.Zero
     
-        member this.Serialize(pipe:System.IO.Stream) =
-            pipe.Write(Source.Bytes, 0, Source.Bytes.Length)
+    let len = vertices.Length / 10
+    for i in 0..len-1 do
+        let x = vertices[i*10+0]
+        let y = vertices[i*10+1]
+        let z = vertices[i*10+2]
+        let v = System.Numerics.Vector3(x,y,z)
+        v_min <- System.Numerics.Vector3.Min(v, v_min)
+        v_max <- System.Numerics.Vector3.Max(v, v_min)
 
-        member this.SerializeAsync(pipe:System.IO.Stream, token:System.Threading.CancellationToken) =
-            pipe.WriteAsync(Source.Bytes, 0, Source.Bytes.Length, token)
-
-    member this.Bitmap = Source
-
-
-let frame_options (options:FFMpegArgumentOptions) = options.WithVideoCodec("libvpx-vp9")
-// let action = Action frame_options
-    
-let create_video_from_frames (path:string) (frames:seq<IVideoFrame>) (wnd:SE_Window) =
-    if Seq.length frames > 0 then 
-        if System.IO.File.Exists(path) then
-            System.IO.File.Delete(path)
-        if System.IO.File.Exists("./tmp.png") then
-            System.IO.File.Delete("./tmp.png")
-
-        let size = wnd.FramebufferSize
-        printfn "framebuffer: (%d, %d)" size.X size.Y
-        // save last frame as image
-        printfn "image png conversion"
-    
-        let last_frame = (Seq.last frames) :?> SKBitmapFrame
-        let bmp = last_frame.Bitmap
-        use tmp_img = SKImage.FromBitmap(bmp)
-        use tmp_dat = tmp_img.Encode(SKEncodedImageFormat.Png, 80)
-        use tmp_stm = System.IO.File.OpenWrite("./tmp.png")
-        tmp_dat.SaveTo(tmp_stm)
-        tmp_stm.Close()
-        printfn "image png saved"
-
-        let source = new RawVideoPipeSource(frames, FrameRate = 30)
-        let success = FFMpegArguments
-                        .FromPipeInput(source)
-                        .OutputToFile(path, true, (fun options -> options.WithVideoCodec("libvpx-vp9").WithVideoFilters(fun filter -> filter.Mirror(Enums.Mirroring.Vertical) |> ignore) |> ignore))
-                        // .ProcessSynchronously()
-
-        printfn "start processing video conversion on %d frames" (Seq.length frames)
-        let s = success.ProcessSynchronously()
-        // success
-        let str = if s then "video conversion done!" else "video conversion failed"
-        printfn "%s" str
-    else
-        printfn "frame.len is 0. It must be > 0 to create_video."
-        
-
-let capture_frame (wnd:SE_Window) =
-    let size = wnd.FramebufferSize
-    let w = size.X
-    let h = size.Y
-    // use pixels = NativeArray.rent<byte> (w*h*4)
-    let pixels = NativeArray.create<byte> (w*h*4)  // This leaks memory, use regular arrays, DO NOT POOL
-    // let pixels = Array.zeroCreate<byte> (w*h*4)
-    GL.ReadPixels(0, 0, w, h, PixelFormat.Bgra, PixelType.UnsignedByte, pixels.ToInt())
-
-    let bitmap = new SKBitmap(w, h, SKColorType.Bgra8888, SKAlphaType.Premul)
-    // let bit = new SKBitmap(pixels)
-    // use pixels_ptr = fixed pixels
-    let success = bitmap.InstallPixels(new SKImageInfo(w, h, SKColorType.Bgra8888, SKAlphaType.Premul), pixels.ToInt(), w*4)
-
-    if not success then
-        failwith "failed to install pixels on SKBitmap"
-        
-    let frame = new SKBitmapFrame(bitmap)
-    frames.Add(frame :> IVideoFrame)
+    let p = v_min + (v_max - v_min) / 2.f
+    (p.X,p.Y,p.Z)
 
 
 let settings = GameWindowSettings.Default
@@ -182,38 +114,40 @@ system OnLoad [] (fun _ ->
     |> ignore
 )
 
-system OnLoad [] (fun _ ->
-    let path = "../models/bun_zipper.ply"
-    let gltf: option<GLTF.Deserializer> = None
-    // let N = 500
-    let L = 10
-
-    let mesh =
-        match gltf with
-        | Some gltf -> gltf.ReadMeshF(0)
-        | None -> RGeometry.load_ply_unmanaged (path, 0.55f, 0.55f, 0.53f, 1.0f)
-
-    octree <- Some (Octree.ofSurface<double> N L 4 (mesh.vertices.AsSpan()) (mesh.indices.AsSpan()))
-)
-
 // create entities on load
 system OnLoad [] (fun _ -> 
-    let mesh =
+    let _mesh =
         match gltf with
+        | _ when path.Contains(".txt") ->
+            let (vertices,indices) = RGeometry.load_txt(path, 0.55f, 0.55f, 0.55f, 1.0f)
+            {vertices = NativeArray.ofArray vertices; L = 10; indices = NativeArray.ofArray indices}
         | Some gltf -> gltf.ReadMeshF(0)
         | None -> RGeometry.load_ply_unmanaged (path, 0.55f, 0.55f, 0.53f, 1.0f)
-    let ob_model = new Model(mesh.vertices, mesh.indices, [3;3;4])
-    let mesh = Helpers.createMesh ob_model
+            
+    let L = 10
+    octree <- Some (Octree.ofSurface<double> N L 4 (_mesh.vertices.AsSpan()) (_mesh.indices.AsSpan()))
+    let ob_model = new Model(_mesh.vertices, _mesh.indices, [3;3;4])
+
+    let mesh = Helpers.createMesh ob_model    
 
     // create particles
-    // let voxels = Geometry.voxels ob_model.mesh N        
-    // let particles = RGeometry.particles_SIMD 7 voxels
     let particles_len = octree.Value.GetCount()
     let particles_array = Array.zeroCreate<float32> (particles_len*7)
     let mutable i = 0
-    octree.Value.IterParallel 2 (fun node ->
-        match (Octree.kindof node) with
-        | Octree.Internal | Octree.Boundary ->
+    octree.Value.IterParallel 1 (fun node ->
+        match node with
+        | Octree.Internal -> 
+            let pos = Octree.center node
+            particles_array[i+0] <- pos.X
+            particles_array[i+1] <- pos.Y
+            particles_array[i+2] <- pos.Z
+            particles_array[i+3] <- 0.95f
+            particles_array[i+4] <- 0.25f
+            particles_array[i+5] <- 0.23f
+            particles_array[i+6] <- 1.f
+            i <- i + 7
+
+        | Octree.Boundary ->
             let pos = Octree.center node
             particles_array[i+0] <- pos.X
             particles_array[i+1] <- pos.Y
@@ -223,6 +157,7 @@ system OnLoad [] (fun _ ->
             particles_array[i+5] <- 0.53f
             particles_array[i+6] <- 1.f
             i <- i + 7
+
         | Octree.External -> ()
     )
 
@@ -236,7 +171,9 @@ system OnLoad [] (fun _ ->
     GL.Enable(EnableCap.DepthTest)
     GL.Enable(EnableCap.ProgramPointSize)
 
-    camera <- Camera(Vector3.UnitZ * 3f, 800f / 600f)
+    let (x,y,z) = mean_vector (_mesh.vertices.AsSpan())
+    camera <- Camera(Vector3(x,y,z), 800f / 600f)
+    // camera <- Camera(Vector3.UnitZ * 3f, 800f / 600f)
     window.CursorState <- CursorState.Grabbed
 
     Shaders.load [
@@ -244,12 +181,14 @@ system OnLoad [] (fun _ ->
         "particles_shader", "shaders/particles.vert", "shaders/particles.frag"
     ]
 
+    let matrix_transform = if path.Contains(".txt") then Matrix4.CreateScale(0.2f) else Matrix4.CreateScale(10.f)
+    
     let model = 
         entity()
         |> Entity.set ob_model
         |> Entity.set mesh
-        // |> Entity.set voxels
-        |> Entity.set (Matrix4.CreateScale(10.f))
+        |> Entity.set {T = matrix_transform}
+        |> Entity.set matrix_transform
         |> Entity.set {wireframe_active = true; prev_key = false}
         |> Entity.add<HasAnimation>
 
@@ -257,18 +196,20 @@ system OnLoad [] (fun _ ->
         entity()
         |> Entity.set pt_model
         |> Entity.set prim
+        |> Entity.set {T = matrix_transform}
+        |> Entity.set matrix_transform
         |> Entity.set {count = particles_len * 7 - 700}
-        |> Entity.set (Matrix4.CreateScale(10.f))
 
     // create relation between a and b -> paticles depend on model
     relate model particles (HasParticles()) 
 
-    // let animation =
-    //     entity()
-    //     |> Entity.set {idx = 0; dt = 0.; is_reversed = false; is_active = true; is_looped = true}
-    //     |> Entity.set {animation_active = true; prev_key = false}
+    if path.Contains("animated") then
+        let animation =
+            entity()
+            |> Entity.set {idx = 0; dt = 0.; is_reversed = false; is_active = true; is_looped = true}
+            |> Entity.set {animation_active = true; prev_key = false}
         
-    // relate model animation (HasAnimation())
+        relate model animation (HasAnimation())
 )
 
 // load the window
@@ -342,6 +283,7 @@ let render_particles () =
 system OnUpdate [typeof<ValueAnimation>] (fun q -> 
     let animts = Components.get<ValueAnimation>()
     let transforms = Components.get<Matrix4>()
+    let matrices = Components.get<DefaultTransform>()
 
     if animation_on && q.Count > 0 then       
         let time = window.ElapsedTime * 0.4   // the animation is too fast, slow it down a bit
@@ -354,8 +296,8 @@ system OnUpdate [typeof<ValueAnimation>] (fun q ->
             let mutable animation_m = Helpers.animationTransform gltf.Value time &anim
             let a_transform = Unsafe.As<System.Numerics.Matrix4x4, Matrix4>(&animation_m)  // cast to Matrix4
         
-            transforms[m_ent] <- a_transform * Matrix4.CreateScale(10.f)
-            transforms[p_ent] <- a_transform * Matrix4.CreateScale(10.f)
+            transforms[m_ent] <- a_transform * matrices[m_ent].T
+            transforms[p_ent] <- a_transform * matrices[p_ent].T
 )
 
 // update the keys input
@@ -435,7 +377,7 @@ system OnRender [typeof<Model>] (fun q ->
     total_time <- total_time + window.ElapsedTime 
     // printfn "%g" (window.ElapsedTime)
     if record && (total_time > 0.16) then
-        capture_frame window
+        capture_frame frames window
         total_time <- total_time - 0.16
         let struct(i,j) = Console.GetCursorPosition()
         printfn "frame %d captured" (Seq.length frames)
@@ -448,10 +390,6 @@ system OnExit [] (fun _ ->
     let models = Components.get<Model>().Entries
     for model in models do
         model.Dispose()
-
-    // let voxels = Components.get<Voxels>().Entries
-    // for v in voxels do             
-    //     v.voxels.Dispose()
 
     let meshes = Components.get<GLMesh>().Entries
     for mesh in meshes do
@@ -468,17 +406,12 @@ system OnExit [] (fun _ ->
     window.Dispose()
 )
 
-// system OnExit [] (fun _ ->
-//     printfn "wnd exists, calling 'create_video_from_frames'"
-//     create_video_from_frames "capture.mp4" frames
-//     printfn "process finished running"
-// )
+system OnExit [] (fun _ ->
+    if frames.Count > 0 then
+        printfn "wnd exists, calling 'create_video_from_frames'"
+        create_video_from_frames "./capture.mp4" frames window
+        printfn "process finished running on %d frames" (Seq.length frames)
+)
     
 Systems.progress()
-
-
-printfn "wnd exists, calling 'create_video_from_frames'"
-create_video_from_frames "./capture.mp4" frames window
-printfn "process finished running on %d frames" (Seq.length frames)
-
 
