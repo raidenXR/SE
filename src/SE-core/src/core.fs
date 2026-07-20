@@ -528,7 +528,8 @@ type Relations<'T>() =
 
     /// linear search for pairs - caches the result
     let contains (a:Entity) (b:Entity) =
-        (has Out a) && (rhs_current = b)
+        // (has Out a) && (lhs_current = b)
+        (has Out a) && (has In b)
         
     let remove (a:Entity) (b:Entity) =
         if contains a b then
@@ -555,6 +556,26 @@ type Relations<'T>() =
         | In -> Entities(lhs_ids, 0, count)
 
 
+    let of_value (kind:RelationKind) (e:Entity) value (eq_fn) =
+        let mutable i = -1
+
+        let search e value (ids:Entity[]) =
+            let mutable b = false
+            while i < count && not b do
+                i <- i + 1
+                b <- ids[i] = e && (eq_fn items[i] value)
+            b
+        
+        match kind with
+        | Out ->
+            if (search e value lhs_ids) then rhs_ids[i]
+            else failwith $"0x{0:X6}: no Out relation exists with that value"
+
+        | In ->
+            if (search e value rhs_ids) then lhs_ids[i]
+            else failwith $"0x{0:X6}: no In relation exists with that value"
+
+
     interface IRelations with
         member this.Count with get() = count
         member this.Remove (a:Entity, b:Entity) = remove a b        
@@ -575,6 +596,7 @@ type Relations<'T>() =
     member this.Get (e:Entity, kind:RelationKind) = get kind e
     member this.Relations (kind:RelationKind) = relations kind
     member this.Contains (a:Entity, b:Entity) = contains a b        
+    member this.OfValue (e:Entity, kind:RelationKind, value:'T) eq_fn = of_value kind e value eq_fn
         
     member this.Item with get(a:Entity, b:Entity) =
         match contains a b with
@@ -641,6 +663,11 @@ module Relation =
     let relations<'T> (kind:RelationKind) =
         let relations = from_storage<'T>()
         relations.Relations(kind)
+
+    /// get relation for entity based on specific value of the relation
+    let ofValue<'T> kind e value eq_fn =
+        let relations = from_storage<'T>()
+        relations.OfValue(e,kind,value) eq_fn
 
 
 module Queries =            
@@ -1012,13 +1039,14 @@ module Entity =
         
     let printf (id:Entity) =
         Console.Write(sprintf id)
-        // Console.Write("0x{0:X6}, ", id)
+    //     Console.Write("0x{0:X6}, ", id)
 
         
 // uses these as keywords for better scripting ergonomy of the API        
 [<AutoOpen>]
 module FnDecls =
     let entity = Entity.create
+    let set = Entity.set
     let entity_tagged (str:string) = Entity.create () |> Entity.tag str
     let system = Systems.add
     let observer = Observers.create

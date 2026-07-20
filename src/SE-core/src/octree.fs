@@ -807,6 +807,12 @@ module Octree =
             | Leaf (_,v,_,_,_,_) -> v.Value <- value
             | _ -> failwith "Item.get failed"         
 
+        member this.PutF(p:Vector3, value:voption<'T>) =
+            cached_node <- traverse p n _k cached_node
+            match cached_node with
+            | Leaf (_,v,_,_,_,_) -> v.Value <- value
+            | _ -> failwith "Item.get failed"         
+
         member this.Insert(x:double, y:double, z:double) =
             let p = Vector3(float32 x, float32 y, float32 z)
             cached_node <- insert p n cached_node
@@ -960,9 +966,10 @@ module Octree =
         for i in 0..N-1 do
             for j in 0..N-1 do
                 for k in 0..N-1 do
-                    let v = GridGeneration3D.to_cartesian_system i j k N v_min v_max
                     if stencil[i*N*N+j*N+k] then
-                        quadtree.Put(double v.X, double v.Y, double v.Z, ValueNone)
+                        let v = GridGeneration3D.to_cartesian_system i j k N v_min v_max
+                        quadtree.PutF(v, ValueNone)
+                        // quadtree.Put(double v.X, double v.Y, double v.Z, ValueNone)
         quadtree       
 
     /// sets initial values at the Leaf s of a built Quadtree
@@ -1036,8 +1043,9 @@ module Octree =
             let v2 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i2))            
             subdivide v0 v1 v2
         
-        let mutable i = 0
-        while i < N do
+        // let mutable i = 0
+        // while i < N do
+        for i in 0..N-1 do
             let mutable j = 0
             while j < N do
                 let (a,b) = GridGeneration3D.measure_range bits N i j
@@ -1075,8 +1083,105 @@ module Octree =
                         if fill then bits[i*N*N+j*N+k] <- true
                         k <- k + 1
                 j <- j + 1
-            i <- i + 1
+            // i <- i + 1
         bits
+
+    let fill_scanlines_and_put<'T> N L (v_min:Vector3) (v_max:Vector3) (vertices:Span<float32>) (indices:Span<uint>) (bits:BitArray) (tree:Root<'T>) =
+        let dx = (v_max.X - v_min.X) / float32 N
+        let dy = (v_max.Y - v_min.Y) / float32 N
+        let dz = (v_max.Z - v_min.Z) / float32 N
+        let dr = Vector3(dx,dy,dz)
+        
+        let center = GridGeneration3D.center
+
+        let rec subdivide (a:Vector3) (b:Vector3) (c:Vector3) (bits:BitArray) (tree:Root<'T>) =        
+            let R = dr.Length()
+            if (b-a).Length() >= R || (a-c).Length() >= R || (c-b).Length() >= R then 
+                let ab = center a b
+                let ac = center a c
+                let bc = center b c
+                subdivide a ab ac bits tree
+                subdivide ab b bc bits tree      
+                subdivide ab bc ac bits tree       
+                subdivide ac bc c bits tree    
+            else
+                let d = GridGeneration3D.triangle_center a b c
+                let (ai,aj,ak) = GridGeneration3D.to_stencil_system N a v_min v_max
+                let (bi,bj,bk) = GridGeneration3D.to_stencil_system N b v_min v_max
+                let (ci,cj,ck) = GridGeneration3D.to_stencil_system N c v_min v_max
+                let (di,dj,dk) = GridGeneration3D.to_stencil_system N d v_min v_max
+                bits[ai*N*N+aj*N+ak] <- true
+                bits[bi*N*N+bj*N+bk] <- true
+                bits[ci*N*N+cj*N+ck] <- true
+                bits[di*N*N+dj*N+dk] <- true
+                tree.PutF(a, ValueNone)
+                tree.PutF(b, ValueNone)
+                tree.PutF(c, ValueNone)
+                tree.PutF(d, ValueNone)
+
+
+        let indices_count = indices.Length / 3
+        let p = &MemoryMarshal.GetReference(vertices)
+        for i in 0..indices_count-1 do
+            let i0 = int32 (indices[3*i+0])
+            let i1 = int32 (indices[3*i+1])
+            let i2 = int32 (indices[3*i+2])
+            let v0 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i0))
+            let v1 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i1))
+            let v2 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i2))            
+            subdivide v0 v1 v2 bits tree
+        
+        let mutable i = 0
+        while i < N do
+            let mutable j = 0
+            while j < N do
+                let (a,b) = GridGeneration3D.measure_range bits N i j
+                let mutable fill = GridGeneration3D.fill_line_check bits N i j
+
+                let collisions = GridGeneration3D.measure_marching_rows bits N i j
+                match collisions with
+                | GridGeneration3D.Zero -> ()
+
+                | GridGeneration3D.Odd when i > 0 && i < N - 1 && j > 0 && j < N - 1 ->                
+                    // printfn "Odd called"
+                    for k in 0..N-1 do
+                        let upper_row = bits[(i-1)*N*N+(j-1)*N+k]
+                        let lower_row = bits[(i+1)*N*N+(j+1)*N+k]
+                        bits[i*N*N+j*N+k] <- bits[i*N*N+j*N+k] || (upper_row || lower_row)
+                        
+                        if bits[i*N*N+j*N+k] then
+                            let v = GridGeneration3D.to_cartesian_system i j k N v_min v_max
+                            tree.PutF(v, ValueNone)
+            
+                | GridGeneration3D.Odd -> () // ignore first line, keep only the upper boundaries
+
+                // | GridGeneration3D.Even when collisions = 2 && i > 0 && j > 0 && i < N-1 && j < N-1 ->
+                //     // printfn "Even_when called"
+                //     for k in 0..N-1 do
+                //         let upper_row = stencil[(i-1)*N*N+(j-1)*N+k]
+                //         let lower_row = stencil[(i+1)*N*N+(j+1)*N+k]
+                //         stencil[i*N*N+j*N+k] <- stencil[i*N*N+j*N+k] || (upper_row || lower_row)
+            
+                | GridGeneration3D.Even ->
+                    let mutable k = a
+                    while k <= b do
+                        if bits[i*N*N+j*N+k] then
+                            while bits[i*N*N+j*N+k] do
+                                let v = GridGeneration3D.to_cartesian_system i j k N v_min v_max
+                                tree.PutF(v, ValueNone)
+                                k <- k + 1  // advance
+                            // printfn "Even called"
+                            k <- k - 1
+                            fill <- not fill
+                
+                        if fill then
+                            bits[i*N*N+j*N+k] <- true
+                            let v = GridGeneration3D.to_cartesian_system i j k N v_min v_max
+                            tree.PutF(v, ValueNone)
+                        k <- k + 1
+                j <- j + 1
+            i <- i + 1
+
 
     let fill_raycast N L (v_min:Vector3) (v_max:Vector3) (vertices:Span<float32>) (indices:Span<uint32>) (stencil:BitArray) =
         let dx = (v_max.X - v_min.X) / float32 N
@@ -1164,5 +1269,13 @@ module Octree =
         ofStencil<'T> N k v_min v_max bits        
 
 
+    // [<Obsolete>]
+    // let ofSurfaceEXT<'T> (N:int) L k (vertices:Span<float32>) (indices:Span<uint>) =
+    //     let (v_min,v_max) = GridGeneration3D.bounds_SIMD vertices L
+    //     let bits = BitArray(N*N*N)
+    //     let tree = Root<'T>(N,k,v_min,v_max)
+    //     fill_scanlines_and_put N L v_min v_max vertices indices bits tree
+    //     tree.Stencil <- bits
+    //     tree
 
 

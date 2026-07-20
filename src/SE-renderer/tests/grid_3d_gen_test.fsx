@@ -27,16 +27,34 @@ let mesh =
     | Some gltf -> gltf.ReadMeshF(0)
     | None -> RGeometry.load_ply_unmanaged (path, 0.55f, 0.55f, 0.53f, 1.0f)
 
-let tree = Octree.ofSurface<double> N L 4 (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
+#time
+let tree = Octree.ofSurface<double> N L 3 (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
+#time
+printfn "nodes.len: %d" (tree.GetCount())
+printfn "internal.count: %d" (tree.GetInternalCount())
+printfn "boundary.count: %d" (tree.GetBoundaryCount())
+
+#time
+let tree_old = Octree.ofSurfaceOLD<double> N L 3 (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
+#time
+printfn "nodes.len: %d" (tree_old.GetCount())
+printfn "internal.count: %d" (tree_old.GetInternalCount())
+printfn "boundary.count: %d" (tree_old.GetBoundaryCount())
+// printfn "internal.count: %d" (points.Count)
+// printfn "boundary.count: %d" (bounds.Count)
+
+
+
+#time
 let points = ResizeArray<Vector3>(1000)
 let bounds = ResizeArray<Vector3>(1000)
-
 tree.IterParallel 1 (fun node ->
     match node with
     | Octree.Internal -> points.Add(Octree.center node)
     | Octree.Boundary -> bounds.Add(Octree.center node)
     | _ -> ()
 )
+#time
 
 let pts = points.ToArray()
 let bds = bounds.ToArray()
@@ -48,13 +66,7 @@ let xb = bds |> Array.map (fun v -> double v.X)
 let yb = bds |> Array.map (fun v -> double v.Y)
 let zb = bds |> Array.map (fun v -> double v.Z)
 
-printfn "nodes.len: %d" (tree.GetCount())
-// printfn "internal.count: %d" (tree.GetInternalCount())
-// printfn "boundary.count: %d" (tree.GetBoundaryCount())
-printfn "internal.count: %d" (points.Count)
-printfn "boundary.count: %d" (bounds.Count)
-
-// exit 0
+exit 0
 
 Gnuplot()
 |> Gnuplot.datablockXYZ xs ys zs "points"

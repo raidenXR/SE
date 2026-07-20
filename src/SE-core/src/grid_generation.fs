@@ -363,13 +363,13 @@ module GridGeneration3D =
         (v_min,v_max)
         
     
-    let to_cartesian_system i j k N (v_min:Vector3) (v_max:Vector3) =
+    let inline to_cartesian_system i j k N (v_min:Vector3) (v_max:Vector3) =
         let dx = (v_max.X - v_min.X) / float32 N
         let dy = (v_max.Y - v_min.Y) / float32 N
         let dz = (v_max.Z - v_min.Z) / float32 N
         Vector3(float32 j * dx + v_min.X, float32 i * dy + v_min.Y, float32 k * dz + v_min.Z)
 
-    let to_stencil_system (N:int) (p:Vector3) (v_min:Vector3) (v_max:Vector3) =
+    let inline to_stencil_system (N:int) (p:Vector3) (v_min:Vector3) (v_max:Vector3) =
         let i = int (Math.Round(float32(N-1)*(p.Y - v_min.Y) / (v_max.Y - v_min.Y) |> double, 0))
         let j = int (Math.Round(float32(N-1)*(p.X - v_min.X) / (v_max.X - v_min.X) |> double, 0))
         let k = int (Math.Round(float32(N-1)*(p.Z - v_min.Z) / (v_max.Z - v_min.Z) |> double, 0))
