@@ -3,6 +3,9 @@
 *.gif
 *.png
 *.jpg
+*.ply
+*.gltf
+*.bin
 
 /videos
 /runtimes

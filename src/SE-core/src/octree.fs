@@ -752,13 +752,13 @@ module Octree =
             copy root (copy'.Root) |> ignore
             
             if this.Stencil <> null then
-                let stencil' = BitArray(N*N)
-                for i in 0..N-1 do
-                    for j in 0..N-1 do
-                        for k in 0..N-1 do
-                            stencil'[i*N*N+j*N+k] <- stencil[i*N*N+j*N+k]                    
-                        
-                copy'.Stencil <- stencil'
+                // let stencil' = BitArray(N*N)
+                // for i in 0..N-1 do
+                //     for j in 0..N-1 do
+                //         for k in 0..N-1 do
+                //             stencil'[i*N*N+j*N+k] <- stencil[i*N*N+j*N+k]                                           
+                // copy'.Stencil <- stencil'
+                copy'.Stencil <- BitArray(stencil)
             copy'
 
         member this.WritePoints(path:string) =

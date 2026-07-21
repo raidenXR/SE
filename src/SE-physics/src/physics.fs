@@ -1,8 +1,10 @@
 #nowarn "632"
 namespace SE.Physics
-open System
-open FSharp.Data.UnitSystems.SI.UnitSymbols
+open SE.Core
 open SE.ECS
+open System
+open System.Numerics
+open FSharp.Data.UnitSystems.SI.UnitSymbols
 
 [<Measure>] type g
 
@@ -15,6 +17,8 @@ open SE.ECS
 [<Struct>] type Temperature = {mutable T:double<K>}
 [<Struct>] type Pressure = {mutable P:double}
 [<Struct>] type GasConstant = {R:double<J/mol K>}
+
+[<Struct>] type Volume = {vol:double<m^3>}
 
 [<Struct>] type PreExponentialFactor = {A:double}
 [<Struct>] type ActivationEnergy = {E:double<J/mol>}
@@ -31,6 +35,65 @@ type ControlVolume = struct end
 type Reaction =
     | Exothermic = 0
     | Endothermic = 1
+
+
+module Numerics =
+
+    let derivative1 (node:Octree.Node<'T>) (F:Octree.Node<'T> -> double) =
+        let u = node[ 0,0,0]
+        let a = node[-1,0,0]
+        let b = node[+1,0,0]
+        let c = node[0,-1,0]
+        let d = node[0,+1,0]
+        let f = node[0,0,-1]
+        let g = node[0,0,+1]
+
+        let xh1 = (Octree.center u).X - (Octree.center a).X |> double
+        let xh2 = (Octree.center b).X - (Octree.center u).X |> double
+        let yh1 = (Octree.center u).Y - (Octree.center c).Y |> double
+        let yh2 = (Octree.center c).Y - (Octree.center u).Y |> double
+        let zh1 = (Octree.center u).Z - (Octree.center f).Z |> double
+        let zh2 = (Octree.center g).Z - (Octree.center u).Z |> double
+
+        let x = ((xh2 / (xh1 * (xh1 + xh2))) * F(a)) +
+                (((xh2 - xh1) / (xh1 * xh2)) * F(u)) -
+                ((xh1 / (xh2 * (xh1 + xh2))) * F(b)) 
+        let y = ((yh2 / (yh1 * (yh1 + yh2))) * F(a)) +
+                (((yh2 - yh1) / (yh1 * yh2)) * F(u)) -
+                ((yh1 / (yh2 * (yh1 + yh2))) * F(b)) 
+        let z = ((zh2 / (zh1 * (zh1 + zh2))) * F(a)) +
+                (((zh2 - zh1) / (zh1 * zh2)) * F(u)) -
+                ((zh1 / (zh2 * (zh1 + zh2))) * F(b)) 
+        x+y+z
+
+        
+    let derivative2 (node:Octree.Node<'T>) (F:Octree.Node<'T> -> double) =
+        let u = node[ 0,0,0]
+        let a = node[-1,0,0]
+        let b = node[+1,0,0]
+        let c = node[0,-1,0]
+        let d = node[0,+1,0]
+        let f = node[0,0,-1]
+        let g = node[0,0,+1]
+
+        let xh1 = (Octree.center u).X - (Octree.center a).X |> double
+        let xh2 = (Octree.center b).X - (Octree.center u).X |> double
+        let yh1 = (Octree.center u).Y - (Octree.center c).Y |> double
+        let yh2 = (Octree.center c).Y - (Octree.center u).Y |> double
+        let zh1 = (Octree.center u).Z - (Octree.center f).Z |> double
+        let zh2 = (Octree.center g).Z - (Octree.center u).Z |> double
+
+        let x = (2.0 / (xh1 * (xh1 + xh2))) * F(a) +
+                (2.0 / (xh1 * xh2)) * F(u) -
+                (2.0 / (xh2 * (xh1 + xh2))) * F(b) 
+        let y = (2.0 / (yh1 * (yh1 + yh2))) * F(a) +
+                (2.0 / (yh1 * yh2)) * F(u) -
+                (2.0 / (yh2 * (yh1 + yh2))) * F(b) 
+        let z = (2.0 / (zh1 * (zh1 + zh2))) * F(a) +
+                (2.0 / (zh1 * zh2)) * F(u) -
+                (2.0 / (zh2 * (zh1 + zh2))) * F(b) 
+        x+y+z
+        
 
 module Kinetics =
 
@@ -133,7 +196,8 @@ module KineticsDSL =
             C[e].mol <- concentrations[e] + derivatives[e] * dt
 
 
-    let integrate_step_DSL A k cv reactions (dt:double<s>) (H:double<J/mol>) (cp:double<J/mol K>) =
+    // let integrate_step_DSL A k cv reactions (dt:double<s>) (H:double<J/mol>) (cp:double<J/mol K>) =
+    let integrate_step_DSL A k cv reactions (dt:double<s>) =
         let C = Components.get<Concentration>()
         let T = Components.get<Temperature>()
         
@@ -141,7 +205,10 @@ module KineticsDSL =
         let y =
             let c = Concentrations()
             for e in C.Entities do
-                c.TryAdd(e, C[e].mol) |> ignore
+                if c.TryAdd(e, C[e].mol) then
+                    ()
+                else
+                    failwith ("failed to add: " + (Entity.sprintf e))
             c
         
         // k1
@@ -159,18 +226,36 @@ module KineticsDSL =
         update_concentrations_DSL y k3 dt
         let k4 = calculate_derivatives_DSL A k cv reactions
 
-        for e in C.Entities do
+        let species = Seq.concat [k1.Keys; k2.Keys; k3.Keys; k4.Keys] |> Seq.distinct
+
+        for e in species do
+        // for e in k1.Keys do
             C[e].mol <- y[e] + (dt / 6.) * ((k1[e] + 2.*k2[e] + 2.*k3[e] + k4[e]))
 
             if C[e].mol < 0.<mol/m^3> then
                 C[e].mol <- 0.<mol/m^3>
 
-        T[cv].T <- Kinetics.update_temperature T[cv].T H cp
+        // T[cv].T <- Kinetics.update_temperature T[cv].T H cp
 
+    let measure_H_DSL (cv:Entity) (species:Span<Entity>) (H:Span<double<J>>) (v:double<m^3>) =
+        let C = Components.get<Concentration>()
+        let mutable m = 0.<mol/m^3>
+        let mutable h = 0.<J/mol>
         
+        for i in 0..species.Length-1 do
+            let e = species[i]
+            m <- m + C[e].mol
+            h <- h + H[i] / (m * v)    
+        h
+        
+    let update_temperature_DSL (T:double<K>) (H:double<J/mol>) (cp:double<J/mol K>) =
+        if cp > 0.0<J/mol K> then
+            T + (H / cp)
+        else
+            T
 
-    let (*) (a:double) (e:Entity) = (a,e)
-    let (+) (a:double*Entity) (b:double*Entity) = [a;b]
+    let ( ** ) (a:double) (e:Entity) = (a,e)
+    let ( ++ ) (a:double*Entity) (b:double*Entity) = [a;b]
     // let (+) (a:double*Entity) (b:list<double*Entity>) = [a]@b
     // let (+) (a:list<double*Entity>) (b:list<double*Entity>) = a@b
 

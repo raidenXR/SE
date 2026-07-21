@@ -870,7 +870,7 @@ module Systems =
         for (types,fn) in on_exit do fn (Queries.get types)
     
 
-    let progress_N (n_iterations:option<int>) =
+    let progress_N (n_iterations:option<int>) count =
         let mutable i = match n_iterations with | Some n -> n | None -> 0
         for (types,fn) in on_load do fn (Queries.get types)
         for (types,fn) in post_load do fn (Queries.get types)  
@@ -885,6 +885,7 @@ module Systems =
             // keep it a single loop
             if i <= 0 then quit ()
             i <- i - 1
+            if count then printfn "iteration: %d" i
         for (types,fn) in pre_store do fn (Queries.get types)  
         for (types,fn) in on_store do fn (Queries.get types)  
         for (types,fn) in on_exit do fn (Queries.get types)
