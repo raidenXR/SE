@@ -51,19 +51,19 @@ module Numerics =
         let xh1 = (Octree.center u).X - (Octree.center a).X |> double
         let xh2 = (Octree.center b).X - (Octree.center u).X |> double
         let yh1 = (Octree.center u).Y - (Octree.center c).Y |> double
-        let yh2 = (Octree.center c).Y - (Octree.center u).Y |> double
+        let yh2 = (Octree.center d).Y - (Octree.center u).Y |> double
         let zh1 = (Octree.center u).Z - (Octree.center f).Z |> double
         let zh2 = (Octree.center g).Z - (Octree.center u).Z |> double
 
         let x = ((xh2 / (xh1 * (xh1 + xh2))) * F(a)) +
                 (((xh2 - xh1) / (xh1 * xh2)) * F(u)) -
                 ((xh1 / (xh2 * (xh1 + xh2))) * F(b)) 
-        let y = ((yh2 / (yh1 * (yh1 + yh2))) * F(a)) +
+        let y = ((yh2 / (yh1 * (yh1 + yh2))) * F(c)) +
                 (((yh2 - yh1) / (yh1 * yh2)) * F(u)) -
-                ((yh1 / (yh2 * (yh1 + yh2))) * F(b)) 
-        let z = ((zh2 / (zh1 * (zh1 + zh2))) * F(a)) +
+                ((yh1 / (yh2 * (yh1 + yh2))) * F(d)) 
+        let z = ((zh2 / (zh1 * (zh1 + zh2))) * F(f)) +
                 (((zh2 - zh1) / (zh1 * zh2)) * F(u)) -
-                ((zh1 / (zh2 * (zh1 + zh2))) * F(b)) 
+                ((zh1 / (zh2 * (zh1 + zh2))) * F(g)) 
         x+y+z
 
         
@@ -79,19 +79,19 @@ module Numerics =
         let xh1 = (Octree.center u).X - (Octree.center a).X |> double
         let xh2 = (Octree.center b).X - (Octree.center u).X |> double
         let yh1 = (Octree.center u).Y - (Octree.center c).Y |> double
-        let yh2 = (Octree.center c).Y - (Octree.center u).Y |> double
+        let yh2 = (Octree.center d).Y - (Octree.center u).Y |> double
         let zh1 = (Octree.center u).Z - (Octree.center f).Z |> double
         let zh2 = (Octree.center g).Z - (Octree.center u).Z |> double
 
         let x = (2.0 / (xh1 * (xh1 + xh2))) * F(a) +
                 (2.0 / (xh1 * xh2)) * F(u) -
                 (2.0 / (xh2 * (xh1 + xh2))) * F(b) 
-        let y = (2.0 / (yh1 * (yh1 + yh2))) * F(a) +
+        let y = (2.0 / (yh1 * (yh1 + yh2))) * F(c) +
                 (2.0 / (yh1 * yh2)) * F(u) -
-                (2.0 / (yh2 * (yh1 + yh2))) * F(b) 
-        let z = (2.0 / (zh1 * (zh1 + zh2))) * F(a) +
+                (2.0 / (yh2 * (yh1 + yh2))) * F(d) 
+        let z = (2.0 / (zh1 * (zh1 + zh2))) * F(f) +
                 (2.0 / (zh1 * zh2)) * F(u) -
-                (2.0 / (zh2 * (zh1 + zh2))) * F(b) 
+                (2.0 / (zh2 * (zh1 + zh2))) * F(g) 
         x+y+z
         
 
@@ -196,20 +196,33 @@ module KineticsDSL =
             C[e].mol <- concentrations[e] + derivatives[e] * dt
 
 
+    let get_species reactions =
+        let species = ResizeArray<Entity>()
+        for reaction in reactions do
+            let (rs,ps) = reaction
+            for (_,e) in rs do species.Add(e) 
+            for (_,e) in ps do species.Add(e) 
+        Array.distinct(species.ToArray())
+    
+
     // let integrate_step_DSL A k cv reactions (dt:double<s>) (H:double<J/mol>) (cp:double<J/mol K>) =
-    let integrate_step_DSL A k cv reactions (dt:double<s>) =
+    let integrate_step_DSL A k cv (reactions:list<list<double*Entity>*list<double*Entity>>) (dt:double<s>) =
         let C = Components.get<Concentration>()
         let T = Components.get<Temperature>()
+        let E = get_species reactions
         
         // store initiali concentrations
         let y =
             let c = Concentrations()
-            for e in C.Entities do
-                if c.TryAdd(e, C[e].mol) then
-                    ()
-                else
-                    failwith ("failed to add: " + (Entity.sprintf e))
+            for e in E do ignore (c.TryAdd(e, C[e].mol))
             c
+            // for reaction in reactions do
+            //     let (rs,ps) = reaction
+            //     for (_,e) in rs do ignore (c.TryAdd(e, C[e].mol)) 
+            //     for (_,e) in ps do ignore (c.TryAdd(e, C[e].mol)) 
+                // for (_,e) in rs do if c.TryAdd(e, C[e].mol) then () else failwith ("failed to add: " + (Entity.sprintf e))
+                // for (_,e) in ps do if c.TryAdd(e, C[e].mol) then () else failwith ("failed to add: " + (Entity.sprintf e))
+            // c
         
         // k1
         let k1 = calculate_derivatives_DSL A k cv reactions
@@ -226,10 +239,9 @@ module KineticsDSL =
         update_concentrations_DSL y k3 dt
         let k4 = calculate_derivatives_DSL A k cv reactions
 
-        let species = Seq.concat [k1.Keys; k2.Keys; k3.Keys; k4.Keys] |> Seq.distinct
-
-        for e in species do
-        // for e in k1.Keys do
+        // let species = Seq.concat [k1.Keys; k2.Keys; k3.Keys; k4.Keys] |> Seq.distinct
+        // let species = k1.Keys
+        for e in E do
             C[e].mol <- y[e] + (dt / 6.) * ((k1[e] + 2.*k2[e] + 2.*k3[e] + k4[e]))
 
             if C[e].mol < 0.<mol/m^3> then
@@ -254,6 +266,7 @@ module KineticsDSL =
         else
             T
 
+    let (..) (a:double) (e:Entity) = (a,e)
     let ( ** ) (a:double) (e:Entity) = (a,e)
     let ( ++ ) (a:double*Entity) (b:double*Entity) = [a;b]
     // let (+) (a:double*Entity) (b:list<double*Entity>) = [a]@b
@@ -265,7 +278,7 @@ module KineticsDSL =
     //     // (c0,r0, fst product, snd product)
     //     (reactants,product)
             
-    let (<=>) (reactants:list<double*Entity>) (products:list<double*Entity>) =
+    let inline (<=>) (reactants:list<double*Entity>) (products:list<double*Entity>) =
         (reactants, products)
             
             

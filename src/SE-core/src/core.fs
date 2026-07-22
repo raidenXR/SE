@@ -3,7 +3,9 @@
 open System
 open System.Collections.Generic
 open System.Numerics
+open System.Threading.Tasks
 open System.Runtime.CompilerServices
+open System.Runtime.InteropServices
 open System.Runtime.InteropServices
 open FSharp.NativeInterop
 
@@ -1053,7 +1055,14 @@ module FnDecls =
     let observer = Observers.create
     let query = Queries.get
     let relate = Relation.create
+    let task_new (fn:unit -> unit) = Task.Factory.StartNew(fn)
+    let wait_all (tasks:Task[]) = Task.WaitAll(tasks)
+    
+    let inline parallel_for (ids:Entities) ([<InlineIfLambda>] fn: Entity -> unit) =
+        Parallel.For(0, ids.Count, (fun i -> fn ids[i]))
+        |> ignore
 
+        
 // /// a pipeline schedules and runs systems
 // module Pipeline =
 //     let systems = []

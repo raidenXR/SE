@@ -692,16 +692,10 @@ module Quadtree =
 
         member this.Copy() =
             let copy' = Root<'T>(N,k,v_min,v_max)
-            copy root (copy'.Root) |> ignore
-            
+            copy root (copy'.Root) |> ignore            
             if this.Stencil <> null then
-                let stencil' = BitArray(N*N)
-                for i in 0..N-1 do
-                    for j in 0..N-1 do
-                        stencil'[i*N+j] <- stencil[i*N+j]                    
-                        
-                copy'.Stencil <- stencil'
-            copy'
+                copy'.Stencil <- BitArray(stencil)
+            copy'                        
 
         member this.WritePoints(path:string) =
             use fs = System.IO.File.CreateText(path)
@@ -801,6 +795,8 @@ module Quadtree =
 
         member this.MapTo(x:double, y:double) =
             cached_node <- traverse_map (Vector2(float32 x, float32 y)) root
+
+        member this.Iter (fn:Node<'T> -> unit) = iter fn root
 
         /// Experimental method, DOT NOT take for granted that it works...
         member this.IterParallel (num_threads:int) (fn:Node<'T> -> unit) =

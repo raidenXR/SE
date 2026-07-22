@@ -3,8 +3,8 @@
 // #load "../../SE-core/src/core.fs"
 #r "../bin/Debug/net10.0/SE-core.dll"
 #r "../bin/Debug/net10.0/SE-renderer.dll"
-#r "../bin/Debug/net10.0/SE-physics.dll"
-// #load "../src/physics.fs"
+// #r "../bin/Debug/net10.0/SE-physics.dll"
+#load "../src/physics.fs"
 
 open SE
 open SE.Core
@@ -50,7 +50,7 @@ type Time' = struct end
 // define custome operator to excract the concentration of element from control_volume cell
 let ( --> ) (cv:Entity) (s:E') = Relation.ofValue Out cv s (=)
 
-let center node = 
+let inline center node = 
     let p = Octree.center node
     (double p.X, double p.Y, double p.Z)
 
@@ -58,7 +58,7 @@ let center node =
 
 let [<Literal>] N = 50
 let [<Literal>] L = 10
-let [<Literal>] k = 4
+let [<Literal>] k = 2
 let [<Literal>] dt = 0.1<s>
 
 let tree = 
@@ -74,7 +74,11 @@ let mutable n_iter = 100
 let points = ResizeArray<Vector4>(10000)
 
 
-printfn "tree.count: %d" (tree.GetCount())
+printfn "tree.count:    %d" (tree.GetCount())
+printfn "tree.internal: %d" (tree.GetInternalCount())
+printfn "tree.boundary: %d" (tree.GetBoundaryCount())
+
+// exit 0
 
 let mixture   = [5.0; 4.1; 0.8; 0.09; 0.004; 0.02]  // mean values of gas-composition mixture
 let variances = [0.5; 0.05; 0.3; 0.6; 0.8; 0.1] // vaurinaces on each cell for the mixture
@@ -89,11 +93,11 @@ let initialize_concentrations (cv:Entity) =
         |> List.mapi (fun i x -> Math.Clamp(x, 0.0, mixture[i] + variances[i]))
         |> List.map (fun x -> x * 1.<mol/m^3>)
 
-    let h2  = entity_tagged "H2" |> set {mol = 15.0<mol/m^3>}
-    let o2  = entity_tagged "O2" |> set {mol = 5.0<mol/m^3>}
+    let h2  = entity_tagged "H2"  |> set {mol = 15.0<mol/m^3>}
+    let o2  = entity_tagged "O2"  |> set {mol = 5.0<mol/m^3>}
     let h2o = entity_tagged "H2O" |> set {mol = 0.5<mol/m^3>}
-    let c   = entity_tagged "C" |> set {mol = 15.0<mol/m^3>}
-    let co  = entity_tagged "CO" |> set {mol = 0.0<mol/m^3>}
+    let c   = entity_tagged "C"   |> set {mol = 15.0<mol/m^3>}
+    let co  = entity_tagged "CO"  |> set {mol = 0.0<mol/m^3>}
     let co2 = entity_tagged "CO2" |> set {mol = 0.0<mol/m^3>}
 
     relate cv h2 E'.H2   // attach the species to each control volume
@@ -106,48 +110,54 @@ let initialize_concentrations (cv:Entity) =
 
 // initialize trees
 system OnLoad [] (fun _ ->
-    tree.IterParallel 1 (fun node ->
-        match node with
-        | Octree.Leaf (_,v,_,_,v_min,v_max) & (Octree.Internal | Octree.Boundary) ->
-            let dv = v_max - v_min
-            let p  = v_min + (v_max + v_min) / 2.f
-            let cv = entity_tagged "CV"
-                        |> Entity.add<ControlVolume>
-                        |> Entity.add<Time>
-                        |> set {T = 300.0<K>}
-                        |> set {R = 8.314<J/mol K>}            
-                        |> set {vol = abs(double(dv.X * dv.Y * dv.Z)) * 3.<m^3>}
-                        |> set p
-            v.Value <- ValueSome cv
-            initialize_concentrations cv
-        | _ -> ()
-    )
+    // cannot run in parallel, it creates new entities
+        tree.Iter (fun node ->
+            match node with
+            | Octree.Leaf (_,v,_,_,v_min,v_max) & Octree.Internal ->
+                let dv = v_max - v_min
+                let p  = v_min + (v_max + v_min) / 2.f
+                let cv = entity_tagged "CV"
+                            |> Entity.add<ControlVolume> |> Entity.add<Time>
+                            |> set {T = 300.0<K>} |> set {R = 8.314<J/mol K>} |> set p
+                            |> set {vol = abs(double(dv.X * dv.Y * dv.Z)) * 1.<m^3>}
+                v.Value <- ValueSome cv
+                initialize_concentrations cv
 
-    tree'.IterParallel 1 (fun node ->
-        match node with
-        | Octree.Leaf (_,v,_,_,v_min,v_max) & (Octree.Internal | Octree.Boundary) ->
-            let dv = v_max - v_min
-            let p  = v_min + (v_max + v_min) / 2.f
-            let cv = entity_tagged "CV"
-                        |> Entity.add<ControlVolume>
-                        |> Entity.add<Time'>
-                        |> set {T = 300.0<K>}
-                        |> set {R = 8.314<J/mol K>}            
-                        |> set {vol = abs(double(dv.X * dv.Y * dv.Z)) * 3.<m^3>}
-                        |> set p
-            v.Value <- ValueSome cv
-        | _ -> ()
-    )
+            | Octree.Leaf (_,v,_,_,v_min,v_max) & Octree.Boundary ->
+                let dv = v_max - v_min
+                let p  = v_min + (v_max + v_min) / 2.f
+                let cv = entity_tagged "CV"
+                            |> Entity.add<ControlVolume> |> Entity.add<Time>
+                            |> set {T = 600.0<K>} |> set {R = 8.314<J/mol K>} |> set p
+                            |> set {vol = abs(double(dv.X * dv.Y * dv.Z)) * 1.<m^3>}
+                v.Value <- ValueSome cv
+                initialize_concentrations cv
+        
+            | _ -> ()
+        )
+
+        tree'.Iter (fun node ->
+            match node with
+            | Octree.Leaf (_,v,_,_,v_min,v_max) & (Octree.Internal | Octree.Boundary) ->
+                let dv = v_max - v_min
+                let p  = v_min + (v_max + v_min) / 2.f
+                let cv = entity_tagged "CV"
+                            |> Entity.add<ControlVolume> |> Entity.add<Time'>
+                            |> set {T = 300.0<K>} |> set {R = 8.314<J/mol K>} |> set p
+                            |> set {vol = abs(double(dv.X * dv.Y * dv.Z)) * 3.<m^3>}
+                v.Value <- ValueSome cv
+            | _ -> ()
+        )
 )
 
-// compute chemical kinetics
+// // compute chemical kinetics
 system OnUpdate [typeof<Time>; typeof<ControlVolume>] (fun q ->    
     let T = Components.get<Temperature>()
     let V = Components.get<Volume>()
     let c = Components.get<Concentration>()
 
     // runs for every control volume in Quadtree/Octree
-    for cv in q do
+    parallel_for q (fun cv -> 
         let H2  = cv --> E'.H2   
         let O2  = cv --> E'.O2   
         let H2O = cv --> E'.H2O          
@@ -156,10 +166,14 @@ system OnUpdate [typeof<Time>; typeof<ControlVolume>] (fun q ->
         let CO2 = cv --> E'.CO2   
 
         let reactions = [
-            2.0**H2 ++ 1.0**O2 <=> [2.0**H2O]  // H2 + O2 = H2O
-            2.0**C  ++ 1.0**O2 <=> [2.0**CO] 
-            1.0**C  ++ 1.0**O2 <=> [1.0**CO2] 
-            1.0**CO ++ 0.5**O2 <=> [1.0**CO2]
+            // 2.0**H2 ++ 1.0**O2 <=> [2.0**H2O]  // H2 + O2 = H2O
+            // 2.0**C  ++ 1.0**O2 <=> [2.0**CO] 
+            // 1.0**C  ++ 1.0**O2 <=> [1.0**CO2] 
+            // 1.0**CO ++ 0.5**O2 <=> [1.0**CO2]
+            [2.,H2; 1.,O2] <=> [2.,H2O]
+            [2.,C;  1.,O2] <=> [2.,CO]
+            [1.,C;  1.,O2] <=> [1.,CO2]
+            [1.,CO; 0.5,O2] <=> [1.,CO2]
         ]
 
         let pressure = 101325<Pa>
@@ -189,20 +203,23 @@ system OnUpdate [typeof<Time>; typeof<ControlVolume>] (fun q ->
         let dh = measure_H_DSL cv species deltah V[cv].vol
         integrate_step_DSL k' A cv reactions dt
         T[cv].T <- update_temperature_DSL T[cv].T dh Cp
+    )
 )
 
 
 // compute Temperature - heat transfer over time
-system OnUpdate [typeof<Time'>; typeof<ControlVolume>] (fun q ->
+system OnUpdate [typeof<Time'>; typeof<ControlVolume>] (fun _ ->
     let T = Components.get<Temperature>()    
 
     tree'.IterParallel 4 (fun node ->
         match node with
         | Octree.Internal ->
-            let dT = 1.<K> * Numerics.derivative2 node (fun n -> double T[(Octree.valueof n)].T)
-            let a = 2700.0  // temp transfer capacity coefficient whatever
             let (x,y,z) = center node
-            T[tree'[x,y,z].Value].T <- double(dt) * a * dT + T[tree[x,y,z].Value].T
+            let t  = tree[x,y,z].Value
+            let t' = tree'[x,y,z].Value
+            let dT = 1.<K/s> * Numerics.derivative2 node (fun n -> double T[(Octree.valueof n)].T)
+            let a = 2700.0  // temp transfer capacity coefficient whatever
+            T[t'] <- {T = dt * a * dT + T[t].T}
         | _ -> ()
     )
 
@@ -211,7 +228,9 @@ system OnUpdate [typeof<Time'>; typeof<ControlVolume>] (fun q ->
         match node with
         | Octree.Internal | Octree.Boundary ->
             let (x,y,z) = center node
-            T[tree[x,y,z].Value] <- T[tree'[x,y,z].Value]
+            let t  = tree[x,y,z].Value
+            let t' = tree'[x,y,z].Value
+            T[t] <- T[t']
         | _ -> ()
     )
 )
@@ -225,7 +244,6 @@ system OnUpdate [typeof<Time>; typeof<ControlVolume>] (fun q ->
     
     points.Clear()
     for cv in q do
-        let h2 = cv --> E'.H2
         points.Add(Vector4(V[cv], float32 T[cv].T))
         
     let pts = points.ToArray()

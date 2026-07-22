@@ -749,15 +749,8 @@ module Octree =
 
         member this.Copy() =
             let copy' = Root<'T>(N,_k,v_min,v_max)
-            copy root (copy'.Root) |> ignore
-            
+            copy root (copy'.Root) |> ignore            
             if this.Stencil <> null then
-                // let stencil' = BitArray(N*N)
-                // for i in 0..N-1 do
-                //     for j in 0..N-1 do
-                //         for k in 0..N-1 do
-                //             stencil'[i*N*N+j*N+k] <- stencil[i*N*N+j*N+k]                                           
-                // copy'.Stencil <- stencil'
                 copy'.Stencil <- BitArray(stencil)
             copy'
 
@@ -865,6 +858,8 @@ module Octree =
 
         member this.MapTo(x:double, y:double, z:double) =
             cached_node <- traverse_map (Vector3(float32 x, float32 y, float32 z)) root
+
+        member this.Iter (fn:Node<'T> -> unit) = iter fn root
     
         /// Experimental method, DOT NOT take for granted that it works...
         member this.IterParallel (num_threads:int) (fn:Node<'T> -> unit) =
