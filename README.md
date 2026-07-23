@@ -26,6 +26,13 @@ geometries, and solving PDEs on them. Take a look at `tests/` directories for ex
 
 **WARNING:** failed **-totaly broken-** raycast algorithm, TODO: FIX IT!!!
 
+**UPDATE:** with latest PR some improvements were made, both in parallelization     
+            and various other fixes. For discretization if `Octree.ofSurface<'T> mesh` has issues    
+            the cause is probably, that some of the vertices of the mesh are parallel to    
+            the 'ray-cast-direction'. The simplest solution to resolve that issue,      
+            is before creating the Octree, to transform the mesh with `SE.Renderer.RGeometry.transform`    
+            A simple slight rotation will do.    
+
 (to compile a gif from a series of images use the cmd)
 ```
 convert -delay 20 -loop 0 *.png swallow_volume.gif  

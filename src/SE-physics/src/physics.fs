@@ -12,7 +12,6 @@ open FSharp.Data.UnitSystems.SI.UnitSymbols
 [<Struct>] type HeatOfFormation = {h:double<J/mol>}
 [<Struct>] type HeatCapacity = {cp:double<J/mol K>}
 [<Struct>] type Concentration = {mutable mol:double<mol/m^3>}
-[<Struct>] type Derivative = {mutable dC:double<mol/m^3 s>}
 
 [<Struct>] type Temperature = {mutable T:double<K>}
 [<Struct>] type Pressure = {mutable P:double}
@@ -25,6 +24,7 @@ open FSharp.Data.UnitSystems.SI.UnitSymbols
 [<Struct>] type ReactionOrder = {n:int}
 
 [<Struct>] type Stoichimetry = {N:int}
+// [<Struct>] type Derivative = {mutable dC:double<mol/m^3 s>}
 
 // TAGS --> structs with no fields
 type Reactant = struct end
@@ -95,68 +95,107 @@ module Numerics =
         x+y+z
         
 
-module Kinetics =
+// module Kinetics =
 
-    let rate_constant (A:double) (Ea:double<J/mol>) (R:double<J/mol K>) (T:double<K>) =
-        A * exp(-Ea / (R * T))
+//     let rate_constant (A:double) (Ea:double<J/mol>) (R:double<J/mol K>) (T:double<K>) =
+//         A * exp(-Ea / (R * T))
 
-    let update_temperature (T:double<K>) (H:double<J/mol>) (cp:double<J/mol K>) =
-        if cp > 0.0<J/mol K> then
-            T + (H / cp)
-        else
-            T
+//     let update_temperature (T:double<K>) (H:double<J/mol>) (cp:double<J/mol K>) =
+//         if cp > 0.0<J/mol K> then
+//             T + (H / cp)
+//         else
+//             T
 
-    let reaction_rate (A:double) (E:double<J/mol>) (cv:Entity) (reactants:Span<Entity>) =
-        let stoichiometry = Components.get<Stoichimetry>()
-        let C = Components.get<Concentration>()
-        let T = (Components.get<Temperature>()[cv]).T
-        let R = (Components.get<GasConstant>()[cv]).R
-        let mutable concentration_term = 1.0
+//     let reaction_rate (A:double) (E:double<J/mol>) (cv:Entity) (reactants:Span<Entity>) =
+//         let stoichiometry = Components.get<Stoichimetry>()
+//         let C = Components.get<Concentration>()
+//         let T = (Components.get<Temperature>()[cv]).T
+//         let R = (Components.get<GasConstant>()[cv]).R
+//         let mutable concentration_term = 1.0
 
-        for r in reactants do
-            concentration_term <- concentration_term * (pown (double C[r].mol) stoichiometry[r].N)
+//         for r in reactants do
+//             concentration_term <- concentration_term * (pown (double C[r].mol) stoichiometry[r].N)
 
-        concentration_term * (rate_constant A E R T) * (1.0<mol/m^3 s>)
+//         concentration_term * (rate_constant A E R T) * (1.0<mol/m^3 s>)
         
 
-    let calculate_derivatives A k cv (reactants:Span<Entity>) (products:Span<Entity>) =
-        let S = Components.get<Stoichimetry>()
-        // let C = Components.get<Concentration>()
-        let dC = Components.get<Derivative>()
-        let rate = reaction_rate A k cv reactants 
+//     let calculate_derivatives A k cv (reactants:Span<Entity>) (products:Span<Entity>) =
+//         let S = Components.get<Stoichimetry>()
+//         // let C = Components.get<Concentration>()
+//         let dC = Components.get<Derivative>()
+//         let rate = reaction_rate A k cv reactants 
         
-        for r in reactants do
-            dC[r].dC <- dC[r].dC - double(S[r].N) * rate
+//         for r in reactants do
+//             dC[r].dC <- dC[r].dC - double(S[r].N) * rate
 
-        for p in products do
-            dC[p].dC <- dC[p].dC + double(S[p].N) * rate
-
-
-    let integration_step () =
-        failwith "NOT IMPLEMENTED"
+//         for p in products do
+//             dC[p].dC <- dC[p].dC + double(S[p].N) * rate
 
 
-    let update_concentrations (reactants:Span<Entity>) (products:Span<Entity>) (dt:double<s>) =
-        let C = Components.get<Concentration>()
-        let dC = Components.get<Derivative>()
+//     let integration_step () =
+//         failwith "NOT IMPLEMENTED"
+
+
+//     let update_concentrations (reactants:Span<Entity>) (products:Span<Entity>) (dt:double<s>) =
+//         let C = Components.get<Concentration>()
+//         let dC = Components.get<Derivative>()
         
-        for r in reactants do
-           C[r].mol <- C[r].mol + (dC[r].dC * dt)
+//         for r in reactants do
+//            C[r].mol <- C[r].mol + (dC[r].dC * dt)
     
-        for p in products do
-           C[p].mol <- C[p].mol + (dC[p].dC * dt)
+//         for p in products do
+//            C[p].mol <- C[p].mol + (dC[p].dC * dt)
     
-    // ignore that part, it will as a system for each different reaction
-    // let derivatives (reactants:Entities) (products:Entities) =
-        // ()
+//     // ignore that part, it will as a system for each different reaction
+//     // let derivatives (reactants:Entities) (products:Entities) =
+//         // ()
+
+
+type Concentrations = System.Collections.Generic.Dictionary<Entity, double<mol/m^3>>
+type Derivatives = System.Collections.Generic.Dictionary<Entity, double<mol/m^3 s>>
+
+
+module Pools = 
+    let private concentrations_pool = System.Collections.Concurrent.ConcurrentQueue<Concentrations>()
+    let private derivatives_pool = System.Collections.Concurrent.ConcurrentQueue<Derivatives>()
+    let private species_pool = System.Collections.Concurrent.ConcurrentQueue<ResizeArray<Entity>>()
+
+    let concentrations_rent () =
+        let mutable _concentrations: Concentrations = null
+        match concentrations_pool.TryDequeue(&_concentrations) with
+        | true -> _concentrations
+        | false -> new Concentrations()
+
+    let concentrations_return (concentrations:Concentrations) =
+        concentrations.Clear()
+        concentrations_pool.Enqueue(concentrations) 
+
+    let derivatives_rent () =
+        let mutable _derivatives: Derivatives = null
+        match derivatives_pool.TryDequeue(&_derivatives) with
+        | true -> _derivatives
+        | false -> new Derivatives()
+
+    let derivatives_return (derivatives:Derivatives) =
+        derivatives.Clear()
+        derivatives_pool.Enqueue(derivatives) 
+
+    let species_rent () =
+        let mutable _species: ResizeArray<Entity> = null
+        match species_pool.TryDequeue(&_species) with
+        | true -> _species
+        | false -> new ResizeArray<Entity>()
+
+    let species_return (species:ResizeArray<Entity>) =
+        species.Clear()
+        species_pool.Enqueue(species) 
 
 
 module KineticsDSL = 
 
-    // let set = Entity.set
-    type Concentrations = System.Collections.Generic.Dictionary<Entity, double<mol/m^3>>
-    type Derivatives = System.Collections.Generic.Dictionary<Entity, double<mol/m^3 s>>
-
+    let rate_constant (A:double) (Ea:double<J/mol>) (R:double<J/mol K>) (T:double<K>) =
+        A * exp(-Ea / (R * T))
+        
     let reaction_rate_DSL (A:double) (E:double<J/mol>) (cv:Entity) (reactants:list<double*Entity>) =
         let C = Components.get<Concentration>()
         let T = (Components.get<Temperature>()[cv]).T
@@ -166,11 +205,12 @@ module KineticsDSL =
         for (a,r) in reactants do
             concentration_term <- concentration_term * Math.Pow(double C[r].mol, a)
 
-        concentration_term * (Kinetics.rate_constant A E R T) * (1.0<mol/m^3 s>)
+        concentration_term * (rate_constant A E R T) * (1.0<mol/m^3 s>)
         
 
     let calculate_derivatives_DSL A k cv (reactions:list<list<double*Entity> * list<double*Entity>>) =
-        let derivatives = System.Collections.Generic.Dictionary<Entity,double<mol/m^3 s>>()
+        // let derivatives = Derivatives()
+        let derivatives = Pools.derivatives_rent()
         
         for (reactants,products) in reactions do
             for (_,r) in reactants do ignore (derivatives.TryAdd(r, 0.0<mol/m^3 s>))
@@ -197,12 +237,15 @@ module KineticsDSL =
 
 
     let get_species reactions =
-        let species = ResizeArray<Entity>()
+        // let species = ResizeArray<Entity>()
+        let species = Pools.species_rent()
         for reaction in reactions do
             let (rs,ps) = reaction
             for (_,e) in rs do species.Add(e) 
             for (_,e) in ps do species.Add(e) 
-        Array.distinct(species.ToArray())
+        let _array = species.ToArray()
+        Pools.species_return species
+        Array.distinct(_array)
     
 
     // let integrate_step_DSL A k cv reactions (dt:double<s>) (H:double<J/mol>) (cp:double<J/mol K>) =
@@ -213,16 +256,10 @@ module KineticsDSL =
         
         // store initiali concentrations
         let y =
-            let c = Concentrations()
+            // let c = Concentrations()
+            let c = Pools.concentrations_rent()
             for e in E do ignore (c.TryAdd(e, C[e].mol))
             c
-            // for reaction in reactions do
-            //     let (rs,ps) = reaction
-            //     for (_,e) in rs do ignore (c.TryAdd(e, C[e].mol)) 
-            //     for (_,e) in ps do ignore (c.TryAdd(e, C[e].mol)) 
-                // for (_,e) in rs do if c.TryAdd(e, C[e].mol) then () else failwith ("failed to add: " + (Entity.sprintf e))
-                // for (_,e) in ps do if c.TryAdd(e, C[e].mol) then () else failwith ("failed to add: " + (Entity.sprintf e))
-            // c
         
         // k1
         let k1 = calculate_derivatives_DSL A k cv reactions
@@ -247,7 +284,12 @@ module KineticsDSL =
             if C[e].mol < 0.<mol/m^3> then
                 C[e].mol <- 0.<mol/m^3>
 
-        // T[cv].T <- Kinetics.update_temperature T[cv].T H cp
+        Pools.concentrations_return y
+        Pools.derivatives_return k1
+        Pools.derivatives_return k2
+        Pools.derivatives_return k3
+        Pools.derivatives_return k4
+
 
     let measure_H_DSL (cv:Entity) (species:Span<Entity>) (H:Span<double<J>>) (v:double<m^3>) =
         let C = Components.get<Concentration>()

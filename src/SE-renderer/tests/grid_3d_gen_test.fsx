@@ -8,41 +8,43 @@ open SE.Renderer
 open SE.Plotting
 open System
 open System.Numerics
+open System.Runtime.InteropServices
+open System.Runtime.CompilerServices
 
+
+let [<Literal>] N = 100
+let [<Literal>] L = 10
+let [<Literal>] k = 3
 
 let path = System.Environment.GetCommandLineArgs()[2]
 let gltf = if path.Contains(".gltf") then Some (new GLTF.Deserializer(path)) else None
-let N = 100
-let L = 10
+
+// rotate mesh for testing
+let rotation =
+    Quaternion.CreateFromYawPitchRoll(2.f, 4.f, 3.f)
+    |> Matrix4x4.CreateFromQuaternion
 
 let mesh =
     match gltf with
     | _ when path.Contains(".txt") ->
-        let (vertices,indices) = RGeometry.load_txt(path, 0.55f, 0.55f, 0.55f, 1.0f)
-        {
-            vertices = NativeArray.ofArray vertices
-            indices = NativeArray.ofArray indices
-            L = 10
-        }
-    | Some gltf -> gltf.ReadMeshF(0)
-    | None -> RGeometry.load_ply_unmanaged (path, 0.55f, 0.55f, 0.53f, 1.0f)
+        RGeometry.load_txt_unmanaged (path, 0.55f, 0.55f, 0.55f, 1.0f)
+        |> RGeometry.tranform rotation
+        
+    | Some gltf ->
+        gltf.ReadMeshF(0)
+        |> RGeometry.tranform rotation
+        
+    | None ->
+        RGeometry.load_ply_unmanaged (path, 0.55f, 0.55f, 0.53f, 1.0f)
+        |> RGeometry.tranform rotation
 
 #time
-let tree = Octree.ofSurface<double> N L 3 (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
+
+let tree = Octree.ofSurface<double> N L k (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
 #time
 printfn "nodes.len: %d" (tree.GetCount())
 printfn "internal.count: %d" (tree.GetInternalCount())
 printfn "boundary.count: %d" (tree.GetBoundaryCount())
-
-#time
-let tree_old = Octree.ofSurfaceOLD<double> N L 3 (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
-#time
-printfn "nodes.len: %d" (tree_old.GetCount())
-printfn "internal.count: %d" (tree_old.GetInternalCount())
-printfn "boundary.count: %d" (tree_old.GetBoundaryCount())
-// printfn "internal.count: %d" (points.Count)
-// printfn "boundary.count: %d" (bounds.Count)
-
 
 
 #time
@@ -66,7 +68,7 @@ let xb = bds |> Array.map (fun v -> double v.X)
 let yb = bds |> Array.map (fun v -> double v.Y)
 let zb = bds |> Array.map (fun v -> double v.Z)
 
-exit 0
+// exit 0
 
 Gnuplot()
 |> Gnuplot.datablockXYZ xs ys zs "points"

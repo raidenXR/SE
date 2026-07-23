@@ -3,8 +3,8 @@
 // #load "../../SE-core/src/core.fs"
 #r "../bin/Debug/net10.0/SE-core.dll"
 #r "../bin/Debug/net10.0/SE-renderer.dll"
-// #r "../bin/Debug/net10.0/SE-physics.dll"
-#load "../src/physics.fs"
+#r "../bin/Debug/net10.0/SE-physics.dll"
+// #load "../src/physics.fs"
 
 open SE
 open SE.Core
@@ -58,7 +58,7 @@ let inline center node =
 
 let [<Literal>] N = 50
 let [<Literal>] L = 10
-let [<Literal>] k = 2
+let [<Literal>] k = 1
 let [<Literal>] dt = 0.1<s>
 
 let tree = 
@@ -264,9 +264,19 @@ system OnUpdate [typeof<Time>; typeof<ControlVolume>] (fun q ->
     |> ignore
 )
 
+let stopwatch = System.Diagnostics.Stopwatch()
+stopwatch.Start()
 Systems.progress_N (Some 20) true
+stopwatch.Stop()
 
 printfn "systems exited"
+printfn "stopwatch: %A" (stopwatch.Elapsed)
+
+// cache time results
+
+let fs_path = "elapsed_times.txt"
+let txt = sprintf "%A:   %A\n" (System.DateTime.Now) (stopwatch.Elapsed)
+System.IO.File.AppendAllText(fs_path, txt)
 
 
 // Console.ReadKey()
