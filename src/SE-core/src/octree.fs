@@ -3,6 +3,7 @@ namespace SE.Core
 open SE
 open System
 open System.Numerics
+open System.Threading
 open System.Collections
 open FSharp.Core
 open System.Runtime.InteropServices
@@ -708,12 +709,21 @@ module Octree =
     type Root<'T>(N:int, _k:int, v_min:Vector3, v_max:Vector3) =
         let root = create<'T> N v_min v_max
         let n = log10 (float N) / log10 2. |> ceil |> int 
-        let mutable cached_node = root
+        // let mutable cached_node = root
         let mutable stencil: BitArray = null
         let mutable add: ('T -> 'T -> 'T) = (fun a _ -> a)
         let mutable div: ('T -> double -> 'T) = (fun a _ -> a)
 
         let rec dd v _n = if _n < n then dd (v/2.f) (_n + 1) else v
+        
+        let mutable is_disposed = false
+        let mutable cached_node = new ThreadLocal<Node<'T>>(fun _ -> root)
+
+        interface IDisposable with
+            member this.Dispose() =
+                if not is_disposed then
+                    cached_node.Dispose()
+                is_disposed <- true
 
         member this.GetCount() =
             let mutable c = 0
@@ -748,7 +758,7 @@ module Octree =
         member this.Root = root
 
         member this.Copy() =
-            let copy' = Root<'T>(N,_k,v_min,v_max)
+            let copy' = new Root<'T>(N,_k,v_min,v_max)
             copy root (copy'.Root) |> ignore            
             if this.Stencil <> null then
                 copy'.Stencil <- BitArray(stencil)
@@ -795,21 +805,27 @@ module Octree =
 
         member this.Put(x:double, y:double, z:double, value:voption<'T>) =
             let p = Vector3(float32 x, float32 y, float32 z)
-            cached_node <- traverse p n _k cached_node
-            match cached_node with
+            // cached_node <- traverse p n _k cached_node
+            // match cached_node with
+            cached_node.Value <- traverse p n _k cached_node.Value
+            match cached_node.Value with
             | Leaf (_,v,_,_,_,_) -> v.Value <- value
             | _ -> failwith "Item.get failed"         
 
         member this.PutF(p:Vector3, value:voption<'T>) =
-            cached_node <- traverse p n _k cached_node
-            match cached_node with
+            // cached_node <- traverse p n _k cached_node
+            // match cached_node with
+            cached_node.Value <- traverse p n _k cached_node.Value
+            match cached_node.Value with
             | Leaf (_,v,_,_,_,_) -> v.Value <- value
             | _ -> failwith "Item.get failed"         
 
         member this.Insert(x:double, y:double, z:double) =
             let p = Vector3(float32 x, float32 y, float32 z)
-            cached_node <- insert p n cached_node
-            match cached_node with
+            // cached_node <- insert p n _k cached_node
+            // match cached_node with
+            cached_node.Value <- insert p n cached_node.Value
+            match cached_node.Value with
             | Leaf (_,v,_,_,_,_) -> v.Value <- ValueNone
             | _ -> failwith "Item.get failed"         
 
@@ -820,44 +836,53 @@ module Octree =
         member this.Item
             with get (x:double, y:double, z:double) =
                 let p = Vector3(float32 x, float32 y, float32 z)
-                cached_node <- traverse_retain p cached_node
-                match cached_node with
+                // cached_node <- traverse_retain p cached_node
+                // match cached_node with
+                cached_node.Value <- traverse_retain p cached_node.Value
+                match cached_node.Value with
                 | Leaf (_,v,_,_,_,_) -> v.Value
                 | _ -> failwith "Item.get failed"
 
             and set (x:double, y:double, z:double) value =
                 let p = Vector3(float32 x, float32 y, float32 z)
-                cached_node <- traverse_retain p cached_node
-                match cached_node with
+                // cached_node <- traverse_retain p cached_node
+                // match cached_node with
+                cached_node.Value <- traverse_retain p cached_node.Value
+                match cached_node.Value with
                 | Leaf (_,v,_,_,_,_) -> v.Value <- ValueSome value
                 | _ -> failwith "Item.get failed"         
 
                     
         member this.Item
             with get(i:int,j:int,k:int) =
-                match (iterate i j k this.dX this.dY this.dZ cached_node) with
+                // match (iterate i j k this.dX this.dY this.dZ cached_node) with
+                match (iterate i j k this.dX this.dY this.dZ cached_node.Value) with
                 | Leaf (_,v,_,_,_,_) -> v.Value.Value
                 | Node (_,c,_,_,_,_) ->
                     let mutable _n = 0
                     let mutable _t = Operators.Unchecked.defaultof<'T>
-                    iterate_sum add &_n &_t cached_node
+                    // iterate_sum add &_n &_t cached_node
+                    iterate_sum add &_n &_t cached_node.Value
                     div _t (double _n)                    
                 // | Empty -> valueof cached_node
                 | Empty ->                
                     let mutable _n = 0
                     let mutable _t = Operators.Unchecked.defaultof<'T>
-                    iterate_sum add &_n &_t cached_node    // if current node is EMPTY use the values of rest Leafs of quadant(?)
+                    // iterate_sum add &_n &_t cached_node    // if current node is EMPTY use the values of rest Leafs of quadant(?)
+                    iterate_sum add &_n &_t cached_node.Value    // if current node is EMPTY use the values of rest Leafs of quadant(?)
                     div _t (double _n)                    
                 // | Empty -> failwith "should always traverse to a leaf node"
                 // | _ -> failwith "should always traverse to a leaf node"
 
             and set(i:int,j:int,k:int) value =
-                match (iterate i j k this.dX this.dY this.dZ cached_node) with
+                match (iterate i j k this.dX this.dY this.dZ cached_node.Value) with
+                // match (iterate i j k this.dX this.dY this.dZ cached_node) with
                 | Leaf (_,v,_,_,_,_) -> v.Value <- ValueSome value
                 | _ -> failwith "should always traverse to a leaf node"
 
         member this.MapTo(x:double, y:double, z:double) =
-            cached_node <- traverse_map (Vector3(float32 x, float32 y, float32 z)) root
+            // cached_node <- traverse_map (Vector3(float32 x, float32 y, float32 z)) root
+            cached_node.Value <- traverse_map (Vector3(float32 x, float32 y, float32 z)) root
 
         member this.Iter (fn:Node<'T> -> unit) = iter fn root
     
@@ -956,16 +981,16 @@ module Octree =
     /// Builds a Quadtree out of a filled stencil
     /// The values of the Leafs are undefined
     let ofStencil<'T> N _k (v_min:Vector3) (v_max:Vector3) (stencil:BitArray) =
-        let quadtree = Root<'T>(N,_k,v_min,v_max)
-        quadtree.Stencil <- stencil        
+        let octree = new Root<'T>(N,_k,v_min,v_max)
+        octree.Stencil <- stencil        
         for i in 0..N-1 do
             for j in 0..N-1 do
                 for k in 0..N-1 do
                     if stencil[i*N*N+j*N+k] then
                         let v = GridGeneration3D.to_cartesian_system i j k N v_min v_max
-                        quadtree.PutF(v, ValueNone)
+                        octree.PutF(v, ValueNone)
                         // quadtree.Put(double v.X, double v.Y, double v.Z, ValueNone)
-        quadtree       
+        octree       
 
     /// sets initial values at the Leaf s of a built Quadtree
     let init (value:'T) (quadtree:Root<'T>) =
@@ -1183,7 +1208,7 @@ module Octree =
         let dy = (v_max.Y - v_min.Y) / float32 N
         let dz = (v_max.Z - v_min.Z) / float32 N
         // let vs = ResizeArray<Vector3>(1024)
-        let tree = Root<byte>(N, 0, v_min, v_max)
+        let tree = new Root<byte>(N, 0, v_min, v_max)
         
         let center = GridGeneration3D.center
         let triangle_center = GridGeneration3D.triangle_center

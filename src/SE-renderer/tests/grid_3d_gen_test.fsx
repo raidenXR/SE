@@ -40,7 +40,8 @@ let mesh =
 
 #time
 
-let tree = Octree.ofSurface<double> N L k (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
+// let tree = Octree.ofSurface<double> N L k (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
+let tree = OctreeSOA.ofSurface<double> N L k (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
 #time
 printfn "nodes.len: %d" (tree.GetCount())
 printfn "internal.count: %d" (tree.GetInternalCount())
@@ -50,10 +51,16 @@ printfn "boundary.count: %d" (tree.GetBoundaryCount())
 #time
 let points = ResizeArray<Vector3>(1000)
 let bounds = ResizeArray<Vector3>(1000)
-tree.IterParallel 1 (fun node ->
-    match node with
-    | Octree.Internal -> points.Add(Octree.center node)
-    | Octree.Boundary -> bounds.Add(Octree.center node)
+// tree.Iter (fun node ->
+//     match node with
+//     | Octree.Internal -> points.Add(Octree.center node)
+//     | Octree.Boundary -> bounds.Add(Octree.center node)
+//     | _ -> ()
+// )
+tree.Iter (fun id ->
+    match struct(id,tree) with
+    | OctreeSOA.Internal -> points.Add(OctreeSOA.center id tree)
+    | OctreeSOA.Boundary -> bounds.Add(OctreeSOA.center id tree)
     | _ -> ()
 )
 #time

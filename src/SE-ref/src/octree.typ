@@ -1,6 +1,73 @@
 
 = Octree
 
+== Numerical methods Central-difference
+
+=== 3D Laplace Equation on a Non-Uniform Grid
+The Laplace equation in 3D is: \
+$
+  nabla^2 T = (partial^2 T)/(partial x^2) + (partial^2 T)/(partial y^2) + (partial^2 T)/(partial z^2)    
+$
+
+For a non-uniform grid, the discretized form (using central differences) is:
+$
+  (T_(i+1,j,k) - T_(i,j,k))/(Delta x_i) - (T_(i,j,k) - T_(i-1,j,k))/(Delta x_(i-1)) dot.c (2)/(Delta x_i + Delta x_(i-1)) +
+  (T_(i,j+1,k) - T_(i,j,k))/(Delta y_j) - (T_(i,j,k) - T_(i,j-1,k))/(Delta y_(j-1)) dot.c (2)/(Delta y_j + Delta y_(j-1)) +  \
+  (T_(i,j,k+1) - T_(i,j,k))/(Delta z_k) - (T_(i,j,k) - T_(i,j,k-1))/(Delta z_(k-1)) dot.c (2)/(Delta z_k + Delta z_(k-1)) = 0    
+$
+
+#pagebreak()
+
+
+#page(
+  paper: "a4",
+  flipped: true,
+  // orientation: "portrait",
+  numbering: "1",
+  header: align(right)[notes] + line(length: 100%))[        
+```cs
+// Solve using Gauss-Seidel iteration
+public void Solve() {
+    SetBoundaryConditions();
+    double maxError = double.MaxValue;
+    int iteration = 0;
+
+    while (maxError > tolerance && iteration < maxIterations) {
+        maxError = 0.0;
+        for (int i = 1; i < x.Length - 1; i++) {
+            for (int j = 1; j < y.Length - 1; j++) {
+                for (int k = 1; k < z.Length - 1; k++) {
+                    // Compute coefficients for non-uniform grid
+                    double alpha_x = 2.0 / (dx[i - 1][j - 1][k - 1] * (dx[i - 1][j - 1][k - 1] + dx[i][j - 1][k - 1]));
+                    double alpha_y = 2.0 / (dy[i - 1][j - 1][k - 1] * (dy[i - 1][j - 1][k - 1] + dy[i - 1][j][k - 1]));
+                    double alpha_z = 2.0 / (dz[i - 1][j - 1][k - 1] * (dz[i - 1][j - 1][k - 1] + dz[i - 1][j - 1][k]));
+
+                    // Gauss-Seidel update
+                    double TNew = (alpha_x * (T[i + 1][j][k] * dx[i][j - 1][k - 1] + T[i - 1][j][k] * dx[i - 1][j - 1][k - 1]) +
+                                  alpha_y * (T[i][j + 1][k] * dy[i - 1][j][k - 1] + T[i][j - 1][k] * dy[i - 1][j - 1][k - 1]) +
+                                  alpha_z * (T[i][j][k + 1] * dz[i - 1][j - 1][k] + T[i][j][k - 1] * dz[i - 1][j - 1][k - 1])) /
+                                 (alpha_x * (dx[i][j - 1][k - 1] + dx[i - 1][j - 1][k - 1]) +
+                                  alpha_y * (dy[i - 1][j][k - 1] + dy[i - 1][j - 1][k - 1]) +
+                                  alpha_z * (dz[i - 1][j - 1][k] + dz[i - 1][j - 1][k - 1]));
+
+                    double error = Math.Abs(TNew - T[i][j][k]);
+                    if (error > maxError) {
+                        maxError = error;
+                    }
+                    T[i][j][k] = TNew;
+                }
+            }
+        }
+        iteration++;
+    }
+    // Console.WriteLine($"Converged in {iteration} iterations. Max error: {maxError:E2}");
+}
+```
+]    
+
+
+#pagebreak()
+
 == Derivatives
 ```
         double h1 = x[i] - x[i - 1];

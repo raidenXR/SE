@@ -14,6 +14,7 @@
     <Compile Include="src/quadtree.fs" />
     <Compile Include="src/octree.fs" />
     <Compile Include="src/octree_experimental.fs" />
+    <Compile Include="src/octree_SOA.fs" />
     <Compile Include="src/linearalg.fs" />
     <Compile Include="src/numerics.fs" />
     <Compile Include="src/geometry.fs" />
