@@ -27,28 +27,44 @@ module OctreeSOA =
         | Empty 
 
     [<Literal>]
-    let _size = 4096
+    let _size = 1500000
 
     let buffer<'T> () = ResizeArray<'T>(_size)
 
     let rec dd n v _n = if _n < n then dd n (v/2.f) (_n + 1) else v
 
-    let create (c:byref<int>) (queue:ConcurrentQueue<NodeId>) =
+    // let create (c:byref<int>) (queue:ConcurrentQueue<NodeId>) =
+    //     let mutable i = -1
+    //     if queue.TryDequeue(&i) then
+    //         struct(i,false)
+    //     else
+    //         // let p = c
+    //         c <- c + 1
+    //         struct(c,true)
+            
+    let create (c:byref<int>) (queue:ConcurrentStack<NodeId>) =
         let mutable i = -1
-        if queue.TryDequeue(&i) then
-            (i,false)
+        if queue.TryPop(&i) then
+            struct(i,false)
         else
+            // let p = c
             c <- c + 1
-            (c,true)
+            struct(c,true)
 
-    let destroy id (queue:ConcurrentQueue<NodeId>) =
-        queue.Enqueue(id)
+    // let destroy id (queue:ConcurrentQueue<NodeId>) =
+        // queue.Enqueue(id)
+
+    let destroy id (queue:ConcurrentStack<NodeId>) =
+        queue.Push(id)
 
 
     type Root<'T>(N:int, k:int, v_min:Vector3, v_max:Vector3) =
-        let n_ids = ConcurrentQueue<NodeId>()
-        let v_ids = ConcurrentQueue<NodeId>()
-        let c_ids = ConcurrentQueue<NodeId>()
+        // let n_ids = ConcurrentQueue<NodeId>()
+        // let v_ids = ConcurrentQueue<NodeId>()
+        // let c_ids = ConcurrentQueue<NodeId>()
+        let n_ids = ConcurrentStack<NodeId>()
+        let v_ids = ConcurrentStack<NodeId>()
+        let c_ids = ConcurrentStack<NodeId>()
         let mutable n_count = -1
         let mutable v_count = -1
         let mutable c_count = -1
@@ -98,7 +114,7 @@ module OctreeSOA =
         member this.CachedNode = cached_node
         
         member private this.Add(flag, parent, index, level, v_min, v_max) =
-            let (i,extend) = create &n_count n_ids
+            let struct(i,extend) = create &n_count n_ids
             let cell = struct(v_min,v_max)
 
             match flag with
@@ -108,11 +124,16 @@ module OctreeSOA =
                 this.index.Add(index)
                 this.levels.Add(level)
                 this.cells.Add(cell)
-                this.targets.Add(fst (create &c_count c_ids))
                 let children = System.Buffers.ArrayPool.Shared.Rent(8)
-                for i in 0..7 do
-                    children[i] <- -1
-                this.children.Add(children)
+                for i in 0..7 do children[i] <- -1
+
+                let struct(c_idx,c_extend) = create &c_count c_ids
+                this.targets.Add(c_idx)
+                
+                if c_extend then
+                    this.children.Add(children)
+                else
+                    this.children[c_idx] <- children
                 i
                 
             | Flag.Node ->
@@ -121,11 +142,16 @@ module OctreeSOA =
                 this.index[i] <- index
                 this.levels[i] <- level
                 this.cells[i] <- cell
-                this.targets[i] <- fst (create &c_count c_ids)
                 let children = System.Buffers.ArrayPool.Shared.Rent(8)
-                for i in 0..7 do
-                    children[i] <- -1
-                this.children[this.targets[i]] <- children 
+                for i in 0..7 do children[i] <- -1
+
+                let struct(c_idx,c_extend) = create &c_count c_ids
+                this.targets[i] <- c_idx
+                
+                if c_extend then
+                    this.children.Add(children)
+                else
+                    this.children[c_idx] <- children
                 i
                                 
             | Flag.Leaf when extend ->
@@ -134,8 +160,15 @@ module OctreeSOA =
                 this.index.Add(index)
                 this.levels.Add(level)
                 this.cells.Add(cell)
-                this.targets.Add(fst (create &v_count v_ids))
-                this.values.Add(ValueNone)
+
+                let struct(v_idx,v_extend) = create &v_count v_ids
+                this.targets.Add(v_idx)
+
+                if v_extend then
+                    this.values.Add(ValueNone)
+                else
+                    this.values[v_idx] <- ValueNone
+                    
                 i
                 
             | Flag.Leaf ->
@@ -144,8 +177,14 @@ module OctreeSOA =
                 this.index[i] <- index
                 this.levels[i] <- level
                 this.cells[i] <- cell
-                this.targets[i] <- fst (create &v_count v_ids)
-                this.values[this.targets[i]] <- ValueNone 
+
+                let struct(v_idx,v_extend) = create &v_count v_ids
+                this.targets[i] <- v_idx
+
+                if v_extend then
+                    this.values.Add(ValueNone)
+                else
+                    this.values[v_idx] <- ValueNone
                 i
                                 
             | _ -> -1
@@ -165,45 +204,46 @@ module OctreeSOA =
             node
 
         member this.Remove(id) =
-            match this.flags[id] with
-            | Flag.Node ->
-                let p = this.parents[id]
-                let c = this.targets[id]
-                let i = this.index[id]
-                let l = this.levels[id]
+            if id > 0 then 
+                match this.flags[id] with
+                | Flag.Node ->
+                    let p = this.parents[id]
+                    let c = this.targets[id]
+                    let i = this.index[id]
+                    let l = this.levels[id]
 
-                let children = this.children[c]
-                if l > 0uy then
-                    for i in 0..7 do
-                        this.Remove(children[i])
+                    let children = this.children[c]
+                    if l > 0uy then
+                        for i in 0..7 do
+                            this.Remove(children[i])
 
-                System.Buffers.ArrayPool.Shared.Return(children)
-                this.flags[id] <- Flag.Empty
-                destroy id n_ids
-                destroy c c_ids
+                    System.Buffers.ArrayPool.Shared.Return(children)
+                    // this.flags[id] <- Flag.Empty
+                    destroy id n_ids
+                    destroy c c_ids
                 
-            | Flag.Leaf ->
-                let p = this.parents[id]
-                let v = this.targets[id]
-                let i = this.index[id]
+                | Flag.Leaf ->
+                    let p = this.parents[id]
+                    let v = this.targets[id]
+                    let i = this.index[id]
                 
-                // let c = this.children[this.targets[p]].AsSpan(0,8)
-                // c[int i] <- -1
+                    // let c = this.children[this.targets[p]].AsSpan(0,8)
+                    // c[int i] <- -1
 
-                this.flags[id] <- Flag.Empty
-                destroy id n_ids
-                destroy v v_ids                
+                    // this.flags[id] <- Flag.Empty
+                    destroy id n_ids
+                    destroy v v_ids                
 
-            | _ ->
-                ()
-                // this.flags[id] <- Flag.Empty
+                | _ ->
+                    ()
+                    // this.flags[id] <- Flag.Empty
 
-            if this.levels[id] > 0uy then
-                let p = this.parents[id]
-                let i = this.index[id]
-                let c = this.children[this.targets[p]].AsSpan(0,8)
-                c[int i] <- -1
-                this.flags[id] <- Flag.Empty
+                if this.levels[id] > 0uy then
+                    let p = this.parents[id]
+                    let i = this.index[id]
+                    let c = this.children[this.targets[p]].AsSpan(0,8)
+                    c[int i] <- -1
+                    this.flags[id] <- Flag.Empty
 
 
 
@@ -280,7 +320,7 @@ module OctreeSOA =
     let trim n k v (tree:Root<'T>) id : NodeId =
         match (as_node id tree) with 
         | Leaf (p,s,_) when n = tree.levels[s] ->
-            if (forall (fun t -> match tree.flags[t] with | Flag.Node -> false | _ -> true) (children p tree)) then 
+            if (forall (fun t -> match (as_node t tree) with | Node _ -> false | _ -> true) (children p tree)) then 
                 match (as_node p tree) with
                 | Node (P,S,C) ->
                     let I  = tree.index[S]
@@ -302,7 +342,7 @@ module OctreeSOA =
                 id
 
         | Leaf (p,s,_) when n - tree.levels[s] < k ->
-            if (forall (fun t -> match tree.flags[t] with | Flag.Leaf -> true | _ -> false) (children p tree)) then 
+            if (forall (fun t -> match (as_node t tree) with | Leaf _ -> true | _ -> false) (children p tree)) then 
                 match (as_node p tree) with
                 | Node (P,S,C) ->
                     let I  = tree.index[S]
@@ -526,25 +566,64 @@ module OctreeSOA =
 
     let (|Internal|External|Boundary|) (pair:struct(NodeId*Root<'T>)) =
         let struct(id,tree) = pair
-        let bi = (iterate_node -1 0 0 tree id)
-        let di = (iterate_node 0 -1 0 tree id)
-        let ki = (iterate_node 0 0 -1 tree id)
-        let fi = (iterate_node 0 1 0 tree id)
-        let hi = (iterate_node 1 0 0 tree id)
-        let ji = (iterate_node 0 0 1 tree id)
+        let mutable bi = (iterate_node -1 0 0 tree id)
+        let mutable di = (iterate_node 0 -1 0 tree id)
+        let mutable ki = (iterate_node 0 0 -1 tree id)
+        let mutable fi = (iterate_node 0 1 0 tree id)
+        let mutable hi = (iterate_node 1 0 0 tree id)
+        let mutable ji = (iterate_node 0 0 1 tree id)
 
-        let b = if bi >= 0 then tree.flags[bi] else Flag.Empty
-        let d = if di >= 0 then tree.flags[di] else Flag.Empty
-        let k = if ki >= 0 then tree.flags[ki] else Flag.Empty
-        let u = if id >= 0 then tree.flags[id] else Flag.Empty
-        let f = if fi >= 0 then tree.flags[fi] else Flag.Empty
-        let h = if hi >= 0 then tree.flags[hi] else Flag.Empty
-        let j = if ji >= 0 then tree.flags[ji] else Flag.Empty
+        let b = as_node bi tree
+        let d = as_node di tree
+        let k = as_node ki tree
+        let u = as_node id tree
+        let f = as_node fi tree
+        let h = as_node hi tree
+        let j = as_node ji tree
+        // let b = if bi >= 0 then tree.flags[bi] else Flag.Empty
+        // let d = if di >= 0 then tree.flags[di] else Flag.Empty
+        // let k = if ki >= 0 then tree.flags[ki] else Flag.Empty
+        // let u = if id >= 0 then tree.flags[id] else Flag.Empty
+        // let f = if fi >= 0 then tree.flags[fi] else Flag.Empty
+        // let h = if hi >= 0 then tree.flags[hi] else Flag.Empty
+        // let j = if ji >= 0 then tree.flags[ji] else Flag.Empty
+        // try
+        //     let b = tree.flags[bi]
+        //     let d = tree.flags[di]
+        //     let k = tree.flags[ki]
+        //     let u = tree.flags[id]
+        //     let f = tree.flags[fi]
+        //     let h = tree.flags[hi]
+        //     let j = tree.flags[ji]
 
-        match (b,d,u,f,h,k,j) with
-        | _,_,Flag.Empty,_,_,_,_ -> External
-        | Flag.Leaf, Flag.Leaf, Flag.Leaf, Flag.Leaf, Flag.Leaf, Flag.Leaf, Flag.Leaf -> Internal
-        | _,_,_,_,_,_,_ -> Boundary
+        //     match (b,d,u,f,h,k,j) with
+        //     | _,_,Flag.Empty,_,_,_,_ -> External
+        //     | Flag.Leaf, Flag.Leaf, Flag.Leaf, Flag.Leaf, Flag.Leaf, Flag.Leaf, Flag.Leaf -> Internal
+        //     | _,_,_,_,_,_,_ -> Boundary
+        // with
+        // | _ -> External
+
+        let mutable ui = id
+        ui <- match u with | Empty -> -1 | Leaf _ -> 0 | Node _ -> 1
+        bi <- match b with | Empty -> -1 | Leaf _ -> 0 | Node _ -> 1
+        di <- match d with | Empty -> -1 | Leaf _ -> 0 | Node _ -> 1
+        ki <- match k with | Empty -> -1 | Leaf _ -> 0 | Node _ -> 1
+        fi <- match f with | Empty -> -1 | Leaf _ -> 0 | Node _ -> 1
+        hi <- match h with | Empty -> -1 | Leaf _ -> 0 | Node _ -> 1
+        ji <- match j with | Empty -> -1 | Leaf _ -> 0 | Node _ -> 1
+                 
+        // // match (b,d,u,f,h,k,j) with
+        // // | _,_,Empty,_,_,_,_ -> External
+        // // | Leaf _, Leaf _, Leaf _, Leaf _, Leaf _, Leaf _, Leaf _-> Internal
+        // // | _,_,_,_,_,_,_ -> Boundary
+
+        if ui = -1 then
+            External
+        elif (ui ||| bi ||| di ||| ki ||| fi ||| fi ||| ji) = 0 then
+        // elif (ui &&& di) = 0 then 
+            Internal
+        else
+            Boundary
 
     
     let contains (p:Vector3) (tree:Root<'T>) id =
@@ -571,16 +650,21 @@ module OctreeSOA =
     type Root<'T> with
         member this.Put(x:double, y:double, z:double, value:voption<'T>) =
             let p = Vector3(float32 x, float32 y, float32 z)
-            this.CachedNode.Value <- traverse_retain p this this.CachedNode.Value
+            let n = byte this.n
+            let k = byte this.k
+            this.CachedNode.Value <- traverse p n k this this.CachedNode.Value
             match (as_node this.CachedNode.Value this) with
             | Leaf (_,s,v) -> this.values[this.targets[s]] <- value
             | _ -> failwith "Item.get failed"         
 
         member this.PutF(p:Vector3, value:voption<'T>) =
-            this.CachedNode.Value <- traverse_retain p this this.CachedNode.Value
+            let n = byte this.n
+            let k = byte this.k
+            this.CachedNode.Value <- traverse p n k this this.CachedNode.Value
             match (as_node this.CachedNode.Value this) with
             | Leaf (_,s,v) -> this.values[this.targets[s]] <- value
-            | _ -> failwith "Item.get failed"         
+            | Node (_,s,_) -> failwith $"Item.get failed on Node: {s}"         
+            | Empty -> failwith "Item.get failed on Empty"         
 
     
         member this.Item

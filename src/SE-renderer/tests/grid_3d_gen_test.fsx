@@ -12,7 +12,7 @@ open System.Runtime.InteropServices
 open System.Runtime.CompilerServices
 
 
-let [<Literal>] N = 100
+let [<Literal>] N = 250
 let [<Literal>] L = 10
 let [<Literal>] k = 3
 
@@ -38,32 +38,55 @@ let mesh =
         RGeometry.load_ply_unmanaged (path, 0.55f, 0.55f, 0.53f, 1.0f)
         |> RGeometry.tranform rotation
 
-#time
 
-// let tree = Octree.ofSurface<double> N L k (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
-let tree = OctreeSOA.ofSurface<double> N L k (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
+printfn "Flag: %d" (sizeof<OctreeSOA_2.Flag>)
+printfn "NodeId:   %d" (sizeof<OctreeSOA_2.NodeId>)
+printfn "Data<'T>: %d" (sizeof<OctreeSOA_2.Data<double>>)
+
+// #time
+// let tree_soa = OctreeSOA_2.ofSurface<double> N L k (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
+// // printfn "nodes.len:      %d" (tree_soa.GetCount())
+// // printfn "nodes.total:    %d" (tree_soa.GetTotalCount())
+// printfn "internal.count: %d" (tree_soa.GetInternalCount())
+// printfn "boundary.count: %d" (tree_soa.GetBoundaryCount())
+// #time
+// printfn "TREE_SOA\n\n"
+
 #time
-printfn "nodes.len: %d" (tree.GetCount())
+let tree = Octree.ofSurface<double> N L k (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
+printfn "nodes.len:      %d" (tree.GetCount())
+printfn "nodes.total:    %d" (tree.GetTotalCount())
 printfn "internal.count: %d" (tree.GetInternalCount())
 printfn "boundary.count: %d" (tree.GetBoundaryCount())
-
-
 #time
+printfn "TREE\n\n"
+
+
+mesh.vertices.Dispose()
+mesh.indices.Dispose()
+
+exit 0
+
 let points = ResizeArray<Vector3>(1000)
 let bounds = ResizeArray<Vector3>(1000)
+
+// #time
 // tree.Iter (fun node ->
 //     match node with
 //     | Octree.Internal -> points.Add(Octree.center node)
 //     | Octree.Boundary -> bounds.Add(Octree.center node)
 //     | _ -> ()
 // )
-tree.Iter (fun id ->
-    match struct(id,tree) with
-    | OctreeSOA.Internal -> points.Add(OctreeSOA.center id tree)
-    | OctreeSOA.Boundary -> bounds.Add(OctreeSOA.center id tree)
-    | _ -> ()
-)
-#time
+// #time
+
+// #time
+// tree_soa.Iter (fun id ->
+//     match struct(id,tree_soa) with
+//     | OctreeSOA_2.Internal -> points.Add(OctreeSOA_2.center tree_soa id)
+//     | OctreeSOA_2.Boundary -> bounds.Add(OctreeSOA_2.center tree_soa id)
+//     | _ -> ()
+// )
+// #time
 
 let pts = points.ToArray()
 let bds = bounds.ToArray()
