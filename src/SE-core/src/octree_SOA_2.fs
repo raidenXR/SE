@@ -37,8 +37,8 @@ module OctreeSOA_2 =
         | Children of c:array<NodeId>
         | Empty
 
-    [<Literal>]
-    let _size = 150000
+    // [<Literal>]
+    let _size = 1024*100
 
     let buffer<'T> () = ResizeArray<'T>(_size)
 
@@ -122,8 +122,9 @@ module OctreeSOA_2 =
         | Flag.Node ->
             match tree.targets[id.s] with
             | Children c -> c
-            | Value _ -> failwith "cannot take children from  Value"
-            | Empty -> failwith "cannot take children from Empty"            
+            | _ -> [||]
+            // | Value _ -> failwith "cannot take children from  Value"
+            // | Empty -> failwith "cannot take children from Empty"            
         | _ -> failwith "Must be leaf"
 
     let inline parent (tree:Root<'T>) (id:NodeId) =
@@ -149,24 +150,25 @@ module OctreeSOA_2 =
 
 
     let rec destroy_node (tree:Root<'T>) (id:NodeId) =
-        match tree.targets[id.s] with
-        | Children c ->
-            System.Buffers.ArrayPool<NodeId>.Shared.Return(c)
+        match id.f with
+        | Flag.Node ->
             if id.l > 0uy then
                 let p = tree.parents[id.s]
-                let _children = children tree id
+                let c = children tree id
                 for i in 0..7 do
-                    destroy_node tree _children[i]
+                    destroy_node tree c[i]
                 (children tree p)[int id.i] <- NodeId.Empty
+                System.Buffers.ArrayPool<NodeId>.Shared.Return(c)
+                tree.N_Ids.Push(id)
                 
-        | Value v ->
+        | Flag.Leaf ->
             if id.l > 0uy then
                 let p = tree.parents[id.s]
                 (children tree p)[int id.i] <- NodeId.Empty                
+                tree.N_Ids.Push(id)
 
-        | Empty -> ()
+        | _ -> ()
 
-        tree.N_Ids.Push(id)
              
         
     let rec vertices_to_points (points:ResizeArray<Vector3>) (id:NodeId) (tree:Root<'T>) =
@@ -185,32 +187,33 @@ module OctreeSOA_2 =
         let z = v_min.Z <= p.Z && p.Z <= v_max.Z
         x && y && z
 
-    let rec count_rec (j:byref<int>) (id:NodeId) (tree:Root<'T>) =
-        match tree.targets[id.s] with
-        | Children c -> for i in 0..7 do count_rec &j c[i] tree
-        | Value _ -> j <- j + 1
-        | Empty -> ()
+    // let rec count_rec (j:byref<int>) (id:NodeId) (tree:Root<'T>) =
+    //     match tree.targets[id.s] with
+    //     | Children c -> for i in 0..7 do count_rec &j c[i] tree
+    //     | Value _ -> j <- j + 1
+    //     | Empty -> ()
 
-    let rec count_total_rec (j:byref<int>) (id:NodeId) (tree:Root<'T>) =
-        match tree.targets[id.s] with 
-        | Children c ->
-            j <- j + 1
-            for i in 0..7 do count_total_rec &j c[i] tree
-        | Value _ ->
-            j <- j + 1        
-        | Empty -> ()
+    // let rec count_total_rec (j:byref<int>) (id:NodeId) (tree:Root<'T>) =
+    //     match tree.targets[id.s] with 
+    //     | Children c ->
+    //         j <- j + 1
+    //         for i in 0..7 do count_total_rec &j c[i] tree
+    //     | Value _ ->
+    //         j <- j + 1        
+    //     | Empty -> ()
+
 
 
     let forall (fn: NodeId -> bool) (ids:NodeId[]) =
-        let mutable b = true
+        let mutable b = ids.Length >= 8
         let mutable i = 0
         while i < 8 && b do
             b <- b && (fn ids[i])
             i <- i + 1
         b
 
-    /// convert a Node to Leaf
-    let trim n k v (tree:Root<'T>) (id:NodeId) : NodeId =
+    // /// convert a Node to Leaf
+    let rec trim n k v (tree:Root<'T>) (id:NodeId) : NodeId =
         match id.f with 
         | Flag.Leaf when n = id.l ->
             let p = tree.parents[id.s]
@@ -224,14 +227,17 @@ module OctreeSOA_2 =
                     let struct(V1,V2) = tree.cbounds[p.s]
                     let mutable value:voption<'T> = v
                     for i in 0..7 do
-                        match (C[i].f, tree.targets[C[i].s]) with
-                        | Flag.Leaf, Value _v -> value <- ValueSome _v
+                        match C[i].f with
+                        | Flag.Leaf ->
+                            let _value = valueof tree C[i]
+                            value <- if _value.IsSome then ValueSome _value.Value else value
+                            destroy_node tree C[i]
                         | _ -> ()
                         
-                    destroy_node tree id
-                    destroy_node tree p
-                    let _leaf = leaf P value I L V1 V2 tree
-                    (children tree P)[int I] <- _leaf
+                    let _leaf = &(children tree P)[int I]
+                    _leaf <- NodeId(_leaf.s, _leaf.i, _leaf.l, Flag.Leaf)
+                    System.Buffers.ArrayPool<NodeId>.Shared.Return(children tree p)
+                    tree.targets[p.s] <- if value.IsSome then Value (value.Value) else Empty
                     _leaf
                 | _ -> id
             else
@@ -249,14 +255,17 @@ module OctreeSOA_2 =
                     let struct(V1,V2) = tree.cbounds[p.s]
                     let mutable value: ValueOption<'T> = v
                     for i in 0..7 do
-                        match (C[i].f, tree.targets[C[i].s]) with
-                        | Flag.Leaf, Value _v -> value <- ValueSome _v
+                        match C[i].f with
+                        | Flag.Leaf ->
+                            let _value = valueof tree C[i]
+                            value <- if _value.IsSome then ValueSome _value.Value else value
+                            destroy_node tree C[i]
                         | _ -> ()
 
-                    destroy_node tree p
-                    destroy_node tree P
-                    let _leaf = leaf P value I L V1 V2 tree
-                    (children tree P)[int I] <- _leaf
+                    let _leaf = &(children tree P)[int I]
+                    _leaf <- NodeId(_leaf.s, _leaf.i, _leaf.l, Flag.Leaf)
+                    System.Buffers.ArrayPool<NodeId>.Shared.Return(children tree p)
+                    tree.targets[p.s] <- if value.IsSome then Value (value.Value) else Empty
                     _leaf
                 | _ -> id
             else
@@ -548,6 +557,7 @@ module OctreeSOA_2 =
         | _ -> failwith "invalid flag"
 
 
+    // let (|Internal|External|Boundary|) (tree:Root<'T>) (id:NodeId) =
     let (|Internal|External|Boundary|) (pair:struct(NodeId*Root<'T>)) =
         let struct(id,tree) = pair
         let b = (iterate_node -1 0 0 tree id).f
@@ -558,33 +568,10 @@ module OctreeSOA_2 =
         let j = (iterate_node 0 0 1 tree id).f
         let u = id.f
 
-        // let b = if bi >= 0 then tree.flags[bi] else Flag.Empty
-        // let d = if di >= 0 then tree.flags[di] else Flag.Empty
-        // let k = if ki >= 0 then tree.flags[ki] else Flag.Empty
-        // let u = if id >= 0 then tree.flags[id] else Flag.Empty
-        // let f = if fi >= 0 then tree.flags[fi] else Flag.Empty
-        // let h = if hi >= 0 then tree.flags[hi] else Flag.Empty
-        // let j = if ji >= 0 then tree.flags[ji] else Flag.Empty
-        // try
-        //     let b = tree.flags[bi]
-        //     let d = tree.flags[di]
-        //     let k = tree.flags[ki]
-        //     let u = tree.flags[id]
-        //     let f = tree.flags[fi]
-        //     let h = tree.flags[hi]
-        //     let j = tree.flags[ji]
-
         match (b,d,u,f,h,k,j) with
         | _,_,Flag.Empty,_,_,_,_ -> External
         | Flag.Leaf, Flag.Leaf, Flag.Leaf, Flag.Leaf, Flag.Leaf, Flag.Leaf, Flag.Leaf -> Internal
         | _,_,_,_,_,_,_ -> Boundary
-        // with
-        // | _ -> External
-                 
-        // // match (b,d,u,f,h,k,j) with
-        // // | _,_,Empty,_,_,_,_ -> External
-        // // | Leaf _, Leaf _, Leaf _, Leaf _, Leaf _, Leaf _, Leaf _-> Internal
-        // // | _,_,_,_,_,_,_ -> Boundary
 
     
     let contains (p:Vector3) (tree:Root<'T>) id =
@@ -597,12 +584,12 @@ module OctreeSOA_2 =
 
     /// iterate all the leaf nodes of the tree
     /// The equivalent of a for-loop for the quadtree
-    let rec iter (fn:NodeId -> unit) tree (id:NodeId) =
+    let rec iter (fn:Root<'T> -> NodeId -> unit) tree (id:NodeId) =
         match id.f with
         | Flag.Node ->
             let c = children tree id
             for i in 0..7 do iter fn tree c[i]            
-        | Flag.Leaf -> fn id
+        | Flag.Leaf -> fn tree id
         | Flag.Empty -> ()
         | _ -> failwith "invalid flag"
 
@@ -624,7 +611,7 @@ module OctreeSOA_2 =
         member this.PutF(p:Vector3, value:voption<'T>) =
             let n = byte this.n
             let k = byte this.k
-            let id = traverse p n k this this.CachedNode.Value
+            let id = traverse p n k this this.CachedNode.Value 
             this.CachedNode.Value <- id
             match id.f with
             | Flag.Leaf ->
@@ -665,28 +652,50 @@ module OctreeSOA_2 =
                 | _ -> failwith "Item.get failed"         
 
         member this.GetCount() =
-            let mutable c = 0
-            count_rec &c this.root this
-            c
+            let mutable _c = 0
+            for t in this.targets do
+                match t with
+                | Children c -> ()
+                | _ -> _c <- _c + 1
+            _c
 
         member this.GetTotalCount() =
-            let mutable c = 0
-            count_total_rec &c this.root this
-            c
+            let mutable _c = 0
+            for t in this.targets do
+                _c <- _c + 1
+            _c
 
         member this.GetInternalCount() =
-            let mutable c = 0
-            let is_internal id = match struct(id,this) with | Internal -> c <- c + 1 | _ -> ()
-            iter is_internal this this.root
-            c
+            let mutable _c = 0
+            for t in this.targets do
+                match t with
+                | Children c ->
+                    for i in 0..7 do
+                        match c[i].f with
+                        | Flag.Leaf ->
+                            match struct(c[i],this) with
+                            | Internal -> _c <- _c + 1
+                            | _ -> ()
+                        | _ -> ()
+                | _ -> ()                        
+            _c
 
         member this.GetBoundaryCount() =
-            let mutable c = 0
-            let is_boundary id = match struct(id,this) with | Boundary -> c <- c + 1 | _ -> ()
-            iter is_boundary this this.root
-            c
+            let mutable _c = 0
+            for t in this.targets do
+                match t with
+                | Children c ->
+                    for i in 0..7 do
+                        match c[i].f with
+                        | Flag.Leaf ->
+                            match struct(c[i],this) with
+                            | Boundary -> _c <- _c + 1
+                            | _ -> ()
+                        | _ -> ()
+                | _ -> ()                        
+            _c
 
-        member this.Iter (fn:NodeId -> unit) = iter fn this this.root
+        member this.Iter (fn:Root<'T> -> NodeId -> unit) = iter fn this this.root
 
 
     let fill_scanlines N L (v_min:Vector3) (v_max:Vector3) (vertices:Span<float32>) (indices:Span<uint>) (bits:BitArray) =
@@ -771,8 +780,8 @@ module OctreeSOA_2 =
                 for k in 0..N-1 do
                     if stencil[i*N*N+j*N+k] then
                         let v = GridGeneration3D.to_cartesian_system i j k N v_min v_max
-                        // octree.PutF(v, ValueNone)
-                        octree.InsertF(v, ValueNone)
+                        octree.PutF(v, ValueNone)
+                        // octree.InsertF(v, ValueNone)
         octree       
 
     let ofSurface<'T> (N:int) L k (vertices:Span<float32>) (indices:Span<uint>) =

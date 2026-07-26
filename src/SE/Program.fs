@@ -1,31 +1,65 @@
-module SESample =
-    open SE.Core
-    open LibSErenderer
+open SE
+open SE.Core
+open SE.Spatial
+open SE.Renderer
+open SE.Plotting
+open System
+open System.Numerics
+open System.Runtime.InteropServices
+open System.Runtime.CompilerServices
 
-    // printfn "lib is found: %A" (System.IO.File.Exists libname)
-    
-    // ***********************************************************
-    // COPY libSDL3.so to local directory for the libSE-rendere.so to find it. It is dynamically linked !!!    
-    // ***********************************************************
+
+let [<Literal>] N = 500
+let [<Literal>] L = 10
+let [<Literal>] k = 5
+printfn "N: %d, k: %d" N k
+
+let path = "./bun_zipper.ply"
+let gltf = if path.Contains(".gltf") then Some (new GLTF.Deserializer(path)) else None
+
+// rotate mesh for testing
+let rotation =
+    Quaternion.CreateFromYawPitchRoll(2.f, 4.f, 3.f)
+    |> Matrix4x4.CreateFromQuaternion
+
+let mesh =
+    match gltf with
+    | _ when path.Contains(".txt") ->
+        RGeometry.load_txt_unmanaged (path, 0.55f, 0.55f, 0.55f, 1.0f)
+        |> RGeometry.tranform rotation
+        
+    | Some gltf ->
+        gltf.ReadMeshF(0)
+        |> RGeometry.tranform rotation
+        
+    | None ->
+        RGeometry.load_ply_unmanaged (path, 0.55f, 0.55f, 0.53f, 1.0f)
+        |> RGeometry.tranform rotation
 
 
-    let [<Literal>] vertex_len = 100
-    let positions = Array.zeroCreate<Position> vertex_len
-    let colors = Array.zeroCreate<Color> vertex_len
+printfn "Flag: %d" (sizeof<OctreeSOA_2.Flag>)
+printfn "NodeId:   %d" (sizeof<OctreeSOA_2.NodeId>)
+printfn "Data<'T>: %d" (sizeof<OctreeSOA_2.Data<double>>)
 
-    for i in 0..3.. vertex_len - 3 - 1 do
-        let n = float32 i
-        positions[i + 0] <- {X = n + 10f; Y = n + 10f / 2f; Z = n - 6f}
-        positions[i + 1] <- {X = n - 10f; Y = n  - 10f / 2f; Z = 6f}
-        positions[i + 2] <- {X = n + 10f; Y = n / 2f; Z = n + 6f}
+let tree_soa = OctreeSOA_2.ofSurface<double> N L k (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
+printfn "nodes.len:      %d" (tree_soa.GetCount())
+printfn "nodes.total:    %d" (tree_soa.GetTotalCount())
+printfn "internal.count: %d" (tree_soa.GetInternalCount())
+printfn "boundary.count: %d" (tree_soa.GetBoundaryCount())
+printfn "TREE_SOA\n\n"
 
-        colors[i + 0] <- {V = 0xAA00BBFFu}
-        colors[i + 1] <- {V = 0xAA00BBFFu}
-        colors[i + 2] <- {V = 0xAA00BBFFu}
 
-    init(16u, uint vertex_len, positions, colors)
-    update()
-    draw(uint vertex_len)
-    quit()
-    
+let tree = Octree.ofSurface<double> N L k (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
+printfn "nodes.len:      %d" (tree.GetCount())
+printfn "nodes.total:    %d" (tree.GetTotalCount())
+printfn "internal.count: %d" (tree.GetInternalCount())
+printfn "boundary.count: %d" (tree.GetBoundaryCount())
+printfn "TREE\n\n"
+
+
+mesh.vertices.Dispose()
+mesh.indices.Dispose()
+
+printfn "done!"
+
 

@@ -6,12 +6,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="rendererFS.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\SE-core\SE-core.fsproj" />
+    <ProjectReference Include="..\SE-renderer\SE-renderer.fsproj" />
   </ItemGroup>
 
 </Project>

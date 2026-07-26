@@ -12,9 +12,10 @@ open System.Runtime.InteropServices
 open System.Runtime.CompilerServices
 
 
-let [<Literal>] N = 250
+let [<Literal>] N = 500
 let [<Literal>] L = 10
-let [<Literal>] k = 3
+let [<Literal>] k = 5
+printfn "N: %d, k: %d" N k
 
 let path = System.Environment.GetCommandLineArgs()[2]
 let gltf = if path.Contains(".gltf") then Some (new GLTF.Deserializer(path)) else None
@@ -43,14 +44,16 @@ printfn "Flag: %d" (sizeof<OctreeSOA_2.Flag>)
 printfn "NodeId:   %d" (sizeof<OctreeSOA_2.NodeId>)
 printfn "Data<'T>: %d" (sizeof<OctreeSOA_2.Data<double>>)
 
-// #time
-// let tree_soa = OctreeSOA_2.ofSurface<double> N L k (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
-// // printfn "nodes.len:      %d" (tree_soa.GetCount())
-// // printfn "nodes.total:    %d" (tree_soa.GetTotalCount())
-// printfn "internal.count: %d" (tree_soa.GetInternalCount())
-// printfn "boundary.count: %d" (tree_soa.GetBoundaryCount())
-// #time
-// printfn "TREE_SOA\n\n"
+#time
+let tree_soa = OctreeSOA_2.ofSurface<double> N L k (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
+printfn "nodes.len:      %d" (tree_soa.GetCount())
+printfn "nodes.total:    %d" (tree_soa.GetTotalCount())
+printfn "internal.count: %d" (tree_soa.GetInternalCount())
+printfn "boundary.count: %d" (tree_soa.GetBoundaryCount())
+#time
+printfn "TREE_SOA\n\n"
+
+// exit 0
 
 #time
 let tree = Octree.ofSurface<double> N L k (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
