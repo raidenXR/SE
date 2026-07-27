@@ -1,5 +1,7 @@
-#r "../bin/Debug/net10.0/SE-core.dll"
-#r "../bin/Debug/net10.0/SE-renderer.dll"
+// #r "../bin/Debug/net10.0/SE-core.dll"
+// #r "../bin/Debug/net10.0/SE-renderer.dll"
+#r "../bin/Release/net10.0/SE-core.dll"
+#r "../bin/Release/net10.0/SE-renderer.dll"
 
 open SE
 open SE.Core
@@ -12,7 +14,7 @@ open System.Runtime.InteropServices
 open System.Runtime.CompilerServices
 
 
-let [<Literal>] N = 500
+let [<Literal>] N = 200
 let [<Literal>] L = 10
 let [<Literal>] k = 5
 printfn "N: %d, k: %d" N k
@@ -68,7 +70,7 @@ printfn "TREE\n\n"
 mesh.vertices.Dispose()
 mesh.indices.Dispose()
 
-exit 0
+// exit 0
 
 let points = ResizeArray<Vector3>(1000)
 let bounds = ResizeArray<Vector3>(1000)
@@ -83,13 +85,25 @@ let bounds = ResizeArray<Vector3>(1000)
 // #time
 
 // #time
-// tree_soa.Iter (fun id ->
-//     match struct(id,tree_soa) with
-//     | OctreeSOA_2.Internal -> points.Add(OctreeSOA_2.center tree_soa id)
-//     | OctreeSOA_2.Boundary -> bounds.Add(OctreeSOA_2.center tree_soa id)
-//     | _ -> ()
-// )
+tree_soa.Iter (fun tree_soa id ->
+    match struct(id,tree_soa) with
+    | OctreeSOA_2.Internal -> points.Add(OctreeSOA_2.center tree_soa id)
+    | OctreeSOA_2.Boundary -> bounds.Add(OctreeSOA_2.center tree_soa id)
+    | _ -> ()
+)
 // #time
+
+#time 
+for i in 1..5000 do
+    tree_soa.Iter (fun _ _ -> ())
+#time
+printfn "TREE_SOA\n\n"
+
+#time 
+for i in 1..5000 do
+    tree.Iter (fun _ -> ())
+#time
+printfn "TREE\n\n"
 
 let pts = points.ToArray()
 let bds = bounds.ToArray()

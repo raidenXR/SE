@@ -122,9 +122,9 @@ module OctreeSOA_2 =
         | Flag.Node ->
             match tree.targets[id.s] with
             | Children c -> c
-            | _ -> [||]
-            // | Value _ -> failwith "cannot take children from  Value"
-            // | Empty -> failwith "cannot take children from Empty"            
+            // | _ -> [||]
+            | Value _ -> failwith "cannot take children from  Value"
+            | Empty -> failwith "cannot take children from Empty"            
         | _ -> failwith "Must be leaf"
 
     let inline parent (tree:Root<'T>) (id:NodeId) =
@@ -180,28 +180,11 @@ module OctreeSOA_2 =
         | Empty -> ()
 
     let intersect (p:Vector3) (cell:struct(Vector3*Vector3)) =
-    // let intersect (p:Vector3) (v_min:Vector3) (v_max:Vector3) =
         let struct(v_min,v_max) = cell
         let x = v_min.X <= p.X && p.X <= v_max.X
         let y = v_min.Y <= p.Y && p.Y <= v_max.Y
         let z = v_min.Z <= p.Z && p.Z <= v_max.Z
         x && y && z
-
-    // let rec count_rec (j:byref<int>) (id:NodeId) (tree:Root<'T>) =
-    //     match tree.targets[id.s] with
-    //     | Children c -> for i in 0..7 do count_rec &j c[i] tree
-    //     | Value _ -> j <- j + 1
-    //     | Empty -> ()
-
-    // let rec count_total_rec (j:byref<int>) (id:NodeId) (tree:Root<'T>) =
-    //     match tree.targets[id.s] with 
-    //     | Children c ->
-    //         j <- j + 1
-    //         for i in 0..7 do count_total_rec &j c[i] tree
-    //     | Value _ ->
-    //         j <- j + 1        
-    //     | Empty -> ()
-
 
 
     let forall (fn: NodeId -> bool) (ids:NodeId[]) =
@@ -212,7 +195,7 @@ module OctreeSOA_2 =
             i <- i + 1
         b
 
-    // /// convert a Node to Leaf
+    /// convert a Node to Leaf
     let rec trim n k v (tree:Root<'T>) (id:NodeId) : NodeId =
         match id.f with 
         | Flag.Leaf when n = id.l ->
@@ -234,11 +217,11 @@ module OctreeSOA_2 =
                             destroy_node tree C[i]
                         | _ -> ()
                         
-                    let _leaf = &(children tree P)[int I]
-                    _leaf <- NodeId(_leaf.s, _leaf.i, _leaf.l, Flag.Leaf)
+                    let _this = &(children tree P)[int I]
+                    _this <- NodeId(_this.s, _this.i, _this.l, Flag.Leaf)
                     System.Buffers.ArrayPool<NodeId>.Shared.Return(children tree p)
                     tree.targets[p.s] <- if value.IsSome then Value (value.Value) else Empty
-                    _leaf
+                    _this
                 | _ -> id
             else
                 id
@@ -262,11 +245,11 @@ module OctreeSOA_2 =
                             destroy_node tree C[i]
                         | _ -> ()
 
-                    let _leaf = &(children tree P)[int I]
-                    _leaf <- NodeId(_leaf.s, _leaf.i, _leaf.l, Flag.Leaf)
+                    let _this = &(children tree P)[int I]
+                    _this <- NodeId(_this.s, _this.i, _this.l, Flag.Leaf)
                     System.Buffers.ArrayPool<NodeId>.Shared.Return(children tree p)
                     tree.targets[p.s] <- if value.IsSome then Value (value.Value) else Empty
-                    _leaf
+                    _this
                 | _ -> id
             else
                 id
@@ -277,56 +260,56 @@ module OctreeSOA_2 =
 
     /// convert a Leaf to Node
     let rec dense n (id:NodeId) (tree:Root<'T>) : NodeId =
-        let p = tree.parents[id.s]
         match id.f with
         | Flag.Leaf when id.l < n ->
+            let p = tree.parents[id.s]
+            let v = valueof tree id
             let i  = id.i
             let l  = id.l
             let struct(v1,v2) = tree.cbounds[id.s]
 
-            destroy_node tree id 
-            let _this = node p i l v1 v2 tree
-            let _children = (children tree _this).AsSpan(0,8)
-            let _value = valueof tree id
-            (children tree p)[int i] <- _this            
+            let _this = &(children tree p)[int id.i]
+            _this <- NodeId(_this.s, _this.i, _this.l, Flag.Node)
+            let c = System.Buffers.ArrayPool<NodeId>.Shared.Rent(8)
+            tree.targets[_this.s] <- Children c
 
             let o = v1 + (v2 - v1) / 2f
             do
                 let v_min = Vector3(v1.X, o.Y, v1.Z)            
                 let v_max = Vector3(o.X, v2.Y, o.Z) 
-                _children[0] <- leaf _this _value 0uy (l+1uy) v_min v_max tree
+                c[0] <- leaf _this v 0uy (l+1uy) v_min v_max tree
             do
                 let v_min = Vector3(o.X, o.Y, v1.Z)            
                 let v_max = Vector3(v2.X, v2.Y, o.Z) 
-                _children[1] <- leaf _this _value 1uy (l+1uy) v_min v_max tree
+                c[1] <- leaf _this v 1uy (l+1uy) v_min v_max tree
             do
                 let v_min = Vector3(v1.X, v1.Y, v1.Z)            
                 let v_max = Vector3(o.X, o.Y, o.Z) 
-                _children[2] <- leaf _this _value 2uy (l+1uy) v_min v_max tree
+                c[2] <- leaf _this v 2uy (l+1uy) v_min v_max tree
             do
                 let v_min = Vector3(o.X, v1.Y, v1.Z)            
                 let v_max = Vector3(v2.X, o.Y, o.Z) 
-                _children[3] <- leaf _this _value 3uy (l+1uy) v_min v_max tree
+                c[3] <- leaf _this v 3uy (l+1uy) v_min v_max tree
 
             do
                 let v_min = Vector3(v1.X, o.Y, o.Z)            
                 let v_max = Vector3(o.X, v2.Y, v2.Z) 
-                _children[4] <- leaf _this _value 4uy (l+1uy) v_min v_max tree
+                c[4] <- leaf _this v 4uy (l+1uy) v_min v_max tree
 
             do
                 let v_min = Vector3(o.X, v1.Y, o.Z)            
                 let v_max = Vector3(v2.X, v2.Y, v2.Z) 
-                _children[5] <- leaf _this _value 5uy (l+1uy) v_min v_max tree
+                c[5] <- leaf _this v 5uy (l+1uy) v_min v_max tree
 
             do
                 let v_min = Vector3(v1.X, v1.Y, o.Z)            
                 let v_max = Vector3(o.X, o.Y, v2.Z) 
-                _children[6] <- leaf _this _value 6uy (l+1uy) v_min v_max tree
+                c[6] <- leaf _this v 6uy (l+1uy) v_min v_max tree
 
             do
                 let v_min = Vector3(o.X, v1.Y, o.Z)            
                 let v_max = Vector3(v2.X, o.Y, v2.Z) 
-                _children[7] <- leaf _this _value 7uy (l+1uy) v_min v_max tree
+                c[7] <- leaf _this v 7uy (l+1uy) v_min v_max tree
 
             _this
 
@@ -696,6 +679,82 @@ module OctreeSOA_2 =
             _c
 
         member this.Iter (fn:Root<'T> -> NodeId -> unit) = iter fn this this.root
+
+        member this.IterParallel (num_threads:int) (fn:Root<'T> -> NodeId -> unit) =
+            let root = this.root
+            match num_threads with
+            | 1 ->
+                iter fn this root
+            | 2 ->
+                let c = children this root
+                let ts = [|
+                    Tasks.Task.Run (fun _ -> iter fn this c[0]; iter fn this c[1]; iter fn this c[2]; iter fn this c[3])
+                    Tasks.Task.Run (fun _ -> iter fn this c[4]; iter fn this c[5]; iter fn this c[6]; iter fn this c[7])
+                |]
+                Tasks.Task.WaitAll(ts)
+            | 3 ->
+                let c = children this root
+                let ts = [|
+                    Tasks.Task.Run (fun _ -> iter fn this c[0]; iter fn this c[1]; iter fn this c[2])
+                    Tasks.Task.Run (fun _ -> iter fn this c[3]; iter fn this c[4]; iter fn this c[5])
+                    Tasks.Task.Run (fun _ -> iter fn this c[6]; iter fn this c[7])                
+                |]
+                Tasks.Task.WaitAll(ts)            
+            | 4 ->
+                let c = children this root
+                let ts = [|
+                    Tasks.Task.Run (fun _ -> iter fn this c[0]; iter fn this c[1])
+                    Tasks.Task.Run (fun _ -> iter fn this c[2]; iter fn this c[3])
+                    Tasks.Task.Run (fun _ -> iter fn this c[4]; iter fn this c[5])
+                    Tasks.Task.Run (fun _ -> iter fn this c[6]; iter fn this c[7])
+                |]
+                Tasks.Task.WaitAll(ts)
+            | 5 ->
+                let c = children this root
+                let ts = [|
+                    Tasks.Task.Run (fun _ -> iter fn this c[0]; iter fn this c[1])
+                    Tasks.Task.Run (fun _ -> iter fn this c[2]; iter fn this c[3])
+                    Tasks.Task.Run (fun _ -> iter fn this c[4]; iter fn this c[5])
+                    Tasks.Task.Run (fun _ -> iter fn this c[6])
+                    Tasks.Task.Run (fun _ -> iter fn this c[7])
+                |]
+                Tasks.Task.WaitAll(ts)
+            | 6 ->
+                let c = children this root
+                let ts = [|
+                    Tasks.Task.Run (fun _ -> iter fn this c[0]; iter fn this c[1])
+                    Tasks.Task.Run (fun _ -> iter fn this c[2]; iter fn this c[3])
+                    Tasks.Task.Run (fun _ -> iter fn this c[4])
+                    Tasks.Task.Run (fun _ -> iter fn this c[5])
+                    Tasks.Task.Run (fun _ -> iter fn this c[6])
+                    Tasks.Task.Run (fun _ -> iter fn this c[7])
+                |]
+                Tasks.Task.WaitAll(ts)
+            | 7 ->
+                let c = children this root
+                let ts = [|
+                    Tasks.Task.Run (fun _ -> iter fn this c[0]; iter fn this c[1])
+                    Tasks.Task.Run (fun _ -> iter fn this c[2])
+                    Tasks.Task.Run (fun _ -> iter fn this c[3])
+                    Tasks.Task.Run (fun _ -> iter fn this c[4])
+                    Tasks.Task.Run (fun _ -> iter fn this c[5])
+                    Tasks.Task.Run (fun _ -> iter fn this c[6])
+                    Tasks.Task.Run (fun _ -> iter fn this c[7])
+                |]
+                Tasks.Task.WaitAll(ts)
+            | _ ->
+                let c = children this root
+                let ts = [|
+                    Tasks.Task.Run (fun _ -> iter fn this c[0])
+                    Tasks.Task.Run (fun _ -> iter fn this c[1])
+                    Tasks.Task.Run (fun _ -> iter fn this c[2])
+                    Tasks.Task.Run (fun _ -> iter fn this c[3])
+                    Tasks.Task.Run (fun _ -> iter fn this c[4])
+                    Tasks.Task.Run (fun _ -> iter fn this c[5])
+                    Tasks.Task.Run (fun _ -> iter fn this c[6])
+                    Tasks.Task.Run (fun _ -> iter fn this c[7])
+                |]
+                Tasks.Task.WaitAll(ts)
 
 
     let fill_scanlines N L (v_min:Vector3) (v_max:Vector3) (vertices:Span<float32>) (indices:Span<uint>) (bits:BitArray) =
