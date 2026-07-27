@@ -85,23 +85,48 @@ let bounds = ResizeArray<Vector3>(1000)
 // #time
 
 // #time
-tree_soa.Iter (fun tree_soa id ->
-    match struct(id,tree_soa) with
-    | OctreeSOA_2.Internal -> points.Add(OctreeSOA_2.center tree_soa id)
-    | OctreeSOA_2.Boundary -> bounds.Add(OctreeSOA_2.center tree_soa id)
+tree_soa.Iter (fun x t ->
+    match struct(x,t) with
+    | OctreeSOA_2.Internal -> points.Add(t.Center(x))
+    | OctreeSOA_2.Boundary -> bounds.Add(t.Center(x))
     | _ -> ()
 )
 // #time
 
 #time 
 for i in 1..5000 do
-    tree_soa.Iter (fun _ _ -> ())
+    tree_soa.IterParallel 4 (fun x t -> 
+        match struct(x,t) with
+        | OctreeSOA_2.Internal ->
+            let a = t[x, 0,0,0]
+            let b = t[x,-1,0,0]
+            let d = t[x,+1,0,0]
+            let dx = double (t.Center(d) - t.Center(b)).X
+            if t[d].IsSome then ignore (t[d].Value) else ()
+            if t[a].IsSome then ignore (t[d].Value) else ()
+            if t[b].IsSome then ignore (t[d].Value) else ()
+        | _ -> () 
+    )
 #time
 printfn "TREE_SOA\n\n"
 
 #time 
 for i in 1..5000 do
-    tree.Iter (fun _ -> ())
+    tree.IterParallel 4 (fun x ->
+        match x with
+        | Octree.Internal ->
+            let a = x[ 0,0,0]
+            let b = x[-1,0,0]
+            let d = x[+1,0,0]
+            let va = Octree.center a
+            let vb = Octree.center b
+            let vd = Octree.center d
+            let dx = double (vd - vb).X
+            ignore (tree[double vd.X, double vd.Y, double vd.Z])
+            ignore (tree[double va.X, double va.Y, double va.Z])
+            ignore (tree[double vb.X, double vb.Y, double vb.Z])
+        | _ -> ()
+    )
 #time
 printfn "TREE\n\n"
 

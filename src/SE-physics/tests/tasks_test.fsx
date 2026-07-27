@@ -35,13 +35,23 @@ parallel_for ents (fun _ -> sleep 5)
 #time 
 
 
-printfn "\n\tasks"
+printfn "\n\ntasks"
 #time 
 wait_all [|
     task_new (fun _ -> sleep 3000)
     task_new (fun _ -> sleep 3000)
     task_new (fun _ -> sleep 3000)
     task_new (fun _ -> sleep 3000)
+|]
+#time 
+
+printfn "\n\nTask.Run()"
+#time 
+wait_all [|
+    Task.Run (fun _ -> sleep 3000)
+    Task.Run (fun _ -> sleep 3000)
+    Task.Run (fun _ -> sleep 3000)
+    Task.Run (fun _ -> sleep 3000)
 |]
 #time 
 

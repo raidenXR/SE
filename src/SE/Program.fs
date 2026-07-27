@@ -9,7 +9,7 @@ open System.Runtime.InteropServices
 open System.Runtime.CompilerServices
 
 
-let [<Literal>] N = 500
+let [<Literal>] N = 300
 let [<Literal>] L = 10
 let [<Literal>] k = 5
 printfn "N: %d, k: %d" N k
@@ -60,6 +60,53 @@ printfn "TREE\n\n"
 mesh.vertices.Dispose()
 mesh.indices.Dispose()
 
-printfn "done!"
+let points = ResizeArray<Vector3>(1000)
+let bounds = ResizeArray<Vector3>(1000)
 
+// tree.Iter (fun node ->
+//     match node with
+//     | Octree.Internal -> points.Add(Octree.center node)
+//     | Octree.Boundary -> bounds.Add(Octree.center node)
+//     | _ -> ()
+// )
+
+tree_soa.Iter (fun x t ->
+    match struct(x,t) with
+    | OctreeSOA_2.Internal -> points.Add(t.Center(x))
+    | OctreeSOA_2.Boundary -> bounds.Add(t.Center(x))
+    | _ -> ()
+)
+
+for i in 1..5000 do
+    tree_soa.IterParallel 4 (fun x t -> 
+        match struct(x,t) with
+        | OctreeSOA_2.Internal ->
+            let a = t[x, 0,0,0]
+            let b = t[x,-1,0,0]
+            let d = t[x,+1,0,0]
+            let dx = double (t.Center(d) - t.Center(b)).X
+            if t[d].IsSome then ignore (t[d].Value) else ()
+            if t[a].IsSome then ignore (t[d].Value) else ()
+            if t[b].IsSome then ignore (t[d].Value) else ()
+        | _ -> () 
+    )
+printfn "TREE_SOA\n\n"
+
+for i in 1..5000 do
+    tree.IterParallel 4 (fun x ->
+        match x with
+        | Octree.Internal ->
+            let a = x[ 0,0,0]
+            let b = x[-1,0,0]
+            let d = x[+1,0,0]
+            let va = Octree.center a
+            let vb = Octree.center b
+            let vd = Octree.center d
+            let dx = double (vd - vb).X
+            ignore (tree[double vd.X, double vd.Y, double vd.Z])
+            ignore (tree[double va.X, double va.Y, double va.Z])
+            ignore (tree[double vb.X, double vb.Y, double vb.Z])
+        | _ -> ()
+    )
+printfn "TREE\n\n"
 
