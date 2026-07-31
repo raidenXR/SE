@@ -58,6 +58,7 @@ module OctreeSOA_2 =
                 is_disposed <- true
 
         [<DefaultValue>] val mutable parents: ResizeArray<NodeId>
+        [<DefaultValue>] val mutable nodes:   ResizeArray<NodeId>
         [<DefaultValue>] val mutable targets: ResizeArray<Data<'T>>
         [<DefaultValue>] val mutable cbounds: ResizeArray<struct(Vector3*Vector3)>
 
@@ -74,6 +75,7 @@ module OctreeSOA_2 =
         static member Create(N, k, v_min, v_max) =
             let x = new Root<'T>(N, k, v_min, v_max)
             x.parents <- buffer()
+            x.nodes   <- buffer()
             x.targets <- buffer()
             x.cbounds <- buffer()
             x.n <- log10 (float N) / log10 2. |> ceil |> int 
@@ -94,6 +96,7 @@ module OctreeSOA_2 =
         | true -> i.s
         | false -> 
             tree.parents.Add(NodeId.Empty)
+            tree.nodes.Add(NodeId.Empty)
             tree.targets.Add(Empty)
             tree.cbounds.Add(struct(Vector3.Zero,Vector3.Zero))
             let id = tree.count
@@ -140,14 +143,18 @@ module OctreeSOA_2 =
         tree.parents[id] <- p
         tree.targets[id] <- match v with | ValueSome t -> Value t | ValueNone -> Empty
         tree.cbounds[id] <- struct(v_min,v_max)
-        NodeId(id, i, l, Flag.Leaf)
+        let _this = NodeId(id, i, l, Flag.Leaf)
+        tree.nodes[id]   <- _this
+        _this
             
     let node p i l v_min v_max (tree:Root<'T>) =
         let id = create_node tree
         tree.parents[id] <- p
         tree.targets[id] <- Children (System.Buffers.ArrayPool<NodeId>.Shared.Rent(8))
         tree.cbounds[id] <- struct(v_min,v_max)            
-        NodeId(id, i, l, Flag.Node)
+        let _this = NodeId(id, i, l, Flag.Node)
+        tree.nodes[id] <- _this
+        _this
 
 
     let rec destroy_node (tree:Root<'T>) (id:NodeId) =
@@ -161,12 +168,14 @@ module OctreeSOA_2 =
                 (children tree p)[int id.i] <- NodeId.Empty
                 System.Buffers.ArrayPool<NodeId>.Shared.Return(c)
                 tree.N_Ids.Push(id)
+                tree.nodes[id.s] <- NodeId.Empty
                 
         | Flag.Leaf ->
             if id.l > 0uy then
                 let p = tree.parents[id.s]
                 (children tree p)[int id.i] <- NodeId.Empty                
                 tree.N_Ids.Push(id)
+                tree.nodes[id.s] <- NodeId.Empty
 
         | _ -> ()
 
@@ -220,6 +229,7 @@ module OctreeSOA_2 =
                         
                     let _this = &(children tree P)[int I]
                     _this <- NodeId(_this.s, _this.i, _this.l, Flag.Leaf)
+                    tree.nodes[_this.s] <- _this
                     System.Buffers.ArrayPool<NodeId>.Shared.Return(children tree p)
                     tree.targets[p.s] <- if value.IsSome then Value (value.Value) else Empty
                     _this
@@ -248,6 +258,7 @@ module OctreeSOA_2 =
 
                     let _this = &(children tree P)[int I]
                     _this <- NodeId(_this.s, _this.i, _this.l, Flag.Leaf)
+                    tree.nodes[_this.s] <- _this
                     System.Buffers.ArrayPool<NodeId>.Shared.Return(children tree p)
                     tree.targets[p.s] <- if value.IsSome then Value (value.Value) else Empty
                     _this
@@ -271,6 +282,7 @@ module OctreeSOA_2 =
 
             let _this = &(children tree p)[int id.i]
             _this <- NodeId(_this.s, _this.i, _this.l, Flag.Node)
+            tree.nodes[_this.s] <- _this
             let c = System.Buffers.ArrayPool<NodeId>.Shared.Rent(8)
             tree.targets[_this.s] <- Children c
 
@@ -552,10 +564,6 @@ module OctreeSOA_2 =
         let j = (iterate_node 0 0 1 tree id).f
         let u = id.f
 
-        // match (b,d,u,f,h,k,j) with
-        // | _,_,Flag.Empty,_,_,_,_ -> External
-        // | Flag.Leaf, Flag.Leaf, Flag.Leaf, Flag.Leaf, Flag.Leaf, Flag.Leaf, Flag.Leaf -> Internal
-        // | _,_,_,_,_,_,_ -> Boundary
         if u = Flag.Empty then
             External
         elif
@@ -573,17 +581,98 @@ module OctreeSOA_2 =
         | _ -> failwith "invalid flag"
 
 
+    // / INLINE AND CHANGE TO IMPERATIVE INSTEAD of recursion
+    // / iterate all the leaf nodes of the tree
+    // / The equivalent of a for-loop for the quadtree
+    // let rec iter (fn:NodeId -> Root<'T> -> unit) (tree:Root<'T>) (id:NodeId) =
+        // if id.f = Flag.Node || id.f = Flag.Leaf then
+        //     match tree.targets[id.s] with
+        //     | Children c -> for i in 0..7 do iter fn tree c[i]
+        //     | Value _ -> fn id tree
+        //     | _ -> ()
+        // match id.f with
+        // | Flag.Node ->
+        //     // let c = children tree id
+        //     let (Children c) = tree.targets[id.s]
+        //     for i in 0..7 do iter fn tree c[i]            
+        // | Flag.Leaf -> fn id tree
+        // | _ -> ()
+        // | Flag.Empty -> ()
+        // | _ -> failwith "invalid flag"
+
     /// iterate all the leaf nodes of the tree
     /// The equivalent of a for-loop for the quadtree
-    let rec iter (fn:NodeId -> Root<'T> -> unit) tree (id:NodeId) =
-        match id.f with
-        | Flag.Node ->
-            let c = children tree id
-            for i in 0..7 do iter fn tree c[i]            
-        | Flag.Leaf -> fn id tree
-        | Flag.Empty -> ()
-        | _ -> failwith "invalid flag"
+    let iter (fn:NodeId -> Root<'T> -> unit) (tree:Root<'T>) =
+        for n in tree.nodes do
+            match n.f with
+            | Flag.Leaf -> fn n tree
+            | _ -> ()                                        
 
+    let iter_slice (fn:NodeId -> Root<'T> -> unit) (tree:Root<'T>) a b =
+        let n = tree.nodes
+        for i in a..b-1 do
+            match n[i].f with
+            | Flag.Leaf -> fn n[i] tree
+            | _ -> ()                                        
+
+    let iter_parallel (fn:NodeId -> Root<'T> -> unit) num_threads (tree:Root<'T>) =
+        let ts = System.Buffers.ArrayPool<Task>.Shared.Rent(8)
+        let len = tree.nodes.Count / num_threads
+        let fin = tree.nodes.Count-1
+        
+        match num_threads with
+        | 2 ->
+            ts[0] <- Task.Run (fun _ -> iter_slice fn tree (0*len) (1*len))
+            ts[1] <- Task.Run (fun _ -> iter_slice fn tree (1*len) fin)
+            Task.WaitAll(ts.AsSpan(0,2))
+        | 3 ->
+            ts[0] <- Task.Run (fun _ -> iter_slice fn tree (0*len) (1*len))
+            ts[1] <- Task.Run (fun _ -> iter_slice fn tree (1*len) (2*len))
+            ts[2] <- Task.Run (fun _ -> iter_slice fn tree (2*len) fin)
+            Task.WaitAll(ts.AsSpan(0,3))
+        | 4 ->
+            ts[0] <- Task.Run (fun _ -> iter_slice fn tree (0*len) (1*len))
+            ts[1] <- Task.Run (fun _ -> iter_slice fn tree (1*len) (2*len))
+            ts[2] <- Task.Run (fun _ -> iter_slice fn tree (2*len) (3*len))
+            ts[3] <- Task.Run (fun _ -> iter_slice fn tree (3*len) fin)
+            Task.WaitAll(ts.AsSpan(0,4))
+        | 5 ->
+            ts[0] <- Task.Run (fun _ -> iter_slice fn tree (0*len) (1*len))
+            ts[1] <- Task.Run (fun _ -> iter_slice fn tree (1*len) (2*len))
+            ts[2] <- Task.Run (fun _ -> iter_slice fn tree (2*len) (3*len))
+            ts[3] <- Task.Run (fun _ -> iter_slice fn tree (3*len) (4*len))
+            ts[4] <- Task.Run (fun _ -> iter_slice fn tree (4*len) fin)
+            Task.WaitAll(ts.AsSpan(0,5))
+        | 6 ->
+            ts[0] <- Task.Run (fun _ -> iter_slice fn tree (0*len) (1*len))
+            ts[1] <- Task.Run (fun _ -> iter_slice fn tree (1*len) (2*len))
+            ts[2] <- Task.Run (fun _ -> iter_slice fn tree (2*len) (3*len))
+            ts[3] <- Task.Run (fun _ -> iter_slice fn tree (3*len) (4*len))
+            ts[4] <- Task.Run (fun _ -> iter_slice fn tree (4*len) (5*len))
+            ts[5] <- Task.Run (fun _ -> iter_slice fn tree (5*len) fin)
+            Task.WaitAll(ts.AsSpan(0,6))
+        | 7 ->
+            ts[0] <- Task.Run (fun _ -> iter_slice fn tree (0*len) (1*len))
+            ts[1] <- Task.Run (fun _ -> iter_slice fn tree (1*len) (2*len))
+            ts[2] <- Task.Run (fun _ -> iter_slice fn tree (2*len) (3*len))
+            ts[3] <- Task.Run (fun _ -> iter_slice fn tree (3*len) (4*len))
+            ts[4] <- Task.Run (fun _ -> iter_slice fn tree (4*len) (5*len))
+            ts[5] <- Task.Run (fun _ -> iter_slice fn tree (5*len) (6*len))
+            ts[6] <- Task.Run (fun _ -> iter_slice fn tree (6*len) fin)
+            Task.WaitAll(ts.AsSpan(0,7))
+        | _ -> 
+            ts[0] <- Task.Run (fun _ -> iter_slice fn tree (0*len) (1*len))
+            ts[1] <- Task.Run (fun _ -> iter_slice fn tree (1*len) (2*len))
+            ts[2] <- Task.Run (fun _ -> iter_slice fn tree (2*len) (3*len))
+            ts[3] <- Task.Run (fun _ -> iter_slice fn tree (3*len) (4*len))
+            ts[4] <- Task.Run (fun _ -> iter_slice fn tree (4*len) (5*len))
+            ts[5] <- Task.Run (fun _ -> iter_slice fn tree (5*len) (6*len))
+            ts[5] <- Task.Run (fun _ -> iter_slice fn tree (6*len) (7*len))
+            ts[6] <- Task.Run (fun _ -> iter_slice fn tree (7*len) fin)
+            Task.WaitAll(ts.AsSpan(0,8))
+
+        System.Buffers.ArrayPool<Task>.Shared.Return(ts, true)
+            
 
 
     type Root<'T> with
@@ -662,113 +751,145 @@ module OctreeSOA_2 =
 
         member this.GetCount() =
             let mutable _c = 0
-            for t in this.targets do
-                match t with
-                | Children c -> ()
-                | _ -> _c <- _c + 1
+            for n in this.nodes do
+                match n.f with
+                | Flag.Leaf -> _c <- _c + 1
+                | _ -> ()
+            // for t in this.targets do
+            //     match t with
+            //     | Children c ->
+            //         for i in 0..7 do
+            //             match c[i].f with
+            //             | Flag.Leaf -> _c <- _c + 1
+            //             | _ -> ()
+            //     | _ -> ()                        
             _c
 
         member this.GetTotalCount() =
-            let mutable _c = 0
-            for t in this.targets do
-                _c <- _c + 1
+            let mutable _c = 0    // include the root node
+            for n in this.nodes do
+                match n.f with
+                | Flag.Leaf | Flag.Node -> _c <- _c + 1
+                | _ -> ()
+            // for t in this.targets do
+            //     match t with
+            //     | Children c ->
+            //         for i in 0..7 do
+            //             match c[i].f with
+            //             | Flag.Leaf | Flag.Node -> _c <- _c + 1
+            //             | _ -> ()
+            //     | _ -> ()                        
             _c
 
         member this.GetInternalCount() =
             let mutable _c = 0
-            for t in this.targets do
-                match t with
-                | Children c ->
-                    for i in 0..7 do
-                        match c[i].f with
-                        | Flag.Leaf ->
-                            match struct(c[i],this) with
-                            | Internal -> _c <- _c + 1
-                            | _ -> ()
-                        | _ -> ()
-                | _ -> ()                        
+            // for t in this.targets do
+            //     match t with
+            //     | Children c ->
+            //         for i in 0..7 do
+            //             match c[i].f with
+            //             | Flag.Leaf ->
+            //                 match struct(c[i],this) with
+            //                 | Internal -> _c <- _c + 1
+            //                 | _ -> ()
+            //             | _ -> ()
+            //     | _ -> ()                        
+            for n in this.nodes do
+                if n.f = Flag.Leaf then
+                    match struct(n,this) with
+                    | Internal -> _c <- _c + 1
+                    | _ -> ()
             _c
 
         member this.GetBoundaryCount() =
             let mutable _c = 0
-            for t in this.targets do
-                match t with
-                | Children c ->
-                    for i in 0..7 do
-                        match c[i].f with
-                        | Flag.Leaf ->
-                            match struct(c[i],this) with
-                            | Boundary -> _c <- _c + 1
-                            | _ -> ()
-                        | _ -> ()
-                | _ -> ()                        
+            // for t in this.targets do
+            //     match t with
+            //     | Children c ->
+            //         for i in 0..7 do
+            //             match c[i].f with
+            //             | Flag.Leaf ->
+            //                 match struct(c[i],this) with
+            //                 | Boundary -> _c <- _c + 1
+            //                 | _ -> ()
+            //             | _ -> ()
+            //     | _ -> ()                        
+            for n in this.nodes do
+                if n.f = Flag.Leaf then
+                    match struct(n,this) with
+                    | Boundary -> _c <- _c + 1
+                    | _ -> ()
             _c
 
-        member this.Iter (fn:NodeId -> Root<'T> -> unit) = iter fn this this.root
+        // member this.Iter (fn:NodeId -> Root<'T> -> unit) = iter fn this this.root
+        member this.Iter (fn:NodeId -> Root<'T> -> unit) = iter fn this
+        
+        member this.IterParallel num_threads (fn:NodeId -> Root<'T> -> unit) =
+            iter_parallel fn num_threads this
 
-        member this.IterParallel (num_threads:int) (fn:NodeId -> Root<'T> -> unit) =
-            let root = this.root
-            let ts = System.Buffers.ArrayPool<Task>.Shared.Rent(8)
-            match num_threads with
-            | 1 ->
-                iter fn this root
-            | 2 ->
-                let c = children this root
-                ts[0] <- Task.Run (fun _ -> iter fn this c[0]; iter fn this c[1]; iter fn this c[2]; iter fn this c[3])
-                ts[1] <- Task.Run (fun _ -> iter fn this c[4]; iter fn this c[5]; iter fn this c[6]; iter fn this c[7])
-                Task.WaitAll(ts.AsSpan(0,2))
-            | 3 ->
-                let c = children this root
-                ts[0] <- Task.Run (fun _ -> iter fn this c[0]; iter fn this c[1]; iter fn this c[2])
-                ts[1] <- Task.Run (fun _ -> iter fn this c[3]; iter fn this c[4]; iter fn this c[5])
-                ts[2] <- Task.Run (fun _ -> iter fn this c[6]; iter fn this c[7])                
-                Task.WaitAll(ts.AsSpan(0,3))
-            | 4 ->
-                let c = children this root
-                ts[0] <- Task.Run (fun _ -> iter fn this c[0]; iter fn this c[1])
-                ts[1] <- Task.Run (fun _ -> iter fn this c[2]; iter fn this c[3])
-                ts[2] <- Task.Run (fun _ -> iter fn this c[4]; iter fn this c[5])
-                ts[3] <- Task.Run (fun _ -> iter fn this c[6]; iter fn this c[7])
-                Task.WaitAll(ts.AsSpan(0,4))
-            | 5 ->
-                let c = children this root
-                ts[0] <- Task.Run (fun _ -> iter fn this c[0]; iter fn this c[1])
-                ts[1] <- Task.Run (fun _ -> iter fn this c[2]; iter fn this c[3])
-                ts[2] <- Task.Run (fun _ -> iter fn this c[4]; iter fn this c[5])
-                ts[3] <- Task.Run (fun _ -> iter fn this c[6])
-                ts[4] <- Task.Run (fun _ -> iter fn this c[7])
-                Task.WaitAll(ts.AsSpan(0,5))
-            | 6 ->
-                let c = children this root
-                ts[0] <- Task.Run (fun _ -> iter fn this c[0]; iter fn this c[1])
-                ts[1] <- Task.Run (fun _ -> iter fn this c[2]; iter fn this c[3])
-                ts[2] <- Task.Run (fun _ -> iter fn this c[4])
-                ts[3] <- Task.Run (fun _ -> iter fn this c[5])
-                ts[4] <- Task.Run (fun _ -> iter fn this c[6])
-                ts[5] <- Task.Run (fun _ -> iter fn this c[7])
-                Task.WaitAll(ts.AsSpan(0,6))
-            | 7 ->
-                let c = children this root
-                ts[0] <- Task.Run (fun _ -> iter fn this c[0]; iter fn this c[1])
-                ts[1] <- Task.Run (fun _ -> iter fn this c[2])
-                ts[2] <- Task.Run (fun _ -> iter fn this c[3])
-                ts[3] <- Task.Run (fun _ -> iter fn this c[4])
-                ts[4] <- Task.Run (fun _ -> iter fn this c[5])
-                ts[5] <- Task.Run (fun _ -> iter fn this c[6])
-                ts[6] <- Task.Run (fun _ -> iter fn this c[7])
-                Task.WaitAll(ts.AsSpan(0,7))
-            | _ ->
-                let c = children this root
-                ts[0] <- Task.Run (fun _ -> iter fn this c[0])
-                ts[1] <- Task.Run (fun _ -> iter fn this c[1])
-                ts[2] <- Task.Run (fun _ -> iter fn this c[2])
-                ts[3] <- Task.Run (fun _ -> iter fn this c[3])
-                ts[4] <- Task.Run (fun _ -> iter fn this c[4])
-                ts[5] <- Task.Run (fun _ -> iter fn this c[5])
-                ts[6] <- Task.Run (fun _ -> iter fn this c[6])
-                ts[7] <- Task.Run (fun _ -> iter fn this c[7])
-                Task.WaitAll(ts.AsSpan(0,8))
-            System.Buffers.ArrayPool<Task>.Shared.Return(ts, true)
+        // member this.IterParallel (num_threads:int) (fn:NodeId -> Root<'T> -> unit) =
+        //     let root = this.root
+        //     let ts = System.Buffers.ArrayPool<Task>.Shared.Rent(8)
+        //     match num_threads with
+        //     | 1 ->
+        //         iter fn this root
+        //     | 2 ->
+        //         let c = children this root
+        //         ts[0] <- Task.Run (fun _ -> iter fn this c[0]; iter fn this c[1]; iter fn this c[2]; iter fn this c[3])
+        //         ts[1] <- Task.Run (fun _ -> iter fn this c[4]; iter fn this c[5]; iter fn this c[6]; iter fn this c[7])
+        //         Task.WaitAll(ts.AsSpan(0,2))
+        //     | 3 ->
+        //         let c = children this root
+        //         ts[0] <- Task.Run (fun _ -> iter fn this c[0]; iter fn this c[1]; iter fn this c[2])
+        //         ts[1] <- Task.Run (fun _ -> iter fn this c[3]; iter fn this c[4]; iter fn this c[5])
+        //         ts[2] <- Task.Run (fun _ -> iter fn this c[6]; iter fn this c[7])                
+        //         Task.WaitAll(ts.AsSpan(0,3))
+        //     | 4 ->
+        //         let c = children this root
+        //         ts[0] <- Task.Run (fun _ -> iter fn this c[0]; iter fn this c[1])
+        //         ts[1] <- Task.Run (fun _ -> iter fn this c[2]; iter fn this c[3])
+        //         ts[2] <- Task.Run (fun _ -> iter fn this c[4]; iter fn this c[5])
+        //         ts[3] <- Task.Run (fun _ -> iter fn this c[6]; iter fn this c[7])
+        //         Task.WaitAll(ts.AsSpan(0,4))
+        //     | 5 ->
+        //         let c = children this root
+        //         ts[0] <- Task.Run (fun _ -> iter fn this c[0]; iter fn this c[1])
+        //         ts[1] <- Task.Run (fun _ -> iter fn this c[2]; iter fn this c[3])
+        //         ts[2] <- Task.Run (fun _ -> iter fn this c[4]; iter fn this c[5])
+        //         ts[3] <- Task.Run (fun _ -> iter fn this c[6])
+        //         ts[4] <- Task.Run (fun _ -> iter fn this c[7])
+        //         Task.WaitAll(ts.AsSpan(0,5))
+        //     | 6 ->
+        //         let c = children this root
+        //         ts[0] <- Task.Run (fun _ -> iter fn this c[0]; iter fn this c[1])
+        //         ts[1] <- Task.Run (fun _ -> iter fn this c[2]; iter fn this c[3])
+        //         ts[2] <- Task.Run (fun _ -> iter fn this c[4])
+        //         ts[3] <- Task.Run (fun _ -> iter fn this c[5])
+        //         ts[4] <- Task.Run (fun _ -> iter fn this c[6])
+        //         ts[5] <- Task.Run (fun _ -> iter fn this c[7])
+        //         Task.WaitAll(ts.AsSpan(0,6))
+        //     | 7 ->
+        //         let c = children this root
+        //         ts[0] <- Task.Run (fun _ -> iter fn this c[0]; iter fn this c[1])
+        //         ts[1] <- Task.Run (fun _ -> iter fn this c[2])
+        //         ts[2] <- Task.Run (fun _ -> iter fn this c[3])
+        //         ts[3] <- Task.Run (fun _ -> iter fn this c[4])
+        //         ts[4] <- Task.Run (fun _ -> iter fn this c[5])
+        //         ts[5] <- Task.Run (fun _ -> iter fn this c[6])
+        //         ts[6] <- Task.Run (fun _ -> iter fn this c[7])
+        //         Task.WaitAll(ts.AsSpan(0,7))
+        //     | _ ->
+        //         let c = children this root
+        //         ts[0] <- Task.Run (fun _ -> iter fn this c[0])
+        //         ts[1] <- Task.Run (fun _ -> iter fn this c[1])
+        //         ts[2] <- Task.Run (fun _ -> iter fn this c[2])
+        //         ts[3] <- Task.Run (fun _ -> iter fn this c[3])
+        //         ts[4] <- Task.Run (fun _ -> iter fn this c[4])
+        //         ts[5] <- Task.Run (fun _ -> iter fn this c[5])
+        //         ts[6] <- Task.Run (fun _ -> iter fn this c[6])
+        //         ts[7] <- Task.Run (fun _ -> iter fn this c[7])
+        //         Task.WaitAll(ts.AsSpan(0,8))
+        //     System.Buffers.ArrayPool<Task>.Shared.Return(ts, true)
 
 
     let fill_scanlines N L (v_min:Vector3) (v_max:Vector3) (vertices:Span<float32>) (indices:Span<uint>) (bits:BitArray) =

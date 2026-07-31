@@ -14,10 +14,11 @@ open System.Runtime.InteropServices
 open System.Runtime.CompilerServices
 
 
-let [<Literal>] N = 200
+let [<Literal>] N = 300
 let [<Literal>] L = 10
-let [<Literal>] k = 5
-printfn "N: %d, k: %d" N k
+let [<Literal>] k = 4
+let [<Literal>] max_iter = 300
+printfn "N: %d, k: %d, max_iter: %d" N k max_iter
 
 let path = System.Environment.GetCommandLineArgs()[2]
 let gltf = if path.Contains(".gltf") then Some (new GLTF.Deserializer(path)) else None
@@ -53,7 +54,8 @@ printfn "nodes.total:    %d" (tree_soa.GetTotalCount())
 printfn "internal.count: %d" (tree_soa.GetInternalCount())
 printfn "boundary.count: %d" (tree_soa.GetBoundaryCount())
 #time
-printfn "TREE_SOA\n\n"
+printfn "TREE_SOA\n"
+printfn "SOA: count: %d, nodes.Count: %d\n\n" tree_soa.count tree_soa.nodes.Count
 
 // exit 0
 
@@ -94,41 +96,61 @@ tree_soa.Iter (fun x t ->
 // #time
 
 #time 
-for i in 1..5000 do
-    tree_soa.IterParallel 4 (fun x t -> 
-        match struct(x,t) with
-        | OctreeSOA_2.Internal ->
-            let a = t[x, 0,0,0]
-            let b = t[x,-1,0,0]
-            let d = t[x,+1,0,0]
-            let dx = double (t.Center(d) - t.Center(b)).X
-            if t[d].IsSome then ignore (t[d].Value) else ()
-            if t[a].IsSome then ignore (t[d].Value) else ()
-            if t[b].IsSome then ignore (t[d].Value) else ()
-        | _ -> () 
+for i in 1..max_iter do
+    tree_soa.Iter (fun u t -> 
+        // let u  = t[u, 0,0,0]
+        let i  = t[u,-1,0,0]
+        let i' = t[u,+1,0,0]
+        let j  = t[u,0,-1,0]
+        let j' = t[u,0,+1,0]
+        let l  = t[u,0,0,-1]
+        let l' = t[u,0,0,+1]
+        
+        if (u.f &&& i.f &&& i'.f &&& j'.f &&& j.f &&& l.f &&& l'.f) = OctreeSOA_2.Flag.Leaf then
+            let dx = double (t.Center(i') - t.Center(i)).X
+            let dy = double (t.Center(j') - t.Center(j)).Y
+            let dz = double (t.Center(l') - t.Center(l)).Z
+            ignore t[u]
+            ignore t[i]
+            ignore t[j]
+            ignore t[l]
     )
 #time
 printfn "TREE_SOA\n\n"
 
+let pos = Octree.center
+let valueof = Octree.valueof
+let (!) = function | Octree.Leaf (_,v,_,_,_,_) -> v.Value | _ -> failwith "MUst be Leaf"
+
+let inline is_iternal a b c d e f g =
+    match (a,b,c,d,e,f,g) with
+    | Octree.Leaf _, Octree.Leaf _, Octree.Leaf _, Octree.Leaf _, Octree.Leaf _, Octree.Leaf _, Octree.Leaf _ -> true 
+    | _ -> false
+
 #time 
-for i in 1..5000 do
-    tree.IterParallel 4 (fun x ->
-        match x with
-        | Octree.Internal ->
-            let a = x[ 0,0,0]
-            let b = x[-1,0,0]
-            let d = x[+1,0,0]
-            let va = Octree.center a
-            let vb = Octree.center b
-            let vd = Octree.center d
-            let dx = double (vd - vb).X
-            ignore (tree[double vd.X, double vd.Y, double vd.Z])
-            ignore (tree[double va.X, double va.Y, double va.Z])
-            ignore (tree[double vb.X, double vb.Y, double vb.Z])
-        | _ -> ()
+for i in 1..max_iter do
+    tree.Iter (fun u ->
+        // let u  = x[ 0,0,0]
+        let i  = u[-1,0,0]
+        let i' = u[+1,0,0]
+        let j  = u[0,-1,0]
+        let j' = u[0,+1,0]
+        let l  = u[0,0,-1]
+        let l' = u[0,0,+1]
+        
+        if is_iternal u i i' j j' l l' then
+            let dx = double ((pos i') - (pos i)).X
+            let dy = double ((pos j') - (pos j)).Y
+            let dz = double ((pos l') - (pos l)).Z
+            ignore !u
+            ignore !i
+            ignore !j
+            ignore !l
     )
 #time
 printfn "TREE\n\n"
+
+exit 0
 
 let pts = points.ToArray()
 let bds = bounds.ToArray()
@@ -139,8 +161,6 @@ let zs = pts |> Array.map (fun v -> double v.Z)
 let xb = bds |> Array.map (fun v -> double v.X)
 let yb = bds |> Array.map (fun v -> double v.Y)
 let zb = bds |> Array.map (fun v -> double v.Z)
-
-// exit 0
 
 Gnuplot()
 |> Gnuplot.datablockXYZ xs ys zs "points"

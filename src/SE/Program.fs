@@ -12,7 +12,8 @@ open System.Runtime.CompilerServices
 let [<Literal>] N = 300
 let [<Literal>] L = 10
 let [<Literal>] k = 5
-printfn "N: %d, k: %d" N k
+let [<Literal>] max_iter = 200
+printfn "N: %d, k: %d, max_iter: %d" N k max_iter
 
 let path = "./bun_zipper.ply"
 let gltf = if path.Contains(".gltf") then Some (new GLTF.Deserializer(path)) else None
@@ -77,8 +78,8 @@ tree_soa.Iter (fun x t ->
     | _ -> ()
 )
 
-for i in 1..5000 do
-    tree_soa.IterParallel 4 (fun x t -> 
+for i in 1..max_iter do
+    tree_soa.Iter (fun x t -> 
         match struct(x,t) with
         | OctreeSOA_2.Internal ->
             let a = t[x, 0,0,0]
@@ -92,8 +93,8 @@ for i in 1..5000 do
     )
 printfn "TREE_SOA\n\n"
 
-for i in 1..5000 do
-    tree.IterParallel 4 (fun x ->
+for i in 1..max_iter do
+    tree.Iter (fun x ->
         match x with
         | Octree.Internal ->
             let a = x[ 0,0,0]
