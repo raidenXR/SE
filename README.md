@@ -2,29 +2,23 @@ this is SE (Simulation Engine - framework) project. The concept is of some equiv
 targeted for writing simulations. The project aims to be a framework built with F#, while using an OpenGL  
 renderer, built with OpenTK.   
 
-It is still in early stage. (Very early stage!!)   
-
 It can load and render .gltf files from FreeCAD or other CAD software.   
 Then by leveraging some simplistic ECS (Entity-Component-System) design simulations on these   
-these geometries.
+these geometries.   
+
+You can find such an example at `src/SE-physics/tests/combustion_3d_test.fsx`.    
 
 Each directory contains a `.fsproj`, alongside a `tests/` dir containing examples for that `.fsprj`.   
 There is also some `scripts/` directory with scripts for formating and deserializing into text   
-gltf -bin files. And also some simple `Unnamed-Body.gltf` object for helping with development of   
-`src/gltfoader.fs` and rendering.
+gltf -bin files. There is also a couple of 3d geometries in `models/` directory to help testing during the development.    
 
-
-TODO: At some point, I will try to implement some basic algorithms for grid generation, solvers, etc    
-as a physics engine for the project, to make working with the imported gltf CAD files easier.
-
-**UPDATE**: The `SE-core/src` updated and now it contains Quadtree and Octree implementations for descretizing      
+**UPDATE**: The `SE-core/src` updated and now it contains *Quadtree* and *Octree* implementations for descretizing      
 geometries, and solving PDEs on them. Take a look at `tests/` directories for examples of the API.   
 
+**WARNING**: many examples use *Gnuplot* for plotting, so in order to run these scripts, make sure Gnuplot is installed in device and set to `$PATH`.
 
 - `SE-renderer/tests/octree_test.fsx` (for octree example)
 - `SE-core/tests/animation_test.fsx` (for quadtree example)
-
-**WARNING:** failed **-totaly broken-** raycast algorithm, TODO: FIX IT!!!
 
 **UPDATE:** with latest PR some improvements were made, both in parallelization     
             and various other fixes. For discretization if `Octree.ofSurface<'T> mesh` has issues    
@@ -33,9 +27,22 @@ geometries, and solving PDEs on them. Take a look at `tests/` directories for ex
             is before creating the Octree, to transform the mesh with `SE.Renderer.RGeometry.transform`    
             A simple slight rotation will do.    
 
+
+
+### Quadtree Discretization
+![swall_pde](images/Laplace_swallow_volume.gif)
 (to compile a gif from a series of images use the cmd)
 ```
 convert -delay 20 -loop 0 *.png swallow_volume.gif  
 ```
 
-![swall_pde](images/Laplace_swallow_volume.gif)
+### Octree Discretization
+these are some examples of the Octree-descritization on the 3d geometries in `models/` directory:    
+(black points are boundary points, while red points are internal)   
+
+|    |           |
+|----------|:-------------:|
+| ![skull_octree](images/skull_octree.png) |  ![car_octree](images/car_octree.png) |
+| ![pipe_octree](images/pipe_octree.png) |    ![hollow_octree](images/hollow_octree.png)  |
+
+

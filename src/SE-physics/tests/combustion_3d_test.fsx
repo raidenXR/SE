@@ -1,10 +1,10 @@
 #nowarn "632"
-// #load "../../SE-core/src/unsafe.fs"
-// #load "../../SE-core/src/core.fs"
-#r "../bin/Debug/net10.0/SE-core.dll"
-#r "../bin/Debug/net10.0/SE-renderer.dll"
-#r "../bin/Debug/net10.0/SE-physics.dll"
-// #load "../src/physics.fs"
+// #r "../bin/Debug/net10.0/SE-core.dll"
+// #r "../bin/Debug/net10.0/SE-renderer.dll"
+// #r "../bin/Debug/net10.0/SE-physics.dll"
+#r "../bin/Release/net10.0/SE-core.dll"
+#r "../bin/Release/net10.0/SE-renderer.dll"
+#r "../bin/Release/net10.0/SE-physics.dll"
 
 open SE
 open SE.Core
@@ -54,12 +54,16 @@ let inline center node =
     let p = Octree.center node
     (double p.X, double p.Y, double p.Z)
 
+let inline pos node = Octree.center node
+
+let inline (!) u = Octree.valueof u
+
 // let relate_w cv value s = relate cv s value
 
 let [<Literal>] N = 50
 let [<Literal>] L = 10
 let [<Literal>] k = 1
-let [<Literal>] dt = 0.1<s>
+let [<Literal>] dt = 10.0<s>
 
 let tree = 
     let mesh = RGeometry.load_ply_unmanaged("../bun_zipper.ply", 0.55f, 0.55f, 0.53f, 1.f)
@@ -143,11 +147,23 @@ system OnLoad [] (fun _ ->
                 let p  = v_min + (v_max + v_min) / 2.f
                 let cv = entity_tagged "CV"
                             |> Entity.add<ControlVolume> |> Entity.add<Time'>
-                            |> set {T = 300.0<K>} |> set {R = 8.314<J/mol K>} |> set p
+                            |> set {T = 100.0<K>} |> set {R = 8.314<J/mol K>} |> set p
                             |> set {vol = abs(double(dv.X * dv.Y * dv.Z)) * 3.<m^3>}
                 v.Value <- ValueSome cv
             | _ -> ()
         )
+
+        let T = Components.get<Temperature>()
+        // copy old tree
+        tree.IterParallel 2 (fun node ->
+            match node with
+            | Octree.Internal | Octree.Boundary ->
+                let (x,y,z) = center node
+                let t  = tree[x,y,z].Value
+                let t' = tree'[x,y,z].Value
+                T[t'] <- T[t]
+            | _ -> ()
+        )        
 )
 
 // // compute chemical kinetics
@@ -211,32 +227,97 @@ system OnUpdate [typeof<Time>; typeof<ControlVolume>] (fun q ->
 system OnUpdate [typeof<Time'>; typeof<ControlVolume>] (fun _ ->
     let T = Components.get<Temperature>()    
 
-    tree'.IterParallel 4 (fun node ->
-        match node with
+    tree'.IterParallel 2 (fun u ->
+        match u with
         | Octree.Internal ->
-            let (x,y,z) = center node
-            let t  = tree[x,y,z].Value
+            let (x,y,z) = center u
+            let t  = !u
             let t' = tree'[x,y,z].Value
-            let dT = 1.<K/s> * Numerics.derivative2 node (fun n -> double T[(Octree.valueof n)].T)
-            let a = 2700.0  // temp transfer capacity coefficient whatever
-            T[t'] <- {T = dt * a * dT + T[t].T}
+            // let u  = tree.CurrentNode.Value
+            let i  = u[-1,0,0]
+            let i' = u[+1,0,0]
+            let j  = u[0,-1,0]
+            let j' = u[0,+1,0]
+            let l  = u[0,0,-1]
+            let l' = u[0,0,+1]
+
+            let dx1 = double (pos u - pos i).X
+            let dy1 = double (pos u - pos j).Y
+            let dz1 = double (pos u - pos l).Z
+            
+            let dx2 = double (pos i' - pos u).X
+            let dy2 = double (pos j' - pos u).Y
+            let dz2 = double (pos l' - pos u).Z
+
+            T[0u] <- 1.3*T[1u] + T[2u]*4.
+
+            // let θx = ((dx2 / (dx1 * (dx1 + dx2))) * T[!i].T) +
+            //          (((dx2 - dx1) / (dx1 * dx2)) * T[!u].T) -
+            //          ((dx1 / (dx2 * (dx1 + dx2))) * T[!i'].T)
+            
+            // let θy = ((dy2 / (dy1 * (dy1 + dy2))) * T[!j].T) +
+            //          (((dy2 - dy1) / (dy1 * dy2)) * T[!u].T) -
+            //          ((dy1 / (dy2 * (dy1 + dy2))) * T[!j'].T)
+            
+            // let θz = ((dz2 / (dz1 * (dz1 + dz2))) * T[!l].T) +
+            //          (((dz2 - dz1) / (dz1 * dz2)) * T[!u].T) -
+            //          ((dz1 / (dz2 * (dz1 + dz2))) * T[!l'].T)            
+
+            // // Compute coefficients for non-uniform grid
+            // double alpha_x = 2.0 / (dx[i - 1][j - 1][k - 1] * (dx[i - 1][j - 1][k - 1] + dx[i][j - 1][k - 1]));
+            // double alpha_y = 2.0 / (dy[i - 1][j - 1][k - 1] * (dy[i - 1][j - 1][k - 1] + dy[i - 1][j][k - 1]));
+            // double alpha_z = 2.0 / (dz[i - 1][j - 1][k - 1] * (dz[i - 1][j - 1][k - 1] + dz[i - 1][j - 1][k]));
+
+            // // Gauss-Seidel update
+            // double TNew = (alpha_x * (T[i + 1][j][k] * dx[i][j - 1][k - 1] + T[i - 1][j][k] * dx[i - 1][j - 1][k - 1]) +
+            //               alpha_y * (T[i][j + 1][k] * dy[i - 1][j][k - 1] + T[i][j - 1][k] * dy[i - 1][j - 1][k - 1]) +
+            //               alpha_z * (T[i][j][k + 1] * dz[i - 1][j - 1][k] + T[i][j][k - 1] * dz[i - 1][j - 1][k - 1])) /
+            //              (alpha_x * (dx[i][j - 1][k - 1] + dx[i - 1][j - 1][k - 1]) +
+            //               alpha_y * (dy[i - 1][j][k - 1] + dy[i - 1][j - 1][k - 1]) +
+            //               alpha_z * (dz[i - 1][j - 1][k] + dz[i - 1][j - 1][k - 1]));
+
+            // double error = Math.Abs(TNew - T[i][j][k]);
+            // if (error > maxError)
+            // {
+            //     maxError = error;
+            // }
+
+            // T[i][j][k] = TNew;
+
+            let alpha_x = 2.0 / (dx1 * (dx1 + dx2))
+            let alpha_y = 2.0 / (dy1 * (dy1 + dy2))
+            let alpha_z = 2.0 / (dz1 * (dz1 * dz2))
+
+            let T_new = (alpha_x * (T[!i'] * dx2 + T[!i] * dx1) +
+                         alpha_y * (T[!j'] * dy2 + T[!j] * dy1) +
+                         alpha_z * (T[!l'] * dz2 + T[!l] * dz1)) /
+                        (alpha_x * (dx2 + dx1) +
+                         alpha_y * (dy2 + dy1) +
+                         alpha_z * (dz2 + dz1));
+            
+            // let dT = 1.<K/s> * Numerics.derivative2 node (fun n -> double T[(Octree.valueof n)].T)
+            let a = 9700.0<s^-1>  // temp transfer capacity coefficient whatever
+            T[t'] <- dt * a * T_new + T[t]
         | _ -> ()
     )
+)
+
+system OnUpdate [] (fun _ ->
+    let T = Components.get<Temperature>()    
 
     // copy old tree
-    tree.IterParallel 4 (fun node ->
-        match node with
+    tree'.IterParallel 2 (fun t' ->
+        match t' with
         | Octree.Internal | Octree.Boundary ->
-            let (x,y,z) = center node
+            let (x,y,z) = center t'
             let t  = tree[x,y,z].Value
-            let t' = tree'[x,y,z].Value
-            T[t] <- T[t']
+            T[t] <- T[!t']
         | _ -> ()
     )
 )
 
 // plot each time frame
-system OnUpdate [typeof<Time>; typeof<ControlVolume>] (fun q ->
+system OnUpdate [typeof<Time'>; typeof<ControlVolume>] (fun q ->
     let T = Components.get<Temperature>()
     let C = Components.get<Concentration>()
     let V = Components.get<Vector3>()
@@ -256,6 +337,7 @@ system OnUpdate [typeof<Time>; typeof<ControlVolume>] (fun q ->
     |> Gnuplot.datablockXYZW xs ys zs ws "points"
     |>> "set terminal pngcairo size 800,800"
     |>> $"set output 'frames/frame_{n_iter}.png'"
+    // |>> "set cbrange[270:600]"
     |>> "unset key"
     // |>> "set view 60,30,30,1"
     |>> "set view equal xyz"

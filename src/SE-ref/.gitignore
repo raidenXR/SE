@@ -1,4 +1,6 @@
 tmp/
+source/
 images/
+src/
 
 *.pdf

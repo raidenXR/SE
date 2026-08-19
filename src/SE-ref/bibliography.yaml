@@ -1,0 +1,130 @@
+# https://github.com/typst/hayagriva/blob/main/docs/file-format.md
+
+terrain_decimation:
+    type: Article
+    title: Terrain Decimation through Quadtree Morphing
+
+morphing:
+    type: Web
+    title: Quadtree Morphing
+    url: https://ciphrd.com/articles/building-a-quadtree-filter-in-glsl-using-a-probabilistic-approach/
+    
+collisions:
+    type: Book
+    title: Collision Detection in Interactive 3D Enviroments
+
+collision_detection:
+    type: book
+    title: Real-Time Collision Detection
+    author: Christer Ericson
+
+ray_casting:
+    type: Web
+    title: Ray Casting
+    url: https://en.wikipedia.org/wiki/Ray_casting
+
+scan_line:
+    type: Web
+    title: Scan-line Polygon filling using OPENGL in C
+    url: https://www.geeksforgeeks.org/c/scan-line-polygon-filling-using-opengl-c/
+
+physics:
+    type: Book
+    title: Computational Physics
+    author: Landau
+    date: 2012
+
+kinetics:
+    type: Book
+    title: Kinetics of Chemical Reactions - Decoding Complexity
+    author: Yablowski
+    date: 2019
+
+chemical_engineering:
+    type: Book
+    title: Computational Methods in Chemical Engineering
+    date: 1997
+    # εκείνο το κίτρινο βιβλίο από την βιβλιοθήκη
+
+hydrodynamics:
+    type: Book
+    title: Εισαγωγή στην Υπολογιστική Ρευστοδυναμική - Η Μέθοδος των Πεπερασμένων Όγκων
+    date: 2022
+    # εκείνο το μεταφρασμένο βιβλίο από την βιβλιοθήκη
+
+combustion:
+    type: Book
+    title: Combustion
+    author: Lackner
+    date: 2013
+
+fuels:
+    type: Book
+    title: Handbook of Fuels
+    author: Barbara Elvers and Andrea Schütze
+    date: 2022
+
+combustion_i:
+    type: Book
+    title: Handbook of Combustion vol. I
+    author: Lackner
+
+combustion_iii:
+    type: Book
+    title: Handbook of Combustion vol. III
+    author: Lackner
+
+ecs_theory:
+    type: Article
+    title: Exploring the Theory and Practice of Concurrency in the Entity-Component-System Pattern
+    
+hecate:
+    type: Article
+    title: HECATE - An ECS-based Framework for Teaching and Developing Multi-Agent Systems
+    
+elements:
+    type: Article
+    title: Project Elements- A computational entity-component-system in a scene-graph pythonic framework, for a neural, geometric computer graphics curriculum
+
+essence:
+    type: Article
+    title: The Essence of Entity Component System
+
+wankel:
+    type: Thesis
+    title: CFD Simulation Methodology for Wankel Engines
+    author: Matteo Zanotto
+    date: 2023
+
+kenichi:
+    type: book
+    title: Rotary Engine
+    author: Kenichi Yamamoto
+    date: 1973
+
+renesis:
+    type: reference
+    title: Renesis Rotary Engine Fundamentals
+    author: Mazda
+    date: 2014
+
+kirkpatrick:
+    type: Book
+    title: Internal Combustion Engines
+    author: Kirkpatrick
+    date: 2021
+
+ethanol:
+    type: Web
+    title: A comprehensive review of detailed kinetics models for ethanol combustion chemistry
+
+freecad:
+    type: book
+    title: FreeCAD 1.0 Learn by Doing
+    
+flecs:
+    type: Web
+    title: FLECS Manual
+    author: Sander Mertens
+    url: https://www.flecs.dev/flecs/md_docs_2Manual.html
+    

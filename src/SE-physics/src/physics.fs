@@ -11,9 +11,23 @@ open FSharp.Data.UnitSystems.SI.UnitSymbols
 [<Struct>] type MolecularWeight = {MR:double<g/mol>}
 [<Struct>] type HeatOfFormation = {h:double<J/mol>}
 [<Struct>] type HeatCapacity = {cp:double<J/mol K>}
-[<Struct>] type Concentration = {mutable mol:double<mol/m^3>}
 
-[<Struct>] type Temperature = {mutable T:double<K>}
+[<Struct>]
+type Concentration =
+    {mol:double<mol/m^3>} with
+        static member inline (+)(Ca, Cb) = {mol = Ca.mol + Cb.mol}
+        static member inline (*)(a, Cb) = {mol = a * Cb.mol}
+        static member inline (*)(Cb, a) = {mol = a * Cb.mol}
+        static member inline (/)(Cb, a) = {mol = Cb.mol / a}
+
+[<Struct>]
+type Temperature =
+    {T:double<K>} with
+        static member inline (+)(Ta, Tb) = {T = Ta.T + Tb.T}
+        static member inline (*)(a, Tb) = {T = a * Tb.T}
+        static member inline (*)(Tb, a) = {T = a * Tb.T}
+        static member inline (/)(Tb, a) = {T = Tb.T / a}
+
 [<Struct>] type Pressure = {mutable P:double}
 [<Struct>] type GasConstant = {R:double<J/mol K>}
 
@@ -233,7 +247,7 @@ module KineticsDSL =
         let C = Components.get<Concentration>()
 
         for e in derivatives.Keys do
-            C[e].mol <- concentrations[e] + derivatives[e] * dt
+            C[e] <- {mol = concentrations[e] + derivatives[e] * dt}
 
 
     let get_species reactions =
@@ -279,10 +293,10 @@ module KineticsDSL =
         // let species = Seq.concat [k1.Keys; k2.Keys; k3.Keys; k4.Keys] |> Seq.distinct
         // let species = k1.Keys
         for e in E do
-            C[e].mol <- y[e] + (dt / 6.) * ((k1[e] + 2.*k2[e] + 2.*k3[e] + k4[e]))
+            C[e] <- {mol = y[e] + (dt / 6.) * ((k1[e] + 2.*k2[e] + 2.*k3[e] + k4[e]))}
 
             if C[e].mol < 0.<mol/m^3> then
-                C[e].mol <- 0.<mol/m^3>
+                C[e] <- {mol = 0.<mol/m^3>}
 
         Pools.concentrations_return y
         Pools.derivatives_return k1
@@ -308,9 +322,9 @@ module KineticsDSL =
         else
             T
 
-    let (..) (a:double) (e:Entity) = (a,e)
-    let ( ** ) (a:double) (e:Entity) = (a,e)
-    let ( ++ ) (a:double*Entity) (b:double*Entity) = [a;b]
+    // let (..) (a:double) (e:Entity) = (a,e)
+    // let ( ** ) (a:double) (e:Entity) = (a,e)
+    // let ( ++ ) (a:double*Entity) (b:double*Entity) = [a;b]
     // let (+) (a:double*Entity) (b:list<double*Entity>) = [a]@b
     // let (+) (a:list<double*Entity>) (b:list<double*Entity>) = a@b
 

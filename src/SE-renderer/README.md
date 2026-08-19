@@ -1,6 +1,10 @@
 This project uses OpenTK4 to render 3d graphics.   
-Its purpose is to load .gltf files, provide some helper functions for discretizing volumes out of   
-surfaces. Iterating meshes of `(vertex_buffer * index_buffer)`, calculating normals for these surfaces etc.
+Its purpose is to load and display.gltf files, while providing some helper functions for making rendering through the ECS architecture of the `SE.ECS` namespace easier.    
+
+You can find the example of the rendering with the `SE.Renderer` and `SE.ECS` namespaces in `tests/ecs_renderer_test.fsx`
+
+
+**UPDATE**: Reference to `FFMPegCore` project has been included, so now it is possible to capture the OpenGL-window as an .mp4 video.
 
 The following images display a 3d model and the same model discretized.   
 
@@ -12,7 +16,4 @@ incorrect discretized bunny (cool nonetheless)
 correct discretized bunny (not that impressive though)  
 ![img](../../images/bn3.png)
 
-
-**WARNING:** It's been an attemp to implement animatations from .gltf and and voxelize the `body` at each    render frame. At directory `videos` and `tests/gltfloader_test.fsx` there is a sample of that attempt    
-that fails miserably.   
-tldr; Many fixes are essential...  
+ 

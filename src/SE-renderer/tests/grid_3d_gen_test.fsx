@@ -14,7 +14,7 @@ open System.Runtime.InteropServices
 open System.Runtime.CompilerServices
 
 
-let [<Literal>] N = 300
+let [<Literal>] N = 100
 let [<Literal>] L = 10
 let [<Literal>] k = 4
 let [<Literal>] max_iter = 300
@@ -95,62 +95,62 @@ tree_soa.Iter (fun x t ->
 )
 // #time
 
-#time 
-for i in 1..max_iter do
-    tree_soa.Iter (fun u t -> 
-        // let u  = t[u, 0,0,0]
-        let i  = t[u,-1,0,0]
-        let i' = t[u,+1,0,0]
-        let j  = t[u,0,-1,0]
-        let j' = t[u,0,+1,0]
-        let l  = t[u,0,0,-1]
-        let l' = t[u,0,0,+1]
+// #time 
+// for i in 1..max_iter do
+//     tree_soa.Iter (fun u t -> 
+//         // let u  = t[u, 0,0,0]
+//         let i  = t[u,-1,0,0]
+//         let i' = t[u,+1,0,0]
+//         let j  = t[u,0,-1,0]
+//         let j' = t[u,0,+1,0]
+//         let l  = t[u,0,0,-1]
+//         let l' = t[u,0,0,+1]
         
-        if (u.f &&& i.f &&& i'.f &&& j'.f &&& j.f &&& l.f &&& l'.f) = OctreeSOA_2.Flag.Leaf then
-            let dx = double (t.Center(i') - t.Center(i)).X
-            let dy = double (t.Center(j') - t.Center(j)).Y
-            let dz = double (t.Center(l') - t.Center(l)).Z
-            ignore t[u]
-            ignore t[i]
-            ignore t[j]
-            ignore t[l]
-    )
-#time
-printfn "TREE_SOA\n\n"
+//         if (u.f &&& i.f &&& i'.f &&& j'.f &&& j.f &&& l.f &&& l'.f) = OctreeSOA_2.Flag.Leaf then
+//             let dx = double (t.Center(i') - t.Center(i)).X
+//             let dy = double (t.Center(j') - t.Center(j)).Y
+//             let dz = double (t.Center(l') - t.Center(l)).Z
+//             ignore t[u]
+//             ignore t[i]
+//             ignore t[j]
+//             ignore t[l]
+//     )
+// #time
+// printfn "TREE_SOA\n\n"
 
 let pos = Octree.center
 let valueof = Octree.valueof
 let (!) = function | Octree.Leaf (_,v,_,_,_,_) -> v.Value | _ -> failwith "MUst be Leaf"
 
-let inline is_iternal a b c d e f g =
-    match (a,b,c,d,e,f,g) with
-    | Octree.Leaf _, Octree.Leaf _, Octree.Leaf _, Octree.Leaf _, Octree.Leaf _, Octree.Leaf _, Octree.Leaf _ -> true 
-    | _ -> false
+// let inline is_iternal a b c d e f g =
+//     match (a,b,c,d,e,f,g) with
+//     | Octree.Leaf _, Octree.Leaf _, Octree.Leaf _, Octree.Leaf _, Octree.Leaf _, Octree.Leaf _, Octree.Leaf _ -> true 
+//     | _ -> false
 
-#time 
-for i in 1..max_iter do
-    tree.Iter (fun u ->
-        // let u  = x[ 0,0,0]
-        let i  = u[-1,0,0]
-        let i' = u[+1,0,0]
-        let j  = u[0,-1,0]
-        let j' = u[0,+1,0]
-        let l  = u[0,0,-1]
-        let l' = u[0,0,+1]
+// #time 
+// for i in 1..max_iter do
+//     tree.Iter (fun u ->
+//         // let u  = x[ 0,0,0]
+//         let i  = u[-1,0,0]
+//         let i' = u[+1,0,0]
+//         let j  = u[0,-1,0]
+//         let j' = u[0,+1,0]
+//         let l  = u[0,0,-1]
+//         let l' = u[0,0,+1]
         
-        if is_iternal u i i' j j' l l' then
-            let dx = double ((pos i') - (pos i)).X
-            let dy = double ((pos j') - (pos j)).Y
-            let dz = double ((pos l') - (pos l)).Z
-            ignore !u
-            ignore !i
-            ignore !j
-            ignore !l
-    )
-#time
-printfn "TREE\n\n"
+//         if is_iternal u i i' j j' l l' then
+//             let dx = double ((pos i') - (pos i)).X
+//             let dy = double ((pos j') - (pos j)).Y
+//             let dz = double ((pos l') - (pos l)).Z
+//             ignore !u
+//             ignore !i
+//             ignore !j
+//             ignore !l
+//     )
+// #time
+// printfn "TREE\n\n"
 
-exit 0
+// exit 0
 
 let pts = points.ToArray()
 let bds = bounds.ToArray()
