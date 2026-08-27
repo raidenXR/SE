@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <Compile Include="src/geometry.fs" />
+    <Compile Include="src/camera.fs" />
     <Compile Include="src/window.fs" />
     <Compile Include="src/common.fs" />
     <Compile Include="src/gltfloader.fs" />

@@ -60,9 +60,9 @@ let inline (!) u = Octree.valueof u
 
 // let relate_w cv value s = relate cv s value
 
-let [<Literal>] N = 50
+let [<Literal>] N = 80
 let [<Literal>] L = 10
-let [<Literal>] k = 1
+let [<Literal>] k = 2
 let [<Literal>] dt = 10.0<s>
 
 let tree = 
@@ -119,23 +119,27 @@ system OnLoad [] (fun _ ->
             match node with
             | Octree.Leaf (_,v,_,_,v_min,v_max) & Octree.Internal ->
                 let dv = v_max - v_min
-                let p  = v_min + (v_max + v_min) / 2.f
-                let cv = entity_tagged "CV"
-                            |> Entity.add<ControlVolume> |> Entity.add<Time>
-                            |> set {T = 300.0<K>} |> set {R = 8.314<J/mol K>} |> set p
-                            |> set {vol = abs(double(dv.X * dv.Y * dv.Z)) * 1.<m^3>}
+                let cv =
+                    entity()
+                    |> Entity.add<ControlVolume>
+                    |> Entity.add<Time>
+                    |> set {T = 300.0<K>}
+                    |> set {R = 8.314<J/mol K>}
+                    |> set (pos node)
+                    |> set {vol = abs(double(dv.X * dv.Y * dv.Z)) * 1.<m^3>}
                 v.Value <- ValueSome cv
                 initialize_concentrations cv
 
             | Octree.Leaf (_,v,_,_,v_min,v_max) & Octree.Boundary ->
                 let dv = v_max - v_min
-                let p  = v_min + (v_max + v_min) / 2.f
-                let cv = entity_tagged "CV"
+                let cv = entity()
                             |> Entity.add<ControlVolume> |> Entity.add<Time>
-                            |> set {T = 600.0<K>} |> set {R = 8.314<J/mol K>} |> set p
+                            |> set {T = 600.0<K>} |> set {R = 8.314<J/mol K>} |> set (pos node)
                             |> set {vol = abs(double(dv.X * dv.Y * dv.Z)) * 1.<m^3>}
                 v.Value <- ValueSome cv
                 initialize_concentrations cv
+
+            // TODO: add Prefabs support, do these kind of thinks with prefabs
         
             | _ -> ()
         )
@@ -144,10 +148,9 @@ system OnLoad [] (fun _ ->
             match node with
             | Octree.Leaf (_,v,_,_,v_min,v_max) & (Octree.Internal | Octree.Boundary) ->
                 let dv = v_max - v_min
-                let p  = v_min + (v_max + v_min) / 2.f
                 let cv = entity_tagged "CV"
                             |> Entity.add<ControlVolume> |> Entity.add<Time'>
-                            |> set {T = 100.0<K>} |> set {R = 8.314<J/mol K>} |> set p
+                            |> set {T = 100.0<K>} |> set {R = 8.314<J/mol K>} |> set (pos node)
                             |> set {vol = abs(double(dv.X * dv.Y * dv.Z)) * 3.<m^3>}
                 v.Value <- ValueSome cv
             | _ -> ()
@@ -155,7 +158,7 @@ system OnLoad [] (fun _ ->
 
         let T = Components.get<Temperature>()
         // copy old tree
-        tree.IterParallel 2 (fun node ->
+        tree.IterParallel 4 (fun node ->
             match node with
             | Octree.Internal | Octree.Boundary ->
                 let (x,y,z) = center node
@@ -167,73 +170,71 @@ system OnLoad [] (fun _ ->
 )
 
 // // compute chemical kinetics
-system OnUpdate [typeof<Time>; typeof<ControlVolume>] (fun q ->    
-    let T = Components.get<Temperature>()
-    let V = Components.get<Volume>()
-    let c = Components.get<Concentration>()
+// system OnUpdate [typeof<Time>; typeof<ControlVolume>] (fun q ->    
+//     let T = Components.get<Temperature>()
+//     let V = Components.get<Volume>()
+//     let c = Components.get<Concentration>()
 
-    // runs for every control volume in Quadtree/Octree
-    parallel_for q (fun cv -> 
-        let H2  = cv --> E'.H2   
-        let O2  = cv --> E'.O2   
-        let H2O = cv --> E'.H2O          
-        let C   = cv --> E'.C   
-        let CO  = cv --> E'.CO   
-        let CO2 = cv --> E'.CO2   
+//     // runs for every control volume in Quadtree/Octree
+//     parallel_for q (fun cv -> 
+//         let H2  = cv --> E'.H2   
+//         let O2  = cv --> E'.O2   
+//         let H2O = cv --> E'.H2O          
+//         let C   = cv --> E'.C   
+//         let CO  = cv --> E'.CO   
+//         let CO2 = cv --> E'.CO2   
 
-        let reactions = [
-            // 2.0**H2 ++ 1.0**O2 <=> [2.0**H2O]  // H2 + O2 = H2O
-            // 2.0**C  ++ 1.0**O2 <=> [2.0**CO] 
-            // 1.0**C  ++ 1.0**O2 <=> [1.0**CO2] 
-            // 1.0**CO ++ 0.5**O2 <=> [1.0**CO2]
-            [2.,H2; 1.,O2] <=> [2.,H2O]
-            [2.,C;  1.,O2] <=> [2.,CO]
-            [1.,C;  1.,O2] <=> [1.,CO2]
-            [1.,CO; 0.5,O2] <=> [1.,CO2]
-        ]
+//         let reactions = [
+//             // 2.0**H2 ++ 1.0**O2 <=> [2.0**H2O]  // H2 + O2 = H2O
+//             // 2.0**C  ++ 1.0**O2 <=> [2.0**CO] 
+//             // 1.0**C  ++ 1.0**O2 <=> [1.0**CO2] 
+//             // 1.0**CO ++ 0.5**O2 <=> [1.0**CO2]
+//             [2.,H2; 1.,O2] <=> [2.,H2O]
+//             [2.,C;  1.,O2] <=> [2.,CO]
+//             [1.,C;  1.,O2] <=> [1.,CO2]
+//             [1.,CO; 0.5,O2] <=> [1.,CO2]
+//         ]
 
-        let pressure = 101325<Pa>
-        let A = 70000.0<J/mol>  // activation energy
-        let k' = 1e8             // pre-expotnetial factor
-        // calculate the H and Cp after reaction
-        // let mutable H = 0.<J/mol>
-        let mutable Cp = 1000.<J/mol K>
-        // let mutable m = 0.<mol/m^3>
+//         let pressure = 101325<Pa>
+//         let A = 70000.0<J/mol>  // activation energy
+//         let k' = 1e8             // pre-expotnetial factor
+//         // calculate the H and Cp after reaction
+//         // let mutable H = 0.<J/mol>
+//         let mutable Cp = 1000.<J/mol K>
+//         // let mutable m = 0.<mol/m^3>
 
-        let species = stackalloc 6
-        let deltah  = stackalloc 6
-        do
-            species[0] <- H2
-            species[1] <- O2
-            species[2] <- H2O
-            species[3] <- C
-            species[4] <- CO
-            species[5] <- CO2
-            deltah[0] <- DeltaH[E'.H2]
-            deltah[1] <- DeltaH[E'.O2]
-            deltah[2] <- DeltaH[E'.H2O]
-            deltah[3] <- DeltaH[E'.C]
-            deltah[4] <- DeltaH[E'.CO]
-            deltah[5] <- DeltaH[E'.CO2]
+//         let species = stackalloc 6
+//         let deltah  = stackalloc 6
+//         do
+//             species[0] <- H2
+//             species[1] <- O2
+//             species[2] <- H2O
+//             species[3] <- C
+//             species[4] <- CO
+//             species[5] <- CO2
+//             deltah[0] <- DeltaH[E'.H2]
+//             deltah[1] <- DeltaH[E'.O2]
+//             deltah[2] <- DeltaH[E'.H2O]
+//             deltah[3] <- DeltaH[E'.C]
+//             deltah[4] <- DeltaH[E'.CO]
+//             deltah[5] <- DeltaH[E'.CO2]
 
-        let dh = measure_H_DSL cv species deltah V[cv].vol
-        integrate_step_DSL k' A cv reactions dt
-        T[cv].T <- update_temperature_DSL T[cv].T dh Cp
-    )
-)
+//         let dh = measure_H_DSL cv species deltah V[cv].vol
+//         integrate_step_DSL k' A cv reactions dt
+//         T[cv] <- {T = update_temperature_DSL T[cv].T dh Cp}
+//     )
+// )
 
 
 // compute Temperature - heat transfer over time
 system OnUpdate [typeof<Time'>; typeof<ControlVolume>] (fun _ ->
     let T = Components.get<Temperature>()    
 
-    tree'.IterParallel 2 (fun u ->
+    tree.IterParallel 4 (fun u ->
         match u with
         | Octree.Internal ->
             let (x,y,z) = center u
-            let t  = !u
             let t' = tree'[x,y,z].Value
-            // let u  = tree.CurrentNode.Value
             let i  = u[-1,0,0]
             let i' = u[+1,0,0]
             let j  = u[0,-1,0]
@@ -241,63 +242,29 @@ system OnUpdate [typeof<Time'>; typeof<ControlVolume>] (fun _ ->
             let l  = u[0,0,-1]
             let l' = u[0,0,+1]
 
-            let dx1 = double (pos u - pos i).X
-            let dy1 = double (pos u - pos j).Y
-            let dz1 = double (pos u - pos l).Z
+            let x1 = double (pos u - pos i).X
+            let y1 = double (pos u - pos j).Y
+            let z1 = double (pos u - pos l).Z
             
-            let dx2 = double (pos i' - pos u).X
-            let dy2 = double (pos j' - pos u).Y
-            let dz2 = double (pos l' - pos u).Z
+            let x2 = double (pos i' - pos u).X
+            let y2 = double (pos j' - pos u).Y
+            let z2 = double (pos l' - pos u).Z
 
-            T[0u] <- 1.3*T[1u] + T[2u]*4.
+            // let T'x = -x2/(x1*(x1+x2))*T[!i] + (x2-x1)/(x1*x2)*T[!u] + x1/(x2*(x1+x2))*T[!i']
+            // let T'y = -y2/(y1*(y1+y2))*T[!j] + (y2-y1)/(y1*y2)*T[!u] + y1/(y2*(y1+y2))*T[!j']
+            // let T'z = -z2/(z1*(z1+z2))*T[!l] + (z2-z1)/(z1*z2)*T[!u] + z1/(z2*(z1+z2))*T[!l']
 
-            // let θx = ((dx2 / (dx1 * (dx1 + dx2))) * T[!i].T) +
-            //          (((dx2 - dx1) / (dx1 * dx2)) * T[!u].T) -
-            //          ((dx1 / (dx2 * (dx1 + dx2))) * T[!i'].T)
+            // let T''x = 2./(x1*(x1+x2))*T[!i] - 2./(x1*x2)*T[!u] + 2./(x2*(x1+x2))*T[!i'] 
+            // let T''y = 2./(y1*(y1+y2))*T[!j] - 2./(y1*y2)*T[!u] + 2./(y2*(y1+y2))*T[!j'] 
+            // let T''z = 2./(z1*(z1+z2))*T[!l] - 2./(z1*z2)*T[!u] + 2./(z2*(z1+z2))*T[!l'] 
             
-            // let θy = ((dy2 / (dy1 * (dy1 + dy2))) * T[!j].T) +
-            //          (((dy2 - dy1) / (dy1 * dy2)) * T[!u].T) -
-            //          ((dy1 / (dy2 * (dy1 + dy2))) * T[!j'].T)
-            
-            // let θz = ((dz2 / (dz1 * (dz1 + dz2))) * T[!l].T) +
-            //          (((dz2 - dz1) / (dz1 * dz2)) * T[!u].T) -
-            //          ((dz1 / (dz2 * (dz1 + dz2))) * T[!l'].T)            
-
-            // // Compute coefficients for non-uniform grid
-            // double alpha_x = 2.0 / (dx[i - 1][j - 1][k - 1] * (dx[i - 1][j - 1][k - 1] + dx[i][j - 1][k - 1]));
-            // double alpha_y = 2.0 / (dy[i - 1][j - 1][k - 1] * (dy[i - 1][j - 1][k - 1] + dy[i - 1][j][k - 1]));
-            // double alpha_z = 2.0 / (dz[i - 1][j - 1][k - 1] * (dz[i - 1][j - 1][k - 1] + dz[i - 1][j - 1][k]));
-
-            // // Gauss-Seidel update
-            // double TNew = (alpha_x * (T[i + 1][j][k] * dx[i][j - 1][k - 1] + T[i - 1][j][k] * dx[i - 1][j - 1][k - 1]) +
-            //               alpha_y * (T[i][j + 1][k] * dy[i - 1][j][k - 1] + T[i][j - 1][k] * dy[i - 1][j - 1][k - 1]) +
-            //               alpha_z * (T[i][j][k + 1] * dz[i - 1][j - 1][k] + T[i][j][k - 1] * dz[i - 1][j - 1][k - 1])) /
-            //              (alpha_x * (dx[i][j - 1][k - 1] + dx[i - 1][j - 1][k - 1]) +
-            //               alpha_y * (dy[i - 1][j][k - 1] + dy[i - 1][j - 1][k - 1]) +
-            //               alpha_z * (dz[i - 1][j - 1][k] + dz[i - 1][j - 1][k - 1]));
-
-            // double error = Math.Abs(TNew - T[i][j][k]);
-            // if (error > maxError)
-            // {
-            //     maxError = error;
-            // }
-
-            // T[i][j][k] = TNew;
-
-            let alpha_x = 2.0 / (dx1 * (dx1 + dx2))
-            let alpha_y = 2.0 / (dy1 * (dy1 + dy2))
-            let alpha_z = 2.0 / (dz1 * (dz1 * dz2))
-
-            let T_new = (alpha_x * (T[!i'] * dx2 + T[!i] * dx1) +
-                         alpha_y * (T[!j'] * dy2 + T[!j] * dy1) +
-                         alpha_z * (T[!l'] * dz2 + T[!l] * dz1)) /
-                        (alpha_x * (dx2 + dx1) +
-                         alpha_y * (dy2 + dy1) +
-                         alpha_z * (dz2 + dz1));
-            
-            // let dT = 1.<K/s> * Numerics.derivative2 node (fun n -> double T[(Octree.valueof n)].T)
-            let a = 9700.0<s^-1>  // temp transfer capacity coefficient whatever
-            T[t'] <- dt * a * T_new + T[t]
+            let a = 9700.0<s>  // temp transfer capacity coefficient whatever
+            // T[t'] <- T[!u] + (0.00001) * (T''x + T''y + T''z)
+            T[t'] <- 
+                (2./(x1*(x1+x2))*T[!i] + 2./(x2*(x1+x2))*T[!i'] +
+                2./(y1*(y1+y2))*T[!j] + 2./(y2*(y1+y2))*T[!j'] +
+                2./(z1*(z1+z2))*T[!l] + 2./(z2*(z1+z2))*T[!l']) /
+                (2./(x1*x2) + 2./(y1*y2) + 2./(z1*z2)) 
         | _ -> ()
     )
 )
@@ -306,7 +273,7 @@ system OnUpdate [] (fun _ ->
     let T = Components.get<Temperature>()    
 
     // copy old tree
-    tree'.IterParallel 2 (fun t' ->
+    tree'.IterParallel 4 (fun t' ->
         match t' with
         | Octree.Internal | Octree.Boundary ->
             let (x,y,z) = center t'
@@ -317,7 +284,7 @@ system OnUpdate [] (fun _ ->
 )
 
 // plot each time frame
-system OnUpdate [typeof<Time'>; typeof<ControlVolume>] (fun q ->
+system OnExit [typeof<Time'>; typeof<ControlVolume>] (fun q ->
     let T = Components.get<Temperature>()
     let C = Components.get<Concentration>()
     let V = Components.get<Vector3>()
@@ -346,19 +313,44 @@ system OnUpdate [typeof<Time'>; typeof<ControlVolume>] (fun q ->
     |> ignore
 )
 
+system OnExit [] (fun _ ->
+    printfn "tree.count:    %d" (tree.GetCount())
+    printfn "tree.internal: %d" (tree.GetInternalCount())
+    printfn "tree.boundary: %d" (tree.GetBoundaryCount())
+)
+
 let stopwatch = System.Diagnostics.Stopwatch()
 stopwatch.Start()
-Systems.progress_N (Some 20) true
+Systems.progress_N (Some 100) true
 stopwatch.Stop()
 
 printfn "systems exited"
 printfn "stopwatch: %A" (stopwatch.Elapsed)
 
-// cache time results
+// // cache time results
 
 let fs_path = "elapsed_times.txt"
 let txt = sprintf "%A:   %A\n" (System.DateTime.Now) (stopwatch.Elapsed)
 System.IO.File.AppendAllText(fs_path, txt)
 
 
-// Console.ReadKey()
+let T = Components.get<Temperature>()
+
+let sb = System.Text.StringBuilder(10*1024)
+tree'.Iter (fun u ->
+    let (x,y,z) = center u
+    let w = T[!u].T
+    sb.AppendLine($"{x}  {y}  {z}  {w}") |> ignore
+)
+
+// TODO: do the same with OpenTK Window, and time..., it looks like it works??
+// COPY an XNA3D interface-lookalike, but build on top of OpentTK
+Gnuplot()
+|> Gnuplot.datablockString (string sb) "points"
+|>> "unset key"
+|>> "set view equal xyz"
+|>> "splot $points using 1:2:3:4 with points lc palette "
+|> Gnuplot.run
+|> ignore
+
+Console.ReadKey()

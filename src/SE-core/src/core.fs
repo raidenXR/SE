@@ -39,10 +39,11 @@ type Phase =
     | PostLoad
     | PreUpdate
     | OnUpdate
-    | OnRender
-    | OnValidate
     | PostUpdate
+    | PreRender
+    | OnRender
     | PostRender
+    | OnValidate
     | PreStore
     | OnStore
     | OnExit
@@ -824,10 +825,11 @@ module Systems =
     let post_load   = ResizeArray<System>()
     let pre_update  = ResizeArray<System>()
     let on_update   = ResizeArray<System>()
-    let on_render   = ResizeArray<System>()
-    let on_validate = ResizeArray<System>()
     let post_update = ResizeArray<System>()
-    let post_render = ResizeArray<System>()
+    let pre_render   = ResizeArray<System>()
+    let on_render   = ResizeArray<System>()
+    let post_render   = ResizeArray<System>()
+    let on_validate = ResizeArray<System>()
     let pre_store   = ResizeArray<System>()
     let on_store    = ResizeArray<System>()
     let on_exit     = ResizeArray<System>()
@@ -841,10 +843,11 @@ module Systems =
         | PostLoad  -> post_load.Add (types,fn)
         | PreUpdate -> pre_update.Add (types,fn)
         | Phase.OnUpdate -> on_update.Add (types,fn)
+        | PreRender   -> pre_render.Add (types,fn)
         | OnRender   -> on_render.Add (types,fn)
+        | PostRender -> post_render.Add (types,fn)
         | OnValidate -> on_validate.Add (types,fn)
         | PostUpdate -> post_update.Add (types,fn)
-        | PostRender -> post_render.Add (types,fn)
         | PreStore   -> pre_update.Add (types,fn)
         | OnStore    -> on_store.Add (types,fn)
         | OnExit     -> on_exit.Add (types,fn)
@@ -863,10 +866,11 @@ module Systems =
         while running do
             for (types,fn) in pre_update do fn (Queries.get types)  
             for (types,fn) in on_update do fn (Queries.get types)  
-            for (types,fn) in on_render do fn (Queries.get types)  
-            for (types,fn) in on_validate do fn (Queries.get types)  
             for (types,fn) in post_update do fn (Queries.get types)  
+            for (types,fn) in pre_render do fn (Queries.get types)  
+            for (types,fn) in on_render do fn (Queries.get types)  
             for (types,fn) in post_render do fn (Queries.get types)  
+            for (types,fn) in on_validate do fn (Queries.get types)  
         for (types,fn) in pre_store do fn (Queries.get types)  
         for (types,fn) in on_store do fn (Queries.get types)  
         for (types,fn) in on_exit do fn (Queries.get types)
@@ -876,18 +880,23 @@ module Systems =
         let mutable i = match n_iterations with | Some n -> n | None -> 0
         for (types,fn) in on_load do fn (Queries.get types)
         for (types,fn) in post_load do fn (Queries.get types)  
+        let struct(x,y) = Console.GetCursorPosition()
         while running do
             for (types,fn) in pre_update do fn (Queries.get types)  
             for (types,fn) in on_update do fn (Queries.get types)  
-            for (types,fn) in on_render do fn (Queries.get types)  
-            for (types,fn) in on_validate do fn (Queries.get types)  
             for (types,fn) in post_update do fn (Queries.get types)  
+            for (types,fn) in pre_render do fn (Queries.get types)  
+            for (types,fn) in on_render do fn (Queries.get types)  
             for (types,fn) in post_render do fn (Queries.get types)  
+            for (types,fn) in on_validate do fn (Queries.get types)  
             // for debugging and testing keep it like that to prevent eternal loop
             // keep it a single loop
             if i <= 0 then quit ()
             i <- i - 1
-            if count then printfn "iteration: %d" i
+            if count then
+                Console.SetCursorPosition(x,y)
+                printfn "iteration: %d" i
+                Console.SetCursorPosition(x,y)
         for (types,fn) in pre_store do fn (Queries.get types)  
         for (types,fn) in on_store do fn (Queries.get types)  
         for (types,fn) in on_exit do fn (Queries.get types)

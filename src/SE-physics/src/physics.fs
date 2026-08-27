@@ -24,6 +24,7 @@ type Concentration =
 type Temperature =
     {T:double<K>} with
         static member inline (+)(Ta, Tb) = {T = Ta.T + Tb.T}
+        static member inline (-)(Ta, Tb) = {T = Ta.T - Tb.T}
         static member inline (*)(a, Tb) = {T = a * Tb.T}
         static member inline (*)(Tb, a) = {T = a * Tb.T}
         static member inline (/)(Tb, a) = {T = Tb.T / a}

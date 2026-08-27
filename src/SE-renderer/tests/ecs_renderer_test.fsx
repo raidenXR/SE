@@ -125,7 +125,7 @@ system OnLoad [] (fun _ ->
         | None -> RGeometry.load_ply_unmanaged (path, 0.55f, 0.55f, 0.53f, 1.0f)
             
     let L = 10
-    octree <- Some (Octree.ofSurface<double> N L 4 (_mesh.vertices.AsSpan()) (_mesh.indices.AsSpan()))
+    octree <- Some (Octree.ofSurface<double> N L 2 (_mesh.vertices.AsSpan()) (_mesh.indices.AsSpan()))
     let ob_model = new Model(_mesh.vertices, _mesh.indices, [3;3;4])
 
     let mesh = Helpers.createMesh ob_model    

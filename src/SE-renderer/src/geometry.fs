@@ -392,11 +392,25 @@ module RGeometry =
     /// deserializes the vertices and indices from a .ply file into a NativeArray tuple
     let load_ply_unmanaged (path:string, r:float32, g:float32, b:float32, a:float32) =
         let ply = System.IO.File.ReadAllLines(path)
-        let vertices_count = ply[3].Split() |> Array.takeWhile (fun x -> x.Length > 0) |> Seq.item 2 |> Int32.Parse
-        let indices_count  = ply[9].Split() |> Array.takeWhile (fun x -> x.Length > 0) |> Seq.item 2 |> Int32.Parse
+        let mutable vertices_count = 0
+        let mutable indices_count = 0
+        let mutable end_header = 0
 
-        let I = 12 
-        let J = 12 + vertices_count
+        for i in 0..20 do
+            if ply[i].Contains("element vertex") then
+                vertices_count <- int (ply[i].Split(' ')[2])
+
+            if ply[i].Contains("element face") then
+                indices_count <- int (ply[i].Split(' ')[2])
+                
+            if ply[i].Contains("end_header") then
+                end_header <- i + 1
+                
+        // let vertices_count = ply[3].Split() |> Array.takeWhile (fun x -> x.Length > 0) |> Seq.item 2 |> Int32.Parse
+        // let indices_count  = ply[9].Split() |> Array.takeWhile (fun x -> x.Length > 0) |> Seq.item 2 |> Int32.Parse
+
+        let I = end_header 
+        let J = end_header + vertices_count
         let vertices = NativeArray.create<float32>(vertices_count * 10)
         let indices  = NativeArray.create<uint32>(indices_count * 3)
 

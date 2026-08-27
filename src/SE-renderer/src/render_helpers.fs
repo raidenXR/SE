@@ -16,6 +16,93 @@ open FSharp.NativeInterop
 
 open SE
 
+[<Struct>]
+type VertexType =
+    | VT1
+    | VT2
+
+[<Struct>]
+type VertexBuffer =
+    | VB1 of int * int * int
+    | VB2 of int * int
+
+module VertexBuffer =
+    open SE.Spatial
+
+    let create vt (mesh:MeshF) =
+        match vt with
+        | VT1 ->
+            let vbo = GL.GenBuffer()
+            GL.BindBuffer (BufferTarget.ArrayBuffer, vbo)
+            GL.BufferData (BufferTarget.ArrayBuffer, mesh.vertices.BufferSize, mesh.vertices.ToInt(), BufferUsageHint.StaticDraw)
+    
+            let vao = GL.GenVertexArray()
+            GL.BindVertexArray(vao)
+            GL.EnableVertexAttribArray(0)
+            GL.EnableVertexAttribArray(1)
+            GL.EnableVertexAttribArray(2)            
+            GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, 10 * sizeof<float32>, 0)
+            GL.VertexAttribPointer(1, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, 10 * sizeof<float32>, 3)
+            GL.VertexAttribPointer(2, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, 10 * sizeof<float32>, 6)
+
+            let ebo = GL.GenBuffer()
+            GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo)
+            GL.BufferData(BufferTarget.ElementArrayBuffer, mesh.indices.BufferSize, mesh.indices.ToInt(), BufferUsageHint.StaticDraw)
+            VB1(vao, vbo, ebo)
+
+        | VT2 ->
+            let vbo = GL.GenBuffer()
+            GL.BindBuffer (BufferTarget.ArrayBuffer, vbo)
+            GL.BufferData (BufferTarget.ArrayBuffer, mesh.vertices.BufferSize, mesh.vertices.ToInt(), BufferUsageHint.StaticDraw)
+        
+            let vao = GL.GenVertexArray()
+            GL.BindVertexArray(vao)
+            GL.EnableVertexAttribArray(0)
+            GL.EnableVertexAttribArray(1)            
+            GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, 7, 0)
+            GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, 7, 3)
+            VB2(vao,vbo)
+
+
+    let update vb (mesh:MeshF) =
+        match vb with
+        | VB1(vao,vbo,ebo) ->
+            GL.BindBuffer (BufferTarget.ArrayBuffer, vbo)
+            GL.BufferData (BufferTarget.ArrayBuffer, mesh.vertices.BufferSize, mesh.vertices.ToInt(), BufferUsageHint.DynamicDraw)
+    
+            GL.BindVertexArray(vao)
+            GL.EnableVertexAttribArray(0)
+            GL.EnableVertexAttribArray(1)
+            GL.EnableVertexAttribArray(2)            
+            GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, mesh.L * sizeof<float32>, 0)
+            GL.VertexAttribPointer(1, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, mesh.L * sizeof<float32>, 3)
+            GL.VertexAttribPointer(2, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, mesh.L * sizeof<float32>, 6)
+
+            GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo)
+            GL.BufferData(BufferTarget.ElementArrayBuffer, mesh.indices.BufferSize, mesh.indices.ToInt(), BufferUsageHint.DynamicDraw)
+        
+        | VB2(vao,vbo) ->
+            GL.BindBuffer (BufferTarget.ArrayBuffer, vbo)
+            GL.BufferData (BufferTarget.ArrayBuffer, mesh.vertices.BufferSize, mesh.vertices.ToInt(), BufferUsageHint.DynamicDraw)
+        
+            GL.BindVertexArray(vao)
+            GL.EnableVertexAttribArray(0)
+            GL.EnableVertexAttribArray(1)            
+            GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, mesh.L * sizeof<float32>, 0)
+            GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, mesh.L * sizeof<float32>, 3)
+
+
+    let draw vb (mesh:MeshF) =
+        match vb with
+        | VB1(vao,vbo,ebo) ->
+            GL.BindVertexArray(vao)
+            GL.DrawElements(PrimitiveType.Triangles, mesh.indices.Length, DrawElementsType.UnsignedInt, 0)
+
+        | VB2(vao,vbo) ->
+            GL.BindVertexArray(vao)
+            GL.DrawArrays(PrimitiveType.Points, 0, mesh.vertices.Length)         
+
+
 module Imaging =
     open SkiaSharp
 
@@ -151,122 +238,122 @@ module Helpers =
 
     let default_color = [|0.53f; 0.55f; 0.53f; 1.0f|]
 
-    [<Obsolete>]
-    let update_animation (gltf:GLTF.Deserializer, model:inref<Model>, v_animation:byref<ValueAnimation>, time:float) =
-        let root = gltf.Root
-        let vertices = model.Vertices
-        let indices  = model.Indices
-        let p = &MemoryMarshal.GetReference(vertices)
-        let ptr = &&p
-        let L = model.L
+    // [<Obsolete>]
+    // let update_animation (gltf:GLTF.Deserializer, model:inref<Model>, v_animation:byref<ValueAnimation>, time:float) =
+    //     let root = gltf.Root
+    //     let vertices = model.Vertices
+    //     let indices  = model.Indices
+    //     let p = &MemoryMarshal.GetReference(vertices)
+    //     let ptr = &&p
+    //     let L = model.L
 
-        let mutable _t = Matrix4x4.Identity
-        let mutable _r = Matrix4x4.Identity
-        let mutable _s = Matrix4x4.Identity
+    //     let mutable _t = Matrix4x4.Identity
+    //     let mutable _r = Matrix4x4.Identity
+    //     let mutable _s = Matrix4x4.Identity
         
-        let animation = root.animations[v_animation.idx]
+    //     let animation = root.animations[v_animation.idx]
 
-        for channel in animation.channels do
-            let i_accessor = root.accessors[animation.samplers[channel.sampler].input]
-            let o_accessor = root.accessors[animation.samplers[channel.sampler].output]
-            let i_bv = root.bufferViews[i_accessor.bufferView]
-            let o_bv = root.bufferViews[o_accessor.bufferView]
-            let i_span = gltf.AsSpan<float32>(i_bv.byteOffset + i_accessor.byteOffset, i_accessor.count)
-            let t_first = float(i_span[0])
-            let t_last  = float(i_span[i_span.Length - 1])
+    //     for channel in animation.channels do
+    //         let i_accessor = root.accessors[animation.samplers[channel.sampler].input]
+    //         let o_accessor = root.accessors[animation.samplers[channel.sampler].output]
+    //         let i_bv = root.bufferViews[i_accessor.bufferView]
+    //         let o_bv = root.bufferViews[o_accessor.bufferView]
+    //         let i_span = gltf.AsSpan<float32>(i_bv.byteOffset + i_accessor.byteOffset, i_accessor.count)
+    //         let t_first = float(i_span[0])
+    //         let t_last  = float(i_span[i_span.Length - 1])
 
-            v_animation.dt <- v_animation.dt + if v_animation.is_reversed then -time else time
+    //         v_animation.dt <- v_animation.dt + if v_animation.is_reversed then -time else time
 
-            if v_animation.is_looped then
-                if v_animation.dt > t_last then
-                    v_animation.dt <- t_last                
-                    v_animation.is_reversed <- not v_animation.is_reversed
+    //         if v_animation.is_looped then
+    //             if v_animation.dt > t_last then
+    //                 v_animation.dt <- t_last                
+    //                 v_animation.is_reversed <- not v_animation.is_reversed
                 
-                elif v_animation.dt < t_first then
-                    v_animation.dt <- t_first
-                    v_animation.is_reversed <- not v_animation.is_reversed           
+    //             elif v_animation.dt < t_first then
+    //                 v_animation.dt <- t_first
+    //                 v_animation.is_reversed <- not v_animation.is_reversed           
             
-            let dt = float32(v_animation.dt)
-            let mutable kf = 0  // key_frame  and i_span == time_span
-            let interpolation_value =
-                let mutable r = false
-                while not r do
-                    r <- (i_span[kf] <= dt && dt <= i_span[kf+1]) || (kf + 1 >= i_span.Length - 1)
-                    kf <- if r then kf else kf + 1                
-                (dt - i_span[kf]) / (i_span[kf+1] - i_span[kf])                 
+    //         let dt = float32(v_animation.dt)
+    //         let mutable kf = 0  // key_frame  and i_span == time_span
+    //         let interpolation_value =
+    //             let mutable r = false
+    //             while not r do
+    //                 r <- (i_span[kf] <= dt && dt <= i_span[kf+1]) || (kf + 1 >= i_span.Length - 1)
+    //                 kf <- if r then kf else kf + 1                
+    //             (dt - i_span[kf]) / (i_span[kf+1] - i_span[kf])                 
             
-            match channel.target.path with
-            | "translation" ->
-                let o_span = gltf.AsSpan<Vector3>(o_bv.byteOffset + o_accessor.byteOffset, o_accessor.count) 
-                let t = o_span[kf] + interpolation_value * (o_span[kf+1] - o_span[kf])
-                _t <- Matrix4x4.CreateTranslation(t)
-            | "rotation" ->
-                let o_span = gltf.AsSpan<Quaternion>(o_bv.byteOffset + o_accessor.byteOffset, o_accessor.count) 
-                let r = o_span[kf] + Quaternion.Multiply(o_span[kf+1] - o_span[kf], interpolation_value)
-                _r <- Matrix4x4.CreateFromQuaternion(r)
-            | "scale" ->
-                let o_span = gltf.AsSpan<Vector3>(o_bv.byteOffset + o_accessor.byteOffset, o_accessor.count) 
-                let s = o_span[kf] + interpolation_value * (o_span[kf+1] - o_span[kf])
-                _s <- Matrix4x4.CreateScale(s)
-            | _ -> failwith $"{channel.target.path} is not implemented"
+    //         match channel.target.path with
+    //         | "translation" ->
+    //             let o_span = gltf.AsSpan<Vector3>(o_bv.byteOffset + o_accessor.byteOffset, o_accessor.count) 
+    //             let t = o_span[kf] + interpolation_value * (o_span[kf+1] - o_span[kf])
+    //             _t <- Matrix4x4.CreateTranslation(t)
+    //         | "rotation" ->
+    //             let o_span = gltf.AsSpan<Quaternion>(o_bv.byteOffset + o_accessor.byteOffset, o_accessor.count) 
+    //             let r = o_span[kf] + Quaternion.Multiply(o_span[kf+1] - o_span[kf], interpolation_value)
+    //             _r <- Matrix4x4.CreateFromQuaternion(r)
+    //         | "scale" ->
+    //             let o_span = gltf.AsSpan<Vector3>(o_bv.byteOffset + o_accessor.byteOffset, o_accessor.count) 
+    //             let s = o_span[kf] + interpolation_value * (o_span[kf+1] - o_span[kf])
+    //             _s <- Matrix4x4.CreateScale(s)
+    //         | _ -> failwith $"{channel.target.path} is not implemented"
 
-            let m_transform = _t * _r * _s
-            let mutable n_transform = Matrix4x4(
-                m_transform.M11, m_transform.M12, m_transform.M13, 0.f,
-                m_transform.M21, m_transform.M22, m_transform.M23, 0.f,
-                m_transform.M31, m_transform.M32, m_transform.M33, 0.f,
-                0.f, 0.f, 0.f, 0.f
-            )
-            ignore (Matrix4x4.Invert(Matrix4x4.Transpose(n_transform), &n_transform))
-            let mesh = root.meshes[root.nodes[channel.target.node].mesh]
+    //         let m_transform = _t * _r * _s
+    //         let mutable n_transform = Matrix4x4(
+    //             m_transform.M11, m_transform.M12, m_transform.M13, 0.f,
+    //             m_transform.M21, m_transform.M22, m_transform.M23, 0.f,
+    //             m_transform.M31, m_transform.M32, m_transform.M33, 0.f,
+    //             0.f, 0.f, 0.f, 0.f
+    //         )
+    //         ignore (Matrix4x4.Invert(Matrix4x4.Transpose(n_transform), &n_transform))
+    //         let mesh = root.meshes[root.nodes[channel.target.node].mesh]
 
-            let mutable pn = 0
-            for primitive in mesh.primitives do
-                let material_color = 
-                    match root.materials with
-                    | null -> default_color 
-                    | _ -> root.materials[primitive.material].pbrMetallicRoughness.baseColorFactor
-                let p_accessor = root.accessors[primitive.attributes.POSITION]
-                // let n_accessor = root.accessors[primitive.attributes.NORMAL]
-                // let i_accessor = root.accessors[primitive.indices]
-                let p_bv = root.bufferViews[p_accessor.bufferView]
-                // let n_bv = root.bufferViews[n_accessor.bufferView]
-                let p_span = gltf.AsSpan<Vector3>(p_bv.byteOffset + p_accessor.byteOffset, p_accessor.count)
-                // let n_span = gltf.AsSpan<Vector3>(n_bv.byteOffset + n_accessor.byteOffset, n_accessor.count)
-                let vertices_count = p_accessor.count
+    //         let mutable pn = 0
+    //         for primitive in mesh.primitives do
+    //             let material_color = 
+    //                 match root.materials with
+    //                 | null -> default_color 
+    //                 | _ -> root.materials[primitive.material].pbrMetallicRoughness.baseColorFactor
+    //             let p_accessor = root.accessors[primitive.attributes.POSITION]
+    //             // let n_accessor = root.accessors[primitive.attributes.NORMAL]
+    //             // let i_accessor = root.accessors[primitive.indices]
+    //             let p_bv = root.bufferViews[p_accessor.bufferView]
+    //             // let n_bv = root.bufferViews[n_accessor.bufferView]
+    //             let p_span = gltf.AsSpan<Vector3>(p_bv.byteOffset + p_accessor.byteOffset, p_accessor.count)
+    //             // let n_span = gltf.AsSpan<Vector3>(n_bv.byteOffset + n_accessor.byteOffset, n_accessor.count)
+    //             let vertices_count = p_accessor.count
 
-                for i in 0..vertices_count - 1 do
-                    let v_transformed = Vector3.Transform(p_span[i], m_transform)
-                    Unsafe.Write<Vector3>(~~(ptr ++ pn), v_transformed)
+    //             for i in 0..vertices_count - 1 do
+    //                 let v_transformed = Vector3.Transform(p_span[i], m_transform)
+    //                 Unsafe.Write<Vector3>(~~(ptr ++ pn), v_transformed)
                     
-                    // let n_transformed = Vector3.Transform(n_span[i], n_transform)
-                    // Unsafe.Write<Vector3>(~~(ptr ++ (pn + sizeof<Vector3>)), n_transformed)
-                    pn <- pn + L
+    //                 // let n_transformed = Vector3.Transform(n_span[i], n_transform)
+    //                 // Unsafe.Write<Vector3>(~~(ptr ++ (pn + sizeof<Vector3>)), n_transformed)
+    //                 pn <- pn + L
 
-        // recompute the normals
-        let v_offset = sizeof<Vector3> / sizeof<float32>
-        let indices_count = indices.Length / 3
-        for i in 0..indices_count - 1 do
-            let i0 = int32 (indices[3*i+0])
-            let i1 = int32 (indices[3*i+1])
-            let i2 = int32 (indices[3*i+2])
+    //     // recompute the normals
+    //     let v_offset = sizeof<Vector3> / sizeof<float32>
+    //     let indices_count = indices.Length / 3
+    //     for i in 0..indices_count - 1 do
+    //         let i0 = int32 (indices[3*i+0])
+    //         let i1 = int32 (indices[3*i+1])
+    //         let i2 = int32 (indices[3*i+2])
         
-            let v0 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i0))
-            let v1 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i1))
-            let v2 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i2))
+    //         let v0 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i0))
+    //         let v1 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i1))
+    //         let v2 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i2))
 
-            let e0 = v1 - v0
-            let e1 = v2 - v0
-            let face_normal = Vector3.Cross(e0, e1)
+    //         let e0 = v1 - v0
+    //         let e1 = v2 - v0
+    //         let face_normal = Vector3.Cross(e0, e1)
         
-            Unsafe.Write<Vector3>(~~(ptr ++ (L*i0 + v_offset)), face_normal + Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i0 + v_offset)))
-            Unsafe.Write<Vector3>(~~(ptr ++ (L*i1 + v_offset)), face_normal + Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i1 + v_offset)))
-            Unsafe.Write<Vector3>(~~(ptr ++ (L*i2 + v_offset)), face_normal + Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i2 + v_offset)))
+    //         Unsafe.Write<Vector3>(~~(ptr ++ (L*i0 + v_offset)), face_normal + Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i0 + v_offset)))
+    //         Unsafe.Write<Vector3>(~~(ptr ++ (L*i1 + v_offset)), face_normal + Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i1 + v_offset)))
+    //         Unsafe.Write<Vector3>(~~(ptr ++ (L*i2 + v_offset)), face_normal + Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i2 + v_offset)))
 
-        let vertices_count = vertices.Length / L
-        for i in 0..vertices_count - 1 do
-            let normal = Vector3.Normalize(Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i + v_offset)))
-            Unsafe.Write<Vector3>(~~(ptr ++ (L*i + v_offset)), normal)
+    //     let vertices_count = vertices.Length / L
+    //     for i in 0..vertices_count - 1 do
+    //         let normal = Vector3.Normalize(Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i + v_offset)))
+    //         Unsafe.Write<Vector3>(~~(ptr ++ (L*i + v_offset)), normal)
 
 
     /// gets the transform matrix of the animation linearly interpolated with current time

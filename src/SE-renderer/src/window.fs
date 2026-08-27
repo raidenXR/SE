@@ -28,6 +28,19 @@ type SE_Window(settings:NativeWindowSettings) =
     let mutable window_render_frame = true
     let mutable IsRunningSlowly = false
 
+    let camera = Camera(OpenTK.Mathematics.Vector3.UnitZ, 800f/600f)
+    let mutable first_move = true
+    let mutable last_pos = OpenTK.Mathematics.Vector2()
+
+    static let _shared = lazy (
+        let n_settings = NativeWindowSettings(
+            ClientSize = OpenTK.Mathematics.Vector2i(800, 600),
+            Title = "opetk-window",
+            Flags = ContextFlags.ForwardCompatible
+        )
+        new SE_Window(n_settings)
+    )
+
     let update_frame_event = new Event<FrameEventArgs>()
     let render_frame_event = new Event<FrameEventArgs>()
 
@@ -36,11 +49,16 @@ type SE_Window(settings:NativeWindowSettings) =
 
     [<DefaultValue>] val mutable UpdateRenderLoopList: list<unit -> unit> 
 
-    member this.UpdateFrame with get() = window_update_frame
+    member this.UpdateFrame = window_update_frame
 
-    member this.RenderFrame with get() = window_render_frame
+    member this.RenderFrame = window_render_frame
+
+    member this.Camera = camera
+
+    static member Shared = _shared.Force()
 
     member val ElapsedTime = 0. with get,set
+
 
     member this.Load() =
         let TIME_PERIOD = 8
@@ -83,6 +101,28 @@ type SE_Window(settings:NativeWindowSettings) =
             // Update input state for next frame
             base.NewInputFrame()
             NativeWindow.ProcessWindowEvents(base.IsEventDriven)
+
+            let input = this.KeyboardState
+            let e = elapsed
+            
+            if input.IsKeyDown(Keys.Escape) then this.Close()
+            if input.IsKeyDown(Keys.Up) then camera.Position <- camera.Position + camera.Front * camera.Speed * (float32 e)
+            if input.IsKeyDown(Keys.Down) then camera.Position <- camera.Position - camera.Front * camera.Speed * (float32 e)
+            if input.IsKeyDown(Keys.Right) then camera.Position <- camera.Position + camera.Right * camera.Speed * (float32 e)
+            if input.IsKeyDown(Keys.Left) then camera.Position <- camera.Position - camera.Right * camera.Speed * (float32 e)
+            if input.IsKeyDown(Keys.Space) then camera.Position <- camera.Position + camera.Up * camera.Speed * (float32 e)
+            if input.IsKeyDown(Keys.LeftShift) then camera.Position <- camera.Position - camera.Up * camera.Speed * (float32 e)
+    
+            let mouse = this.MouseState
+            if first_move then
+                last_pos <- OpenTK.Mathematics.Vector2(mouse.X, mouse.Y)
+                first_move <- false
+            else
+                let dx = mouse.X - last_pos.X
+                let dy = mouse.Y - last_pos.Y
+                last_pos <- OpenTK.Mathematics.Vector2(mouse.X, mouse.Y)
+                camera.Yaw <- camera.Yaw + dx * camera.Sensitivity
+                camera.Pitch <- camera.Pitch - dy * camera.Sensitivity
 
             UpdateTime <- elapsed
             this.ElapsedTime <- elapsed
