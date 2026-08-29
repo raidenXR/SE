@@ -21,6 +21,8 @@ type [<Struct>] Mesh = {vertices:narray<float32>; L:int; indices:narray<uint32>}
     member this.Dispose() =
         this.vertices.Dispose()
         this.indices.Dispose()
+
+    member this.Stride = this.L * sizeof<float32>
         
 
 type [<Struct>] Triangle = {n0:Vector3; n1:Vector3; n2:Vector3}

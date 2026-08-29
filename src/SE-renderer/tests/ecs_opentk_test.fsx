@@ -58,6 +58,7 @@ let tree =
     System.Environment.GetCommandLineArgs()[2]
     |> RGeometry.load_model
     |> Octree.ofMesh<Entity> N k
+
     
 let colorbar = new Colorbar(Colormap.Jet, 0., 100.)
 let tree_len = tree.GetCount()
@@ -127,20 +128,16 @@ system OnLoad [] (fun _ ->
 
 system OnLoad [] (fun _ ->
     let L = 7
-    // let particles = particles_array |> NativeArray.ofArray
-    let vertices = Array.zeroCreate<float32> (tree_len*L)
-    // let mutable vertices = NativeArray.create<float32> (tree_len*L)
+    let mutable vertices = NativeArray.create<float32> (tree_len*L)
     let indices  = NativeArray.empty<uint32>()
 
     let mutable i = 0
-    // let c1 = Vector4(0.55f, 0.55f, 0.55f, 1.0f)
-    // let c2 = Vector4(0.25f, 0.25f, 0.25f, 1.0f)
 
     tree.Iter (fun u ->
         match u with
         | Octree.Internal -> 
             let pos = Octree.center u
-            let c1 = colorbar[float32(Random.Shared.Next(0,100))]
+            let c1 = colorbar[float32(Random.Shared.Next(0,30))]
             vertices[i+0] <- pos.X
             vertices[i+1] <- pos.Y
             vertices[i+2] <- pos.Z
@@ -152,7 +149,7 @@ system OnLoad [] (fun _ ->
 
         | Octree.Boundary ->
             let pos = Octree.center u
-            let c2 = colorbar[float32(Random.Shared.Next(0,100))]
+            let c2 = colorbar[float32(Random.Shared.Next(90,100))]
             vertices[i+0] <- pos.X
             vertices[i+1] <- pos.Y
             vertices[i+2] <- pos.Z
@@ -165,7 +162,7 @@ system OnLoad [] (fun _ ->
         | Octree.External -> ()
     )
 
-    let mesh = {vertices = (NativeArray.ofArray vertices); indices = indices; L = L}
+    let mesh = {vertices = vertices; indices = indices; L = L}
     
     particles_ent <-
         entity()
@@ -229,9 +226,9 @@ system OnUpdate [] (fun _ ->
 
 system OnUpdate [] (fun _ ->
     time_elapsed <- time_elapsed + SE_Window.Shared.ElapsedTime
-    if time_elapsed > 1. then
+    if time_elapsed > 0.2 then
         printfn "time elapsed, should trigger observer"
-        time_elapsed <- time_elapsed - 1.
+        time_elapsed <- time_elapsed - 0.2
 
         particles_ent |> Entity.add<UpdateColors> |> ignore        
 )
@@ -240,15 +237,6 @@ system OnUpdate [] (fun _ ->
 observer OnAdd [typeof<UpdateColors>] (fun q ->
     let vbs = Components.get<VertexBuffer>()
     let mesh = Components.get<Mesh>()[particles_ent]
-    // match vbs[particles_ent] with
-    // | VB1(vao,vbo,ebo) ->
-    //     GL.DeleteVertexArray(vao)
-    //     GL.DeleteBuffer(vbo)
-    //     GL.DeleteBuffer(ebo)            
-    // | VB2(vao,vbo) ->
-    //     GL.DeleteVertexArray(vao)
-    //     GL.DeleteBuffer(vbo)
-        
     
     let vertices = mesh.vertices.AsSpan()
     let L = 7
@@ -256,22 +244,12 @@ observer OnAdd [typeof<UpdateColors>] (fun q ->
 
     printfn "running oberser on add"
     
-    let c1 = colorbar[float32(Random.Shared.Next(10,90))]
-    let c2 = colorbar[float32(Random.Shared.Next(10,90))]
-
-
-    let c = colorbar[float32(Random.Shared.Next(0,100))]
-    // for i in 0..tree_len-1 do
-    //     vertices[i*L+3] <- c.X
-    //     vertices[i*L+4] <- c.Y
-    //     vertices[i*L+5] <- c.Z
-        
-    
     tree.Iter (fun u ->
         let vertices = mesh.vertices.AsSpan()
         match u with
         | Octree.Internal ->
             let p = Octree.center u
+            let c1 = colorbar[float32(Random.Shared.Next(0,50))]
             vertices[i+0] <- p.X
             vertices[i+1] <- p.Y
             vertices[i+2] <- p.Z
@@ -283,6 +261,7 @@ observer OnAdd [typeof<UpdateColors>] (fun q ->
             
         | Octree.Boundary ->
             let p = Octree.center u
+            let c2 = colorbar[float32(Random.Shared.Next(85,100))]
             vertices[i+0] <- p.X
             vertices[i+1] <- p.Y
             vertices[i+2] <- p.Z
@@ -296,7 +275,6 @@ observer OnAdd [typeof<UpdateColors>] (fun q ->
     )
     
     VertexBuffer.update vbs[particles_ent] mesh
-    // vbs[particles_ent] <- VertexBuffer.create VT2 mesh
 
     for e in q do
         e |> Entity.remove<UpdateColors> |> ignore

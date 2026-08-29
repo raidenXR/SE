@@ -47,6 +47,9 @@ type [<Struct>] State = {
     mutable last_pos:Vector2
 }
 
+
+type UpdateColors = struct end
+
 // type [<Struct>] DiscretizedVolume = {
 //     cv: CVBounds
 //     voxels: narray3d<bool>
@@ -107,6 +110,8 @@ let settings = GameWindowSettings.Default
 let n_settings = NativeWindowSettings(ClientSize = Vector2i(800, 600), Title = "opetk-window", Flags = ContextFlags.ForwardCompatible)
 let window = new SE_Window(n_settings)
 
+let colorbar = new Colorbar(Colormap.Jet, 0., 100.)
+
 
 // create a state instance"
 system OnLoad [] (fun _ ->
@@ -134,6 +139,9 @@ system OnLoad [] (fun _ ->
     // create particles
     let particles_len = octree.Value.GetCount()
     let particles_array = Array.zeroCreate<float32> (particles_len*7)
+    let c1 = colorbar[float32(Random.Shared.Next(10,90))]
+    let c2 = colorbar[float32(Random.Shared.Next(10,90))]
+
     let mutable i = 0
     octree.Value.IterParallel 1 (fun node ->
         match node with
@@ -142,9 +150,13 @@ system OnLoad [] (fun _ ->
             particles_array[i+0] <- pos.X
             particles_array[i+1] <- pos.Y
             particles_array[i+2] <- pos.Z
-            particles_array[i+3] <- 0.95f
-            particles_array[i+4] <- 0.25f
-            particles_array[i+5] <- 0.23f
+            // particles_array[i+3] <- 0.95f
+            // particles_array[i+4] <- 0.25f
+            // particles_array[i+5] <- 0.23f
+            // particles_array[i+6] <- 1.f
+            particles_array[i+3] <- c1.X
+            particles_array[i+4] <- c1.Y
+            particles_array[i+5] <- c1.Z
             particles_array[i+6] <- 1.f
             i <- i + 7
 
@@ -153,9 +165,13 @@ system OnLoad [] (fun _ ->
             particles_array[i+0] <- pos.X
             particles_array[i+1] <- pos.Y
             particles_array[i+2] <- pos.Z
-            particles_array[i+3] <- 0.55f
-            particles_array[i+4] <- 0.55f
-            particles_array[i+5] <- 0.53f
+            // particles_array[i+3] <- 0.55f
+            // particles_array[i+4] <- 0.55f
+            // particles_array[i+5] <- 0.53f
+            // particles_array[i+6] <- 1.f
+            particles_array[i+3] <- c2.X
+            particles_array[i+4] <- c2.Y
+            particles_array[i+5] <- c2.Z
             particles_array[i+6] <- 1.f
             i <- i + 7
 
@@ -215,6 +231,83 @@ system OnLoad [] (fun _ ->
 
 // load the window
 system OnLoad [] (fun _ -> window.Load())
+
+
+let mutable time_elapsed = 0.
+// system OnUpdate [] (fun _ ->
+//     time_elapsed <- time_elapsed + SE_Window.Shared.ElapsedTime
+//     if time_elapsed > 1. then
+//         printfn "time elapsed, should trigger observer"
+//         time_elapsed <- time_elapsed - 1.
+//         let particles_ent = Components.get<Mesh>().Entities[1]
+
+//         particles_ent |> Entity.add<UpdateColors> |> ignore        
+// )
+
+// trigger update on VB after n-time internal
+observer OnAdd [typeof<UpdateColors>] (fun q ->
+    let vbs = Components.get<VertexBuffer>()
+    let particles_ent = Components.get<Mesh>().Entities[1]
+    let mesh = Components.get<Mesh>()[particles_ent]    
+    
+    // let vertices = mesh.vertices.AsSpan()
+    let L = 7
+    let mutable i = 0
+
+    printfn "running oberser on add"
+    
+    let v1 = float32 (Random.Shared.NextDouble())
+    let v2 = float32 (Random.Shared.NextDouble())
+    // let c1 = Vector4(v1,v1,v1,1.f)
+    // let c2 = Vector4(v2,v2,v2,1.f)
+    let c1 = colorbar[100.f * v1]
+    let c2 = colorbar[100.f * v2]
+
+    let c = colorbar[float32(Random.Shared.Next(0,100))]
+
+    let vertices = Array.zeroCreate<float32> (7*octree.Value.GetCount())
+        
+    
+    octree.Value.Iter (fun u ->
+        let vertices = mesh.vertices.AsSpan()
+        match u with
+        | Octree.Internal ->
+            let p = Octree.center u
+            vertices[i+0] <- p.X
+            vertices[i+1] <- p.Y
+            vertices[i+2] <- p.Z
+            vertices[i+3] <- c1.X
+            vertices[i+4] <- c1.Y
+            vertices[i+5] <- c1.Z
+            vertices[i+6] <- c1.W
+            i <- i + L
+            
+        | Octree.Boundary ->
+            let p = Octree.center u
+            vertices[i+0] <- p.X
+            vertices[i+1] <- p.Y
+            vertices[i+2] <- p.Z
+            vertices[i+3] <- c2.X
+            vertices[i+4] <- c2.Y
+            vertices[i+5] <- c2.Z
+            vertices[i+6] <- c2.W
+            i <- i + L
+
+        | Octree.External -> ()            
+    )
+    
+    // VertexBuffer.update vbs[particles_ent] mesh
+    // match vbs[particles_ent] with
+    // | VB2(vao,vbo) ->
+    //     GL.BindBuffer(BufferTarget.ArrayBuffer, vbo)
+    //     GL.BufferSubData(BufferTarget.ArrayBuffer, IntPtr.Zero, vertices.Length*sizeof<float32>, vertices)
+    //     GL.BindBuffer(BufferTarget.ArrayBuffer, 0)
+    // | _ -> ()
+    // vbs[particles_ent] <- VertexBuffer.create VT2 mesh
+
+    for e in q do
+        e |> Entity.remove<UpdateColors> |> ignore
+)
 
 
 let render_ply () =

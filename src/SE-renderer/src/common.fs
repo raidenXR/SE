@@ -204,9 +204,9 @@ module VertexBuffer =
             GL.EnableVertexAttribArray(0)
             GL.EnableVertexAttribArray(1)
             GL.EnableVertexAttribArray(2)            
-            GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, 10 * sizeof<float32>, 0)
-            GL.VertexAttribPointer(1, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, 10 * sizeof<float32>, 3)
-            GL.VertexAttribPointer(2, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, 10 * sizeof<float32>, 6)
+            GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, mesh.Stride, 0*sizeof<float32>)
+            GL.VertexAttribPointer(1, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, mesh.Stride, 3*sizeof<float32>)
+            GL.VertexAttribPointer(2, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, mesh.Stride, 6*sizeof<float32>)
 
             let ebo = GL.GenBuffer()
             GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo)
@@ -222,8 +222,8 @@ module VertexBuffer =
             GL.BindVertexArray(vao)
             GL.EnableVertexAttribArray(0)
             GL.EnableVertexAttribArray(1)            
-            GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, 7, 0)
-            GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, 7, 3)
+            GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, mesh.Stride, 0*sizeof<float32>)
+            GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, mesh.Stride, 3*sizeof<float32>)
             VB2(vao,vbo)
 
 

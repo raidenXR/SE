@@ -167,27 +167,27 @@ module Helpers =
     let createPrim (model:Model) =
         let vbo = GL.GenBuffer()
         GL.BindBuffer (BufferTarget.ArrayBuffer, vbo)
-        GL.BufferData (BufferTarget.ArrayBuffer, model.mesh.vertices.BufferSize, model.mesh.vertices.ToInt(), BufferUsageHint.StaticDraw)
+        GL.BufferData (BufferTarget.ArrayBuffer, model.mesh.vertices.BufferSize, model.mesh.vertices.ToInt(), BufferUsageHint.DynamicDraw)
         
         let vao = GL.GenVertexArray()
         GL.BindVertexArray(vao)
         GL.EnableVertexAttribArray(0)
         GL.EnableVertexAttribArray(1)            
-        GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, model.L, model.Attrib0)
-        GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, model.L, model.Attrib1)
+        GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, model.Stride, model.Attrib0)
+        GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, model.Stride, model.Attrib1)
         {vao = vao; vbo = vbo}
 
     let createPrim_sliced (model:Model) (t_filled:int) =
         let vbo = GL.GenBuffer()
         GL.BindBuffer (BufferTarget.ArrayBuffer, vbo)
-        GL.BufferData (BufferTarget.ArrayBuffer, model.Stride * t_filled, model.mesh.vertices.ToInt(), BufferUsageHint.StaticDraw)
+        GL.BufferData (BufferTarget.ArrayBuffer, model.Stride * t_filled, model.mesh.vertices.ToInt(), BufferUsageHint.DynamicDraw)
         
         let vao = GL.GenVertexArray()
         GL.BindVertexArray(vao)
         GL.EnableVertexAttribArray(0)
         GL.EnableVertexAttribArray(1)            
-        GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, model.L, model.Attrib0)
-        GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, model.L, model.Attrib1)
+        GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, model.Stride, model.Attrib0)
+        GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, model.Stride, model.Attrib1)
         {vao = vao; vbo = vbo}
 
 
