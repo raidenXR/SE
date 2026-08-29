@@ -44,5 +44,5 @@ these are some examples of the Octree-descritization on the 3d geometries in `mo
 |----------|:-------------:|
 | ![skull_octree](images/skull_octree.png) |  ![car_octree](images/car_octree.png) |
 | ![pipe_octree](images/pipe_octree.png) |    ![hollow_octree](images/hollow_octree.png)  |
-
+| ![bunny](images/bunny_octree.png) |    ![dragon_octree](images/dragon_octree.png)  |
 

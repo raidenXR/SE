@@ -487,7 +487,7 @@ module GLTF =
             (vertices.ToArray(),indices.ToArray())           
 
         /// still allocates ResizeArray s  due to not knowing the size beforehand
-        member this.ReadMeshF(idx:int) =
+        member this.ReadMesh(idx:int) =
             let vertices = ResizeArray<float32>(10000)
             let indices = ResizeArray<uint32>(20000)
             let mesh = root.meshes[idx]
@@ -527,80 +527,80 @@ module GLTF =
                 base_vertex <- base_vertex + (uint32 vertices_count)
 
             {
-                SE.Spatial.MeshF.vertices = NativeArray.ofSeq(vertices)
-                SE.Spatial.MeshF.indices = NativeArray.ofSeq(indices)
-                SE.Spatial.MeshF.L = 10
+                SE.Spatial.Mesh.vertices = NativeArray.ofSeq(vertices)
+                SE.Spatial.Mesh.indices = NativeArray.ofSeq(indices)
+                SE.Spatial.Mesh.L = 10
             }
         
 
-        [<Obsolete>]
-        member this.UpdateAnimation_unmanaged (model:Model, time:float) =
-            let vertices = model.Vertices
-            let indices  = model.Indices
-            // t_list.Clear()
-            // s_list.Clear()
-            // r_list.Clear()
-            if abs(dt - time) > 200 then is_reversed <- not is_reversed
-            dt <- if abs(dt - time) > 200 then dt - 200. else dt + time
-            kf_current <- if is_reversed then int dt else int (200. - dt)
+        // [<Obsolete>]
+        // member this.UpdateAnimation_unmanaged (model:Model, time:float) =
+        //     let vertices = model.Vertices
+        //     let indices  = model.Indices
+        //     // t_list.Clear()
+        //     // s_list.Clear()
+        //     // r_list.Clear()
+        //     if abs(dt - time) > 200 then is_reversed <- not is_reversed
+        //     dt <- if abs(dt - time) > 200 then dt - 200. else dt + time
+        //     kf_current <- if is_reversed then int dt else int (200. - dt)
             
-            // let mutable t = Matrix4x4.Identity
-            // let mutable r = Matrix4x4.Identity
-            // let mutable s = Matrix4x4.Identity
-            for animation in root.animations do
-                let mutable t = Matrix4x4.Identity
-                let mutable r = Matrix4x4.Identity
-                let mutable s = Matrix4x4.Identity
-                for channel in animation.channels do
-                    let i_accessor = root.accessors[animation.samplers[channel.sampler].input]
-                    let o_accessor = root.accessors[animation.samplers[channel.sampler].output]
-                    let i_bv = root.bufferViews[i_accessor.bufferView]
-                    let o_bv = root.bufferViews[o_accessor.bufferView]
-                    let i_span = this.AsSpan<float32>(i_bv.byteOffset + i_accessor.byteOffset, i_accessor.count)
-                    if kf_current >= i_accessor.count then kf_current <- 0
+        //     // let mutable t = Matrix4x4.Identity
+        //     // let mutable r = Matrix4x4.Identity
+        //     // let mutable s = Matrix4x4.Identity
+        //     for animation in root.animations do
+        //         let mutable t = Matrix4x4.Identity
+        //         let mutable r = Matrix4x4.Identity
+        //         let mutable s = Matrix4x4.Identity
+        //         for channel in animation.channels do
+        //             let i_accessor = root.accessors[animation.samplers[channel.sampler].input]
+        //             let o_accessor = root.accessors[animation.samplers[channel.sampler].output]
+        //             let i_bv = root.bufferViews[i_accessor.bufferView]
+        //             let o_bv = root.bufferViews[o_accessor.bufferView]
+        //             let i_span = this.AsSpan<float32>(i_bv.byteOffset + i_accessor.byteOffset, i_accessor.count)
+        //             if kf_current >= i_accessor.count then kf_current <- 0
 
-                    // match channel.target.path with
-                    // | "translation" ->
-                    //     let o_span = this.AsSpan<Vector3>(o_bv.byteOffset + o_accessor.byteOffset, o_accessor.count) 
-                    //     t <- Matrix4x4.CreateTranslation(o_span[kf_current])
-                    // | "rotation" ->
-                    //     let o_span = this.AsSpan<Quaternion>(o_bv.byteOffset + o_accessor.byteOffset, o_accessor.count) 
-                    //     r <- Matrix4x4.CreateFromQuaternion(o_span[kf_current])
-                    // | "scale" ->
-                    //     let o_span = this.AsSpan<Vector3>(o_bv.byteOffset + o_accessor.byteOffset, o_accessor.count) 
-                    //     s <- Matrix4x4.CreateScale(o_span[kf_current])
-                    // | _ -> failwith $"{channel.target.path} is not implemented"
+        //             // match channel.target.path with
+        //             // | "translation" ->
+        //             //     let o_span = this.AsSpan<Vector3>(o_bv.byteOffset + o_accessor.byteOffset, o_accessor.count) 
+        //             //     t <- Matrix4x4.CreateTranslation(o_span[kf_current])
+        //             // | "rotation" ->
+        //             //     let o_span = this.AsSpan<Quaternion>(o_bv.byteOffset + o_accessor.byteOffset, o_accessor.count) 
+        //             //     r <- Matrix4x4.CreateFromQuaternion(o_span[kf_current])
+        //             // | "scale" ->
+        //             //     let o_span = this.AsSpan<Vector3>(o_bv.byteOffset + o_accessor.byteOffset, o_accessor.count) 
+        //             //     s <- Matrix4x4.CreateScale(o_span[kf_current])
+        //             // | _ -> failwith $"{channel.target.path} is not implemented"
 
-                    let m_transform = t * r * s
+        //             let m_transform = t * r * s
 
-                    let mesh = root.meshes[root.nodes[channel.target.node].mesh]
-                    let mutable pn = 0
-                    for primitive in mesh.primitives do
-                        let material_color = 
-                            if root.materials <> null then
-                                let material = root.materials[primitive.material]
-                                material.pbrMetallicRoughness.baseColorFactor
-                            else
-                                [|0.53f; 0.55f; 0.53f; 1.0f|]
-                        let p_accessor = root.accessors[primitive.attributes.POSITION]
-                        let n_accessor = root.accessors[primitive.attributes.NORMAL]
-                        let i_accessor = root.accessors[primitive.indices]
-                        let p_bv = root.bufferViews[p_accessor.bufferView]
-                        let n_bv = root.bufferViews[n_accessor.bufferView]
-                        let i_bv = root.bufferViews[i_accessor.bufferView]
-                        let p_span = this.AsSpan<Vector3>(p_bv.byteOffset + p_accessor.byteOffset, p_accessor.count)
-                        let n_span = this.AsSpan<Vector3>(n_bv.byteOffset + n_accessor.byteOffset, n_accessor.count)
-                        let i_span = this.AsSpan<uint16>(i_bv.byteOffset + i_accessor.byteOffset, i_accessor.count)
-                        let vertices_count = p_accessor.count
+        //             let mesh = root.meshes[root.nodes[channel.target.node].mesh]
+        //             let mutable pn = 0
+        //             for primitive in mesh.primitives do
+        //                 let material_color = 
+        //                     if root.materials <> null then
+        //                         let material = root.materials[primitive.material]
+        //                         material.pbrMetallicRoughness.baseColorFactor
+        //                     else
+        //                         [|0.53f; 0.55f; 0.53f; 1.0f|]
+        //                 let p_accessor = root.accessors[primitive.attributes.POSITION]
+        //                 let n_accessor = root.accessors[primitive.attributes.NORMAL]
+        //                 let i_accessor = root.accessors[primitive.indices]
+        //                 let p_bv = root.bufferViews[p_accessor.bufferView]
+        //                 let n_bv = root.bufferViews[n_accessor.bufferView]
+        //                 let i_bv = root.bufferViews[i_accessor.bufferView]
+        //                 let p_span = this.AsSpan<Vector3>(p_bv.byteOffset + p_accessor.byteOffset, p_accessor.count)
+        //                 let n_span = this.AsSpan<Vector3>(n_bv.byteOffset + n_accessor.byteOffset, n_accessor.count)
+        //                 let i_span = this.AsSpan<uint16>(i_bv.byteOffset + i_accessor.byteOffset, i_accessor.count)
+        //                 let vertices_count = p_accessor.count
 
-                        // let L = model.L
-                        // for i in 0..vertices_count - 1 do
-                        //     let p = Vector3.Transform(p_span[i], m_transform)
-                        //     vertices[pn+0] <- p.X
-                        //     vertices[pn+1] <- p.Y
-                        //     vertices[pn+2] <- p.Z                    
-                        //     pn <- pn + L
+        //                 // let L = model.L
+        //                 // for i in 0..vertices_count - 1 do
+        //                 //     let p = Vector3.Transform(p_span[i], m_transform)
+        //                 //     vertices[pn+0] <- p.X
+        //                 //     vertices[pn+1] <- p.Y
+        //                 //     vertices[pn+2] <- p.Z                    
+        //                 //     pn <- pn + L
 
-                        ()
+        //                 ()
 
                         

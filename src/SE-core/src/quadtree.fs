@@ -1,6 +1,7 @@
-namespace SE.Core
+namespace SE.Spatial
 
 open SE
+open SE.Core
 open System
 open System.Numerics
 open System.Collections

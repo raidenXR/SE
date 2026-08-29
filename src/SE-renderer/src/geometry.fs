@@ -41,7 +41,7 @@ type [<Struct>] ValueAnimation = {
 type [<Struct>] Model =
     // val mutable vertices: narray<float32>
     // val mutable indices:  narray<uint32>
-    val mutable mesh: MeshF
+    val mutable mesh: Mesh
     val mutable private stride: int
     val mutable private l: int    
     val mutable private attrib0: int    
@@ -547,7 +547,7 @@ module RGeometry =
             L = 10
         }
 
-    let tranform (transform:Matrix4x4) (mesh:MeshF) = 
+    let tranform (transform:Matrix4x4) (mesh:Mesh) = 
         let vertices = cast<float32> mesh.vertices.Ptr
         let L = 10
         let len = mesh.vertices.Length / L
@@ -556,6 +556,21 @@ module RGeometry =
             let t = Vector3.Transform(!!p, transform)
             FSharp.NativeInterop.NativePtr.write p t
         mesh
+
+
+    let load_model (path:string) =
+        let r = 0.55f
+        let g = 0.55f
+        let b = 0.55f
+        let a = 1.f
+        
+        match path with
+        | _ when path.Contains(".txt")  -> load_txt_unmanaged(path,r,g,b,a)
+        | _ when path.Contains(".ply")  -> load_ply_unmanaged(path,r,g,b,a)
+        | _ when path.Contains(".gltf") ->
+            use gltf = new GLTF.Deserializer(path)
+            gltf.ReadMesh(0)
+        | _ -> failwith "unknow format type"
 
 
     // let inline is_clamped v1 v v2 =
@@ -588,32 +603,32 @@ module RGeometry =
     //     v_min + (v_max - v_min) / 2.f
 
 
-    /// Use this function to assign on a buffer
-    let assign_particles_SIMD (cv:CVBounds, voxels:narray3d<bool>, particles:Span<float32>, L:int) =
-        let I = voxels.I
-        let J = voxels.J
-        let K = voxels.K
-        let N = voxels.I
-        let n = float32 N
-        let v_min = cv.v_min
-        let v_max = cv.v_max
-        let dv = (v_max - v_min) / n            
-        let p = &&MemoryMarshal.GetReference(particles)
-        let mutable i = 0
-        for ix in 0..I-1 do
-            for iy in 0..J-1 do
-                for iz in 0..K-1 do
-                    if voxels[ix,iy,iz] then
-                        let v = v_min + dv * Vector3(float32(ix), float32(iy), float32(iz))
-                        let c = (v - v_min) / (dv * n)
-                        Unsafe.Write<Vector3>(~~(p ++ i),v)
-                        Unsafe.Write<Vector4>(~~(p ++ (i+3)), Vector4(c,1.f))
-                        i <- i + L
+    // /// Use this function to assign on a buffer
+    // let assign_particles_SIMD (cv:CVBounds, voxels:narray3d<bool>, particles:Span<float32>, L:int) =
+    //     let I = voxels.I
+    //     let J = voxels.J
+    //     let K = voxels.K
+    //     let N = voxels.I
+    //     let n = float32 N
+    //     let v_min = cv.v_min
+    //     let v_max = cv.v_max
+    //     let dv = (v_max - v_min) / n            
+    //     let p = &&MemoryMarshal.GetReference(particles)
+    //     let mutable i = 0
+    //     for ix in 0..I-1 do
+    //         for iy in 0..J-1 do
+    //             for iz in 0..K-1 do
+    //                 if voxels[ix,iy,iz] then
+    //                     let v = v_min + dv * Vector3(float32(ix), float32(iy), float32(iz))
+    //                     let c = (v - v_min) / (dv * n)
+    //                     Unsafe.Write<Vector3>(~~(p ++ i),v)
+    //                     Unsafe.Write<Vector4>(~~(p ++ (i+3)), Vector4(c,1.f))
+    //                     i <- i + L
 
 
-    let particles_SIMD L (v:Voxels) =
-        let particles_array = NativeArray.create<float32>(v.filled * L)
-        assign_particles_SIMD(v.bounds, v.voxels, particles_array.AsSpan(), L)
-        particles_array
+    // let particles_SIMD L (v:Voxels) =
+    //     let particles_array = NativeArray.create<float32>(v.filled * L)
+    //     assign_particles_SIMD(v.bounds, v.voxels, particles_array.AsSpan(), L)
+    //     particles_array
 
 

@@ -9,6 +9,34 @@ open OpenTK.Windowing.Desktop
 open OpenTK.Windowing.GraphicsLibraryFramework
 open OpenTK.Graphics.OpenGL4
 
+open SkiaSharp
+open FFMpegCore
+open FFMpegCore.Pipes
+
+type VideoFrame(bmp:SKBitmap, pixels:byte[]) =
+    do
+        if bmp.ColorType <> SKColorType.Bgra8888 then
+            printfn "colortype: %A" bmp.ColorType
+            failwith "only 'bgra' colortype is supported"
+
+    interface IDisposable with
+        member this.Dispose() =
+            bmp.Dispose()
+
+    interface IVideoFrame with
+        member this.Width  = bmp.Width
+        member this.Height = bmp.Height
+        member this.Format = "bgra"
+    
+        member this.Serialize(pipe:System.IO.Stream) =
+            pipe.Write(bmp.Bytes, 0, bmp.Bytes.Length)
+
+        member this.SerializeAsync(pipe:System.IO.Stream, token:System.Threading.CancellationToken) =
+            pipe.WriteAsync(bmp.Bytes, 0, bmp.Bytes.Length, token)
+
+    member this.Bitmap = bmp
+    member this.Pixels = pixels
+
 
 // CREATE an NEW CLASS for GameWindow with Different Run method
 
@@ -20,6 +48,10 @@ type SE_Window(settings:NativeWindowSettings) =
     let _watchUpdate = new Stopwatch()
     let _updateFrequency = GameWindowSettings.Default.UpdateFrequency
     let UpdateFrequency = _updateFrequency
+    let CaptureFrequency = 20. 
+    let mutable _capture_countdown = CaptureFrequency
+
+    let frames = ResizeArray<VideoFrame>(1000)
 
     let mutable _slowUpdates = 0
     let mutable elapsed = 0.
@@ -31,6 +63,9 @@ type SE_Window(settings:NativeWindowSettings) =
     let camera = Camera(OpenTK.Mathematics.Vector3.UnitZ, 800f/600f)
     let mutable first_move = true
     let mutable last_pos = OpenTK.Mathematics.Vector2()
+    let mutable record = false
+    let mutable record_prev = false
+  
 
     static let _shared = lazy (
         let n_settings = NativeWindowSettings(
@@ -54,6 +89,8 @@ type SE_Window(settings:NativeWindowSettings) =
     member this.RenderFrame = window_render_frame
 
     member this.Camera = camera
+
+    member this.IsRecording = record
 
     static member Shared = _shared.Force()
 
@@ -93,7 +130,15 @@ type SE_Window(settings:NativeWindowSettings) =
 
     member this.Update(render_fn:unit -> unit) =
         let updatePeriod = if UpdateFrequency = 0. then 0. else 1. / UpdateFrequency
+        let capturePeriod = if CaptureFrequency = 0. then 0.67 else 1. / CaptureFrequency
         elapsed <- _watchUpdate.Elapsed.TotalSeconds    
+
+        // if elapsed > capturePeriod && record then
+        // if elapsed > updatePeriod && record then
+        //     _capture_countdown <- _capture_countdown - 1.
+        //     if _capture_countdown <= 0. then
+        //         this.CaptureFrame()
+        //         _capture_countdown <- CaptureFrequency
 
         if elapsed > updatePeriod then
             _watchUpdate.Restart()
@@ -123,6 +168,12 @@ type SE_Window(settings:NativeWindowSettings) =
                 last_pos <- OpenTK.Mathematics.Vector2(mouse.X, mouse.Y)
                 camera.Yaw <- camera.Yaw + dx * camera.Sensitivity
                 camera.Pitch <- camera.Pitch - dy * camera.Sensitivity
+                
+            if input.IsKeyDown(Keys.R) && not record_prev then
+                record_prev <- true
+                record <- not record
+            elif not (input.IsKeyDown(Keys.R)) then
+                record_prev <- false
 
             UpdateTime <- elapsed
             this.ElapsedTime <- elapsed
@@ -158,4 +209,72 @@ type SE_Window(settings:NativeWindowSettings) =
         base.OnResize(e)
         let size_x = this.Size.X
         let size_y = this.Size.Y
+        camera.AspectRatio <- float32(size_x) / float32(size_y)
         GL.Viewport(0, 0, size_x, size_y)
+
+
+    member this.CaptureFrame() =
+        let size = this.FramebufferSize
+        let w = size.X
+        let h = size.Y
+        let pixels = Array.zeroCreate<byte> (w*h*4)  // This leaks memory, use regular arrays, DO NOT POOL
+
+        use ptr = fixed pixels
+        let p'  = FSharp.NativeInterop.NativePtr.toNativeInt ptr
+        GL.ReadPixels(0, 0, w, h, PixelFormat.Bgra, PixelType.UnsignedByte, p')
+
+        let bitmap = new SKBitmap(w, h, SKColorType.Bgra8888, SKAlphaType.Premul)
+        let success = bitmap.InstallPixels(new SKImageInfo(w, h, SKColorType.Bgra8888, SKAlphaType.Premul), p', w*4)
+
+        if not success then
+            failwith "failed to install pixels on SKBitmap"
+        
+        frames.Add(new VideoFrame(bitmap, pixels))
+        
+
+    override this.Dispose (): unit = 
+        base.Dispose()
+
+        // for frame in frames do frame.Bitmap.Dispose()
+
+
+    /// Exports a .mp4 video from the captured frames if any
+    member this.ExportVideo () =
+        if frames.Count > 0 then
+            let path = DateTime.Now.ToString(Globalization.CultureInfo("gr-GR")).Replace('/', '-').Replace(':',' ')
+            let vid_path = "vid_" + path + ".mp4"
+            let img_path = "img_" + path + ".png"
+
+            if System.IO.File.Exists(vid_path) then
+                System.IO.File.Delete(vid_path)
+            if System.IO.File.Exists(img_path) then
+                System.IO.File.Delete(img_path)
+
+            let size = this.FramebufferSize
+            printfn "framebuffer: (%d, %d)" size.X size.Y
+            // save last frame as image
+            printfn "image png conversion"
+    
+            let last_frame = (Seq.last frames)
+            let bmp = last_frame.Bitmap
+            use tmp_img = SKImage.FromBitmap(bmp)
+            use tmp_dat = tmp_img.Encode(SKEncodedImageFormat.Png, 80)
+            use tmp_stm = System.IO.File.OpenWrite(img_path)
+            tmp_dat.SaveTo(tmp_stm)
+            tmp_stm.Close()
+            printfn "image png saved"
+
+            let _frames = frames.ToArray() |> Array.map (fun v -> v :> IVideoFrame)
+
+            let source = new RawVideoPipeSource(_frames, FrameRate = 30)
+            let success = FFMpegArguments
+                            .FromPipeInput(source)
+                            .OutputToFile(vid_path, true, (fun options -> options.WithVideoCodec("libvpx-vp9").WithVideoFilters(fun filter -> filter.Mirror(Enums.Mirroring.Vertical) |> ignore) |> ignore))
+                            // .ProcessSynchronously()
+
+            printfn "start processing video conversion on %d frames" (Seq.length frames)
+            let s = success.ProcessSynchronously()
+            // success
+            let str = if s then "video conversion done!" else "video conversion failed"
+            printfn "%s" str
+        

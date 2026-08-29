@@ -1,6 +1,7 @@
-namespace SE.Core
+namespace SE.Spatial
 
 open SE
+open SE.Core
 open System
 open System.Numerics
 open System.Threading
@@ -1288,6 +1289,18 @@ module Octree =
         let bits = fill_scanlines N L v_min v_max vertices indices (BitArray(N*N*N))
         ofStencil<'T> N k v_min v_max bits        
 
+    /// WARNING: It Disposes the unmanged resources of mesh
+    // if you want to retain the resources in memory, use ofSurface<'T> instead
+    let ofMesh<'T> N k (mesh:Mesh) =
+        let vertices = mesh.vertices.AsSpan()
+        let indices  = mesh.indices.AsSpan()
+        let L = mesh.L 
+        let (v_min,v_max) = GridGeneration3D.bounds_SIMD vertices L
+        let bits = fill_scanlines N L v_min v_max vertices indices (BitArray(N*N*N))
+        mesh.vertices.Dispose()
+        mesh.indices.Dispose()
+        ofStencil<'T> N k v_min v_max bits        
+        
 
     // [<Obsolete>]
     // let ofSurfaceEXT<'T> (N:int) L k (vertices:Span<float32>) (indices:Span<uint>) =

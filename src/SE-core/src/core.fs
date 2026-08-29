@@ -1071,6 +1071,12 @@ module FnDecls =
         Parallel.For(0, ids.Count, (fun i -> fn ids[i]))
         |> ignore
 
+    let prefab  (a:'T) e = e |> set a
+    let prefab2 (a:'T) (b:'U) e = e |> set a |> set b
+    let prefab3 (a:'T) (b:'U) (c:'K) e = e |> set a |> set b |> set c
+    let prefab4 (a:'T) (b:'U) (c:'K) (d:'V) e = e |> set a |> set b |> set c |> set d
+        
+
         
 // /// a pipeline schedules and runs systems
 // module Pipeline =

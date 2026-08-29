@@ -16,91 +16,61 @@ open FSharp.NativeInterop
 
 open SE
 
-[<Struct>]
-type VertexType =
-    | VT1
-    | VT2
-
-[<Struct>]
-type VertexBuffer =
-    | VB1 of int * int * int
-    | VB2 of int * int
-
-module VertexBuffer =
-    open SE.Spatial
-
-    let create vt (mesh:MeshF) =
-        match vt with
-        | VT1 ->
-            let vbo = GL.GenBuffer()
-            GL.BindBuffer (BufferTarget.ArrayBuffer, vbo)
-            GL.BufferData (BufferTarget.ArrayBuffer, mesh.vertices.BufferSize, mesh.vertices.ToInt(), BufferUsageHint.StaticDraw)
-    
-            let vao = GL.GenVertexArray()
-            GL.BindVertexArray(vao)
-            GL.EnableVertexAttribArray(0)
-            GL.EnableVertexAttribArray(1)
-            GL.EnableVertexAttribArray(2)            
-            GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, 10 * sizeof<float32>, 0)
-            GL.VertexAttribPointer(1, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, 10 * sizeof<float32>, 3)
-            GL.VertexAttribPointer(2, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, 10 * sizeof<float32>, 6)
-
-            let ebo = GL.GenBuffer()
-            GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo)
-            GL.BufferData(BufferTarget.ElementArrayBuffer, mesh.indices.BufferSize, mesh.indices.ToInt(), BufferUsageHint.StaticDraw)
-            VB1(vao, vbo, ebo)
-
-        | VT2 ->
-            let vbo = GL.GenBuffer()
-            GL.BindBuffer (BufferTarget.ArrayBuffer, vbo)
-            GL.BufferData (BufferTarget.ArrayBuffer, mesh.vertices.BufferSize, mesh.vertices.ToInt(), BufferUsageHint.StaticDraw)
+    // let draw_colorbar (colorbar:Colorbar) =
         
-            let vao = GL.GenVertexArray()
-            GL.BindVertexArray(vao)
-            GL.EnableVertexAttribArray(0)
-            GL.EnableVertexAttribArray(1)            
-            GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, 7, 0)
-            GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, 7, 3)
-            VB2(vao,vbo)
+// module Texture =
+//     let create w h (ptr:nativeint) =
+//         // Position     Texture coordinates
+//         let vertices = [|
+//             -0.8f; -0.7f;  0.0f; 1.0f;
+//              0.8f; -0.7f;  1.0f; 1.0f;
+//              0.8f;  0.7f;  1.0f; 0.0f;
+//             -0.8f; -0.7f;  0.0f; 1.0f;
+//              0.8f;  0.7f;  1.0f; 0.0f;
+//             -0.8f;  0.7f;  0.0f; 0.0f
+//         |]
 
+//         let _vao = GL.GenVertexArray();
+//         let _vbo = GL.GenBuffer();
 
-    let update vb (mesh:MeshF) =
-        match vb with
-        | VB1(vao,vbo,ebo) ->
-            GL.BindBuffer (BufferTarget.ArrayBuffer, vbo)
-            GL.BufferData (BufferTarget.ArrayBuffer, mesh.vertices.BufferSize, mesh.vertices.ToInt(), BufferUsageHint.DynamicDraw)
-    
-            GL.BindVertexArray(vao)
-            GL.EnableVertexAttribArray(0)
-            GL.EnableVertexAttribArray(1)
-            GL.EnableVertexAttribArray(2)            
-            GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, mesh.L * sizeof<float32>, 0)
-            GL.VertexAttribPointer(1, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, mesh.L * sizeof<float32>, 3)
-            GL.VertexAttribPointer(2, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, mesh.L * sizeof<float32>, 6)
+//         GL.BindVertexArray(_vao);
+//         GL.BindBuffer(BufferTarget.ArrayBuffer, _vbo);
 
-            GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo)
-            GL.BufferData(BufferTarget.ElementArrayBuffer, mesh.indices.BufferSize, mesh.indices.ToInt(), BufferUsageHint.DynamicDraw)
+//         GL.BufferData(BufferTarget.ArrayBuffer, vertices.Length * sizeof<float32>, vertices, BufferUsageHint.StaticDraw)
+//         GL.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, 4 * sizeof<float32>, 0)
+//         GL.EnableVertexAttribArray(0)
         
-        | VB2(vao,vbo) ->
-            GL.BindBuffer (BufferTarget.ArrayBuffer, vbo)
-            GL.BufferData (BufferTarget.ArrayBuffer, mesh.vertices.BufferSize, mesh.vertices.ToInt(), BufferUsageHint.DynamicDraw)
+//         GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 4 * sizeof<float32>, 2 * sizeof<float32>)
+//         GL.EnableVertexAttribArray(1)
+
+//         GL.BindVertexArray(0)
+
+//         let texture = GL.GenTexture()
+//         GL.BindTexture(TextureTarget.Texture2D, texture)
+
+//         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, int(TextureMinFilter.Linear))
+//         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, int(TextureMagFilter.Linear))
+//         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, int(TextureWrapMode.ClampToEdge))
+//         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, int(TextureWrapMode.ClampToEdge))
+
+//         // Make sure OpenGL does not expect 4-byte row alignment to be different
+//         // from SkiaSharp's row layout.
+//         GL.PixelStore(PixelStoreParameter.UnpackAlignment, 4)
+
+//         // Upload SkiaSharp pixels to OpenGL.
+//         GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, w, h, 0, PixelFormat.Rgba, PixelType.UnsignedByte, ptr)
+//         GL.BindTexture(TextureTarget.Texture2D, 0)
+
+
+//     let draw (texture:int) (vao:int) (shader:Shader) =        
+//         shader.Use()
+//         GL.ActiveTexture(TextureUnit.Texture0)
+//         GL.BindTexture(TextureTarget.Texture2D, texture)
+
+//         shader.SetInt("uTexture", 0)
+//         GL.BindVertexArray(vao)
+//         GL.DrawArrays(PrimitiveType.Triangles, 0, 6);
         
-            GL.BindVertexArray(vao)
-            GL.EnableVertexAttribArray(0)
-            GL.EnableVertexAttribArray(1)            
-            GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, mesh.L * sizeof<float32>, 0)
-            GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, mesh.L * sizeof<float32>, 3)
-
-
-    let draw vb (mesh:MeshF) =
-        match vb with
-        | VB1(vao,vbo,ebo) ->
-            GL.BindVertexArray(vao)
-            GL.DrawElements(PrimitiveType.Triangles, mesh.indices.Length, DrawElementsType.UnsignedInt, 0)
-
-        | VB2(vao,vbo) ->
-            GL.BindVertexArray(vao)
-            GL.DrawArrays(PrimitiveType.Points, 0, mesh.vertices.Length)         
 
 
 module Imaging =
@@ -136,6 +106,21 @@ module Imaging =
 
         // printfn "N: %d, total_pixels: %d" N total_pixels
         (stencil, N, Vector2(float32 x_min, float32 y_min), Vector2(float32 x_max, float32 y_max))
+
+
+    let draw_text (str:string) x y (canvas:SKCanvas) (paint:SKPaint) =
+        let w = paint.MeasureText(str)
+        let h =
+            let mutable _h = 1
+            for i in 0..str.Length-1 do
+                if str[i] = '\n' then _h <- _h + 1
+            float32(_h * 22)
+
+        canvas.Clear()
+        paint.Color <- SKColors.Gray
+        canvas.DrawRect(x,y,w,h,paint)
+        paint.Color <- SKColors.Black
+        canvas.DrawText(str,x,y,paint)
 
 
 

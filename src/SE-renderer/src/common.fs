@@ -139,9 +139,9 @@ type Shader(vertex_path:string, fragment_path:string) =
 //         GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
 //         Texture(_handle);
 
-    // member this.Use(_unit:TextureUnit) =
-    //     GL.ActiveTexture(_unit)
-    //     GL.BindTexture(TextureTarget.Texture2D, this.Handle)
+ // member this.Use(_unit:TextureUnit) =
+ //     GL.ActiveTexture(_unit)
+ //     GL.BindTexture(TextureTarget.Texture2D, this.Handle)
         
 
 module Shaders =
@@ -169,6 +169,184 @@ module Shaders =
 
     let get (tag:string) =
         shaders_map[tag]
+    
+
+
+[<Struct>]
+type VertexType =
+    | VT1    // mesh-triangles
+    | VT2    // mesh-points
+    // | VT3    // texture-SkiaSharp
+
+[<Struct>]
+type VertexBuffer =
+    | VB1 of int * int * int
+    | VB2 of int * int
+    // | VB3 of int * int * int
+
+[<Struct>]
+type Texture =
+    | TXT1 of int * int * int
+
+
+module VertexBuffer =
+    open SE.Spatial
+
+    let create vt (mesh:Mesh) =
+        match vt with
+        | VT1 ->
+            let vbo = GL.GenBuffer()
+            GL.BindBuffer (BufferTarget.ArrayBuffer, vbo)
+            GL.BufferData (BufferTarget.ArrayBuffer, mesh.vertices.BufferSize, mesh.vertices.ToInt(), BufferUsageHint.StaticDraw)
+    
+            let vao = GL.GenVertexArray()
+            GL.BindVertexArray(vao)
+            GL.EnableVertexAttribArray(0)
+            GL.EnableVertexAttribArray(1)
+            GL.EnableVertexAttribArray(2)            
+            GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, 10 * sizeof<float32>, 0)
+            GL.VertexAttribPointer(1, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, 10 * sizeof<float32>, 3)
+            GL.VertexAttribPointer(2, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, 10 * sizeof<float32>, 6)
+
+            let ebo = GL.GenBuffer()
+            GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo)
+            GL.BufferData(BufferTarget.ElementArrayBuffer, mesh.indices.BufferSize, mesh.indices.ToInt(), BufferUsageHint.StaticDraw)
+            VB1(vao, vbo, ebo)
+
+        | VT2 ->
+            let vbo = GL.GenBuffer()
+            GL.BindBuffer (BufferTarget.ArrayBuffer, vbo)
+            GL.BufferData (BufferTarget.ArrayBuffer, mesh.vertices.BufferSize, mesh.vertices.ToInt(), BufferUsageHint.DynamicDraw)
+        
+            let vao = GL.GenVertexArray()
+            GL.BindVertexArray(vao)
+            GL.EnableVertexAttribArray(0)
+            GL.EnableVertexAttribArray(1)            
+            GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, 7, 0)
+            GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, 7, 3)
+            VB2(vao,vbo)
+
+
+    let update vb (mesh:Mesh) =
+        match vb with
+        | VB1(vao,vbo,ebo) ->
+            // GL.BindBuffer (BufferTarget.ArrayBuffer, vbo)
+            // GL.BufferData (BufferTarget.ArrayBuffer, mesh.vertices.BufferSize, mesh.vertices.ToInt(), BufferUsageHint.DynamicDraw)
+    
+            // GL.BindVertexArray(vao)
+            // GL.EnableVertexAttribArray(0)
+            // GL.EnableVertexAttribArray(1)
+            // GL.EnableVertexAttribArray(2)            
+            // GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, mesh.L * sizeof<float32>, 0)
+            // GL.VertexAttribPointer(1, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, mesh.L * sizeof<float32>, 3)
+            // GL.VertexAttribPointer(2, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, mesh.L * sizeof<float32>, 6)
+
+            // GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo)
+            // GL.BufferData(BufferTarget.ElementArrayBuffer, mesh.indices.BufferSize, mesh.indices.ToInt(), BufferUsageHint.DynamicDraw)
+            GL.BindBuffer(BufferTarget.ArrayBuffer, ebo)
+            GL.BufferSubData(BufferTarget.ArrayBuffer, IntPtr.Zero, mesh.indices.BufferSize, mesh.indices.ToInt())
+            GL.BindBuffer(BufferTarget.ArrayBuffer, 0)
+        
+        | VB2(vao,vbo) ->
+            // GL.BindBuffer (BufferTarget.ArrayBuffer, vbo)
+            // GL.BufferData (BufferTarget.ArrayBuffer, mesh.vertices.BufferSize, mesh.vertices.ToInt(), BufferUsageHint.DynamicDraw)
+        
+            // GL.BindVertexArray(vao)
+            // GL.EnableVertexAttribArray(0)
+            // GL.EnableVertexAttribArray(1)            
+            // GL.VertexAttribPointer(0, (GLTF.size "VEC3"), VertexAttribPointerType.Float, false, mesh.L, 0)
+            // GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, mesh.L, 3)
+            GL.BindBuffer(BufferTarget.ArrayBuffer, vbo)
+            GL.BufferSubData(BufferTarget.ArrayBuffer, IntPtr.Zero, mesh.vertices.BufferSize, mesh.vertices.ToInt())
+            GL.BindBuffer(BufferTarget.ArrayBuffer, 0)
+
+    let draw vb (mesh:Mesh) =
+        match vb with
+        | VB1(vao,vbo,ebo) ->
+            GL.BindVertexArray(vao)
+            GL.DrawElements(PrimitiveType.Triangles, mesh.indices.Length, DrawElementsType.UnsignedInt, 0)
+
+        | VB2(vao,vbo) ->
+            GL.BindVertexArray(vao)
+            GL.DrawArrays(PrimitiveType.Points, 0, mesh.vertices.Length)         
+
+
+
+module Texture =
+
+    /// x,y, w,h are OpenGL coordinates [-1,1]
+    let create (bmp:SKBitmap) x y w h =
+        // let vertices = [|
+        //     -0.8f; -0.7f;  0.0f; 1.0f;
+        //      0.8f; -0.7f;  1.0f; 1.0f;
+        //      0.8f;  0.7f;  1.0f; 0.0f;
+        //     -0.8f; -0.7f;  0.0f; 1.0f;
+        //      0.8f;  0.7f;  1.0f; 0.0f;
+        //     -0.8f;  0.7f;  0.0f; 0.0f
+        // |]
+        let vertices = [|
+             x;   y;   0.0f; 1.0f;
+             x+w; y;   1.0f; 1.0f;
+             x+w; y+h; 1.0f; 0.0f;
+             x;   y;   0.0f; 1.0f;
+             x+w; y+h; 1.0f; 0.0f;
+             x;   y+h; 0.0f; 0.0f
+        |]
+        // let a = Vector2(x, y)
+        // let b = Vector2(x + w, y + h)
+        // let lerpx v = v / 400.f - 1.f
+        // let lerpy v = v / 300.f - 1.f
+        // let vertices = [|
+        //      lerpx(x); lerpy(y);  0.0f; 1.0f;
+        //      lerpx(x); lerpy(y+h);  1.0f; 1.0f;
+        //      lerpx(x+w); lerpy(y+h);  1.0f; 0.0f;
+        //      lerpx(x); lerpy(y);  0.0f; 1.0f;
+        //      lerpx(x+w); lerpy(y);  1.0f; 0.0f;
+        //      lerpx(x); lerpy(y);  0.0f; 0.0f
+        // |]
+
+        let vao = GL.GenVertexArray();
+        let vbo = GL.GenBuffer();
+
+        GL.BindVertexArray(vao);
+        GL.BindBuffer(BufferTarget.ArrayBuffer, vbo);
+
+        GL.BufferData(BufferTarget.ArrayBuffer, vertices.Length * sizeof<float32>, vertices, BufferUsageHint.StaticDraw)
+        GL.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, 4 * sizeof<float32>, 0)
+        GL.EnableVertexAttribArray(0)
+    
+        GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 4 * sizeof<float32>, 2 * sizeof<float32>)
+        GL.EnableVertexAttribArray(1)
+        GL.BindVertexArray(0)
+
+        let texture = GL.GenTexture()
+        GL.BindTexture(TextureTarget.Texture2D, texture)
+
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, int(TextureMinFilter.Linear))
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, int(TextureMagFilter.Linear))
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, int(TextureWrapMode.ClampToEdge))
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, int(TextureWrapMode.ClampToEdge))
+
+        // Make sure OpenGL does not expect 4-byte row alignment to be different
+        // from SkiaSharp's row layout.
+        GL.PixelStore(PixelStoreParameter.UnpackAlignment, 4)
+
+        // Upload SkiaSharp pixels to OpenGL.
+        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, bmp.Width, bmp.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, bmp.GetPixels())
+        GL.BindTexture(TextureTarget.Texture2D, 0)
+        TXT1(vao, vbo, texture)
+
+
+    let draw (TXT1 (vao,vbo,texture)) (txt_shader:Shader) =
+        txt_shader.Use()
+
+        GL.ActiveTexture(TextureUnit.Texture0)
+        GL.BindTexture(TextureTarget.Texture2D, texture)
+        
+        txt_shader.SetInt("uTexture", 0)
+        GL.BindVertexArray(vao)
+        GL.DrawArrays(PrimitiveType.Triangles, 0, 6)
+        
     
 
 type SKBitmapFrame(bmp:SKBitmap, pixels:narray<byte>) =
@@ -224,35 +402,40 @@ module VideoCapture =
 
 
     let create_video_from_frames (path:string) (frames:seq<IVideoFrame>) (wnd:SE_Window) =
-        if System.IO.File.Exists(path) then
-            System.IO.File.Delete(path)
-        if System.IO.File.Exists("./tmp.png") then
-            System.IO.File.Delete("./tmp.png")
+        if (Seq.length frames) > 0 then        
+            let path = DateTime.Now.ToString(Globalization.CultureInfo("gr-GR")).Replace('/', '-').Replace(':',' ')
+            let vid_path = "vid_" + path + ".mp4"
+            let img_path = "img_" + path + ".png"
 
-        let size = wnd.FramebufferSize
-        printfn "framebuffer: (%d, %d)" size.X size.Y
-        // save last frame as image
-        printfn "image png conversion"
+            if System.IO.File.Exists(vid_path) then
+                System.IO.File.Delete(vid_path)
+            if System.IO.File.Exists(img_path) then
+                System.IO.File.Delete(img_path)
+
+            let size = wnd.FramebufferSize
+            printfn "framebuffer: (%d, %d)" size.X size.Y
+            // save last frame as image
+            printfn "image png conversion"
     
-        let last_frame = (Seq.last frames) :?> SKBitmapFrame
-        let bmp = last_frame.Bitmap
-        use tmp_img = SKImage.FromBitmap(bmp)
-        use tmp_dat = tmp_img.Encode(SKEncodedImageFormat.Png, 80)
-        use tmp_stm = System.IO.File.OpenWrite("./tmp.png")
-        tmp_dat.SaveTo(tmp_stm)
-        tmp_stm.Close()
-        printfn "image png saved"
+            let last_frame = (Seq.last frames) :?> SKBitmapFrame
+            let bmp = last_frame.Bitmap
+            use tmp_img = SKImage.FromBitmap(bmp)
+            use tmp_dat = tmp_img.Encode(SKEncodedImageFormat.Png, 80)
+            use tmp_stm = System.IO.File.OpenWrite(img_path)
+            tmp_dat.SaveTo(tmp_stm)
+            tmp_stm.Close()
+            printfn "image png saved"
 
-        let source = new RawVideoPipeSource(frames, FrameRate = 30)
-        let success = FFMpegArguments
-                        .FromPipeInput(source)
-                        .OutputToFile(path, true, (fun options -> options.WithVideoCodec("libvpx-vp9").WithVideoFilters(fun filter -> filter.Mirror(Enums.Mirroring.Vertical) |> ignore) |> ignore))
-                        // .ProcessSynchronously()
+            let source = new RawVideoPipeSource(frames, FrameRate = 30)
+            let success = FFMpegArguments
+                            .FromPipeInput(source)
+                            .OutputToFile(vid_path, true, (fun options -> options.WithVideoCodec("libvpx-vp9").WithVideoFilters(fun filter -> filter.Mirror(Enums.Mirroring.Vertical) |> ignore) |> ignore))
+                            // .ProcessSynchronously()
 
-        printfn "start processing video conversion on %d frames" (Seq.length frames)
-        let s = success.ProcessSynchronously()
-        // success
-        let str = if s then "video conversion done!" else "video conversion failed"
-        printfn "%s" str
+            printfn "start processing video conversion on %d frames" (Seq.length frames)
+            let s = success.ProcessSynchronously()
+            // success
+            let str = if s then "video conversion done!" else "video conversion failed"
+            printfn "%s" str
         
 

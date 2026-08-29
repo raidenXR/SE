@@ -47,16 +47,18 @@ type [<Struct>] State = {
     mutable last_pos:Vector2
 }
 
-type [<Struct>] DiscretizedVolume = {
-    cv: CVBounds
-    voxels: narray3d<bool>
-    t_filled: int
-    m_transform: Matrix4
-}
+// type [<Struct>] DiscretizedVolume = {
+//     cv: CVBounds
+//     voxels: narray3d<bool>
+//     t_filled: int
+//     m_transform: Matrix4
+// }
 
 let path = System.Environment.GetCommandLineArgs()[2]
 let gltf = if path.Contains(".gltf") then Some (new GLTF.Deserializer(path)) else None
-let N = 200
+let [<Literal>] N = 300
+let [<Literal>] k = 3
+let [<Literal>] L = 10
 
 let mutable camera: Camera = null
 let mutable state: Entity = 0u
@@ -121,11 +123,10 @@ system OnLoad [] (fun _ ->
         | _ when path.Contains(".txt") ->
             let (vertices,indices) = RGeometry.load_txt(path, 0.55f, 0.55f, 0.55f, 1.0f)
             {vertices = NativeArray.ofArray vertices; L = 10; indices = NativeArray.ofArray indices}
-        | Some gltf -> gltf.ReadMeshF(0)
+        | Some gltf -> gltf.ReadMesh(0)
         | None -> RGeometry.load_ply_unmanaged (path, 0.55f, 0.55f, 0.53f, 1.0f)
             
-    let L = 10
-    octree <- Some (Octree.ofSurface<double> N L 2 (_mesh.vertices.AsSpan()) (_mesh.indices.AsSpan()))
+    octree <- Some (Octree.ofSurface<double> N L k (_mesh.vertices.AsSpan()) (_mesh.indices.AsSpan()))
     let ob_model = new Model(_mesh.vertices, _mesh.indices, [3;3;4])
 
     let mesh = Helpers.createMesh ob_model    
@@ -166,7 +167,7 @@ system OnLoad [] (fun _ ->
     let pt_model = new Model(particles,[3;4])
     let prim = Helpers.createPrim_sliced pt_model particles_len
 
-    printfn "for N: %d, filled_voxels: %d, particles_size: %d" N particles_len (particles.Length / 7)
+    printfn "for N: %d, k: %d, filled_voxels: %d, particles_size: %d" N k particles_len (particles.Length / 7)
     GL.ClearColor(0.2f, 0.2f, 0.2f, 1.0f)
     GL.Enable(EnableCap.DepthTest)
     GL.Enable(EnableCap.ProgramPointSize)
@@ -177,8 +178,8 @@ system OnLoad [] (fun _ ->
     window.CursorState <- CursorState.Grabbed
 
     Shaders.load [
-        "model_shader", "shaders/shader.vert", "shaders/shader.frag"
-        "particles_shader", "shaders/particles.vert", "shaders/particles.frag"
+        "model_shader", "../../../resources/shaders/shader.vert", "../../../resources/shaders/shader.frag"
+        "particles_shader", "../../../resources/shaders/particles.vert", "../../../resources/shaders/particles.frag"
     ]
 
     let matrix_transform = if path.Contains(".txt") then Matrix4.CreateScale(0.2f) else Matrix4.CreateScale(10.f)
