@@ -61,6 +61,8 @@ type Camera(position:Vector3, aspectRatio:float32) =
 
     member this.GetViewMatrix() = Matrix4.LookAt(position, position + front, up)
 
+    member this.GetView() = front + up
+
     member this.GetProjectionMatrix() = Matrix4.CreatePerspectiveFieldOfView(fov, aspect_ratio, 0.01f, 100f)
 
     

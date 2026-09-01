@@ -200,16 +200,19 @@ type Colorbar(colormap:Colormap, z_min:float, z_max:float) =
     // let mutable border = SKRect()
     let mutable is_disposed = false
 
+    let typeface = SKTypeface.FromFile("../../../resources/fonts/consola.ttf")
     let paint = new SKPaint(
         Color = SKColors.Black,
         StrokeWidth = 2f,
         IsAntialias = true,
+        Typeface = typeface,
         TextSize = 16f
     )
 
     interface IDisposable with
         member this.Dispose() =
             if not is_disposed then
+                typeface.Dispose()
                 paint.Dispose()
             is_disposed <- true
 
@@ -298,8 +301,8 @@ type Colorbar(colormap:Colormap, z_min:float, z_max:float) =
         canvas.DrawText(label_vals[i].ToString("N3"), slice[i].X, slice[i].Y, paint)
 
 
-    member this.AsTexture (w:float32, h:float32) =
-        let transform = Matrix3x2.CreateTranslation(-0.5f, -0.5f) * Matrix3x2.CreateScale(0.8f, 0.8f)
+    member this.AsTexture (X,Y,w:float32, h:float32) =
+        let transform = Matrix3x2.CreateTranslation(-0.9f, -0.9f) * Matrix3x2.CreateScale(0.9f, 0.9f)
         let pos = Vector2.Transform(Vector2.One, transform)
         let x = pos.X
         let dx = 0.16f
@@ -352,14 +355,16 @@ type Colorbar(colormap:Colormap, z_min:float, z_max:float) =
         // use font = new SKFont()
         use canvas = new SKCanvas(bitmap)
 
-        canvas.Clear(SKColors.Transparent)
-        paint.Color <- SKColors.White
+        // canvas.Clear(SKColors.Transparent)
+        canvas.Clear(SKColors.Gray.WithAlpha(80uy))
+        paint.Color <- SKColors.GhostWhite
         this.Draw(canvas)
         paint.Style <- SKPaintStyle.Stroke
         canvas.DrawRect(SKRect(x*w, h*(1.f-pos.Y), (x+dx)*w, (1.f-y-dy/2.f)*h), paint)
         paint.Color <- SKColors.Black
         paint.Style <- SKPaintStyle.StrokeAndFill
-        Texture.create bitmap 0.7f -0.7f 0.3f 1.8f
+        // Texture.create bitmap 0.7f -0.7f 0.3f 1.8f
+        Texture.create bitmap X Y (w/400.f) (h/300.f)
 
 
     // member this.AsMesh () =

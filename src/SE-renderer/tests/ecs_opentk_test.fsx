@@ -34,12 +34,13 @@ open SE.Renderer
 let [<Literal>] N = 200
 let [<Literal>] L = 10
 let [<Literal>] k = 2
-let [<Literal>] max_iter = 50
+let [<Literal>] max_iter = 150
 let [<Literal>] ss = "../../../resources/shaders/"
 
 type IsPoints = struct end
 type UpdateColors = struct end
 type IsTexture = struct end
+type TextureString = struct end
 
 let mutable time_elapsed = 0.
 
@@ -104,7 +105,6 @@ let tree_len = tree.GetCount()
 
 // clear on exit
 system OnExit [] (fun _ ->
-    SE_Window.Shared.ExportVideo()
     SE_Window.Shared.Dispose()
     colorbar.Dispose()
 )
@@ -112,22 +112,13 @@ system OnExit [] (fun _ ->
 // clear all resources
 system OnExit [] (fun _ ->
     for vb in Components.get<VertexBuffer>().Entries do
-        match vb with
-        | VB1(vao,vbo,ebo) ->
-            GL.DeleteVertexArray(vao)
-            GL.DeleteBuffer(vbo)
-            GL.DeleteBuffer(ebo)            
-        | VB2(vao,vbo) ->
-            GL.DeleteVertexArray(vao)
-            GL.DeleteBuffer(vbo)
-
+        VertexBuffer.delete vb        
+        
     for mesh in Components.get<Mesh>().Entries do
         mesh.Dispose()
-
-    for TXT1(vao,vbo,txt) in Components.get<Texture>().Entries do
-        GL.DeleteVertexArray(vao)
-        GL.DeleteBuffer(vbo)
-        GL.DeleteTexture(txt)
+        
+    for texture in Components.get<Texture>().Entries do
+        Texture.delete texture
 
     Shaders.unload()
 )
@@ -214,7 +205,7 @@ system OnLoad [] (fun _ ->
     |> set mesh
     |> set (VertexBuffer.create VT2 mesh)
     |> set (Matrix4.CreateScale(10.f))
-    |> set (colorbar.AsTexture(150.f, 600.f))
+    |> set (colorbar.AsTexture(0.7f, 0.0f, 120.f, 460.f))
     |> ignore
     
     printfn "vertex_buffer initialization load, count: %d" tree_len
@@ -236,6 +227,7 @@ system PostUpdate [] (fun _ ->
         Systems.pause()
         n <- 0
         printfn "n_max_iter --paused"
+        Systems.quit()
 )
 
 // run this in parallel and update the vertex_buffer, once the mesh is ready
@@ -291,6 +283,44 @@ system PostRender [] (fun _ ->
     SE_Window.Shared.Update (SE_Window.Shared.Context.SwapBuffers)        
 )
 
+system OnLoad [] (fun _ ->
+    let camera = SE_Window.Shared.Camera
+    let c0 = sprintf "pos:  %A" (camera.Position)
+    let c1 = sprintf "view: %A" (camera.GetView())
+    let c2 = sprintf "count: %d" tree_len
+    
+    entity()
+    |> Entity.add<TextureString>
+    |> set (Texture.string c0 -0.98f 0.8f)
+    |> Entity.singleton "camera_pos"
+    |> ignore
+    
+    entity()
+    |> Entity.add<TextureString>
+    |> set (Texture.string c1 -0.98f 0.65f)
+    |> Entity.singleton "camera_view"
+    |> ignore
+
+    entity()
+    |> Entity.add<TextureString>
+    |> set (Texture.string c2 -0.98f 0.5f)
+    |> ignore
+
+    for e in Components.get<Texture>().Entities do Entity.printfn e
+)
+
+system PreRender [typeof<TextureString>] (fun _ ->
+    let textures = Components.get<Texture>()
+    let camera = SE_Window.Shared.Camera
+    let e0 = Entity.fetch "camera_pos"
+    let e1 = Entity.fetch "camera_view"
+    
+    let cp = camera.Position
+    let cv = camera.GetView()
+    Texture.update (textures[e0]) $"pos:{cp.X:F3},{cp.Y:F3},{cp.Z:F3}"
+    Texture.update (textures[e1]) $"view:{cp.X:F3},{cv.Y:F3},{cv.Z:F3}"
+)
+
 system OnRender [typeof<Mesh>; typeof<VertexBuffer>; typeof<IsPoints>] (fun q ->
     let m = Components.get<Mesh>()
     let t = Components.get<Matrix4>()
@@ -312,7 +342,8 @@ system OnRender [typeof<Texture>] (fun q ->
     let t = Components.get<Texture>()
     let shader = Shaders.get("t_shader")
 
-    for e in q do
+    // for e in q do
+    for e in t.Entities do
         Texture.draw t[e] shader
 )
 
@@ -320,7 +351,7 @@ system PostUpdate [] (fun _ ->
     if solver_update then
         time_elapsed <- time_elapsed + 1.
         if time_elapsed > 1. then
-            printfn "time elapsed, should trigger observer"
+            // printfn "time elapsed, should trigger observer"
             time_elapsed <- time_elapsed - 1.
 
             Entity.fetch "vertex_buffer" |> Entity.add<UpdateColors> |> ignore        
@@ -353,7 +384,7 @@ system PostRender [] (fun _ ->
 )
 
 system OnExit [] (fun _ ->
-    VideoCapture.create_video_from_frames "capture.mp4" frames (SE_Window.Shared)
+    VideoCapture.create_video_from_frames ".mp4" frames (SE_Window.Shared)
 )
 
 Systems.progress()
