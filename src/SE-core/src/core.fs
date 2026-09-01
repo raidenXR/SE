@@ -835,6 +835,7 @@ module Systems =
     let on_exit     = ResizeArray<System>()
 
     let mutable private running = true
+    let mutable private updating = true
 
     let add (phase:Phase) (types:Types) (fn:Entities -> unit) =
         // Queries.build types
@@ -854,8 +855,9 @@ module Systems =
         | Free       -> ()
 
 
-    let quit () =
-        running <- false
+    let quit () = running <- false
+    let pause () = updating <- false
+    let unpause () = updating <- true
 
     let isRunning () = running
 
@@ -864,9 +866,10 @@ module Systems =
         for (types,fn) in on_load do fn (Queries.get types)
         for (types,fn) in post_load do fn (Queries.get types)  
         while running do
-            for (types,fn) in pre_update do fn (Queries.get types)  
-            for (types,fn) in on_update do fn (Queries.get types)  
-            for (types,fn) in post_update do fn (Queries.get types)  
+            if updating then
+                for (types,fn) in pre_update do fn (Queries.get types)  
+                for (types,fn) in on_update do fn (Queries.get types)  
+                for (types,fn) in post_update do fn (Queries.get types)  
             for (types,fn) in pre_render do fn (Queries.get types)  
             for (types,fn) in on_render do fn (Queries.get types)  
             for (types,fn) in post_render do fn (Queries.get types)  
@@ -877,25 +880,32 @@ module Systems =
     
 
     let progress_N (n_iterations:option<int>) count =
+        let sw = if count then System.Diagnostics.Stopwatch() else null
         let mutable i = match n_iterations with | Some n -> n | None -> 0
         for (types,fn) in on_load do fn (Queries.get types)
         for (types,fn) in post_load do fn (Queries.get types)  
         let struct(x,y) = Console.GetCursorPosition()
         while running do
-            for (types,fn) in pre_update do fn (Queries.get types)  
-            for (types,fn) in on_update do fn (Queries.get types)  
-            for (types,fn) in post_update do fn (Queries.get types)  
+            if count then
+                sw.Reset()
+                sw.Start()
+            if updating then
+                for (types,fn) in pre_update do fn (Queries.get types)  
+                for (types,fn) in on_update do fn (Queries.get types)  
+                for (types,fn) in post_update do fn (Queries.get types)  
             for (types,fn) in pre_render do fn (Queries.get types)  
             for (types,fn) in on_render do fn (Queries.get types)  
             for (types,fn) in post_render do fn (Queries.get types)  
             for (types,fn) in on_validate do fn (Queries.get types)  
+            if count then
+                sw.Stop()
             // for debugging and testing keep it like that to prevent eternal loop
             // keep it a single loop
             if i <= 0 then quit ()
             i <- i - 1
             if count then
                 Console.SetCursorPosition(x,y)
-                printfn "iteration: %d" i
+                printfn "iteration: %d dt: %A" i (sw.Elapsed)
                 Console.SetCursorPosition(x,y)
         for (types,fn) in pre_store do fn (Queries.get types)  
         for (types,fn) in on_store do fn (Queries.get types)  
@@ -940,6 +950,7 @@ module Observers =
 module Entity =
     let private entities = System.Collections.Generic.Stack<Entity>()
     let private entity_names = System.Collections.Generic.Dictionary<Entity,string>()
+    let private singletons = System.Collections.Generic.Dictionary<string,Entity>()
     let mutable private last: Entity = 0x00u
 
     /// creates a new entity - id
@@ -1022,6 +1033,11 @@ module Entity =
         if r = 0u then failwith $"{str} -tag is not present in Entities"
         r
 
+    let singleton str e =
+        if not (singletons.ContainsKey(str) || singletons.ContainsValue(e)) then
+            singletons.Add(str,e)
+        e
+
     /// prints the component-types that are assigned over an entity
     /// mostly for debugging purposes
     let printComponents (id:Entity) =
@@ -1052,6 +1068,9 @@ module Entity =
     let printf (id:Entity) =
         Console.Write(sprintf id)
     //     Console.Write("0x{0:X6}, ", id)
+
+    /// gets an entity assigned as singleton
+    let fetch str = singletons[str]
 
         
 // uses these as keywords for better scripting ergonomy of the API        

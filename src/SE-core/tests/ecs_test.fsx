@@ -1,4 +1,5 @@
-#load "../src/core.fs"
+// #load "../src/core.fs"
+#r "../bin/Debug/net10.0/SE-core.dll"
 
 open System
 open System.Numerics
@@ -20,9 +21,37 @@ type [<Struct>] Phase = {mutable active:bool; mutable norm:float}
 // tags
 type Move = struct end
 type Active = struct end
+type IsPrefab = struct end
+
+let is_cell = prefab4 90uy 19.f Vector3.One Matrix4x4.Identity
+
+system OnLoad [] (fun _ ->
+    for i in 0..10 do
+        entity() |> is_cell |> ignore
+
+    entity()
+    |> is_cell
+    |> Entity.singleton "main_cell"
+    |> Entity.add<IsPrefab>
+    |> ignore
+)
+
+system PostLoad [] (fun _ ->
+    let main_cell = Entity.fetch "main_cell"
+    let t = main_cell |> Entity.get<Matrix4x4>
+    let v = main_cell |> Entity.get<Vector3>
+
+    let m_count = Components.get<Matrix4x4>().Count
+    let v_count = Components.get<Vector3>().Count
+    let b_count = Components.get<byte>().Count
+    let p_count = Components.get<IsPrefab>().Count
+
+    Entity.printfn main_cell
+    printfn "m_count: %d, v_count: %d, b_count: %d, p_count: %d" m_count v_count b_count p_count
+)
 
 
-// initialization systems
+// // initialization systems
 let create_views (e:Entities) = 
     ignore e
     for i in 1..4 do entity () |> Entity.set (View (Matrix4x4.CreateScale(Vector3(0.3f + float32 i, 0.4f, 2f / float32 i)))) |> ignore
@@ -216,6 +245,12 @@ observer OnSet [typeof<Temperature>] (fun q -> printfn "trigger on set fired! [<
 observer OnRemove [typeof<Rotation>] (fun q -> printfn "trigger on remove fired! [<Rotation>]")
 
 // run all assigned systems
+
+system OnUpdate [] (fun _ -> System.Threading.Thread.Sleep(2000))
+
 #time
-Systems.progress_N (Some 5)
+Systems.progress_N (Some 5) true
 #time
+
+
+

@@ -233,10 +233,10 @@ type Colorbar(colormap:Colormap, z_min:float, z_max:float) =
         and set(value) = h <- value
 
     member this.Item
-        with get(z) =
-            if z < zmin then failwith "z is less than zmin"
-            if z > zmax then failwith "z is greater than zmax"
-            let value = (z - zmin) / (zmax - zmin)
+        with get(z:double) =
+            if float32 z < zmin then failwith "z is less than zmin"
+            if float32 z > zmax then failwith "z is greater than zmax"
+            let value = (float32 z - zmin) / (zmax - zmin)
             let c = colormap[int ((float32 (Colormaps.MAP_SIZE - 1)) * value)]
             Vector4(float32 c.Red, float32 c.Green, float32 c.Blue, float32 c.Alpha)
     

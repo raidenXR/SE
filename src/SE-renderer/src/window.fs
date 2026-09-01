@@ -172,6 +172,7 @@ type SE_Window(settings:NativeWindowSettings) =
             if input.IsKeyDown(Keys.R) && not record_prev then
                 record_prev <- true
                 record <- not record
+                printfn "%s" (if record then "recording: start" else "recording: stop")
             elif not (input.IsKeyDown(Keys.R)) then
                 record_prev <- false
 

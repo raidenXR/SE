@@ -654,6 +654,18 @@ module Octree =
         | Leaf _ -> fn node
         | Empty -> ()
 
+    /// iterate all the leaf nodes of the tree
+    /// The equivalent of a for-loop for the quadtree
+    let rec iteri (i:byref<int>) (fn:int -> Node<'T> -> unit) (node:Node<'T>) =
+        match node with
+        | Node (_,c,_,_,_,_) ->
+            for ci in c do                
+                iteri &i fn ci
+        | Leaf _ ->
+            i <- i + 1
+            fn i node
+        | Empty -> ()
+
 
     /// traverses the whole tree and trims / denses the quadants
     let rec update n k (node:Node<'T>) (pred_trim:Node<'T> -> bool) (pred_dense:Node<'T> -> bool) (set_value:Node<'T> -> 'T) =
@@ -837,8 +849,6 @@ module Octree =
         member this.Item
             with get (x:double, y:double, z:double) =
                 let p = Vector3(float32 x, float32 y, float32 z)
-                // cached_node <- traverse_retain p cached_node
-                // match cached_node with
                 cached_node.Value <- traverse_retain p cached_node.Value
                 match cached_node.Value with
                 | Leaf (_,v,_,_,_,_) -> v.Value
@@ -846,8 +856,19 @@ module Octree =
 
             and set (x:double, y:double, z:double) value =
                 let p = Vector3(float32 x, float32 y, float32 z)
-                // cached_node <- traverse_retain p cached_node
-                // match cached_node with
+                cached_node.Value <- traverse_retain p cached_node.Value
+                match cached_node.Value with
+                | Leaf (_,v,_,_,_,_) -> v.Value <- ValueSome value
+                | _ -> failwith "Item.get failed"         
+
+        member this.Item
+            with get (p:Vector3) =
+                cached_node.Value <- traverse_retain p cached_node.Value
+                match cached_node.Value with
+                | Leaf (_,v,_,_,_,_) -> v.Value
+                | _ -> failwith "Item.get failed"
+
+            and set (p:Vector3) value =
                 cached_node.Value <- traverse_retain p cached_node.Value
                 match cached_node.Value with
                 | Leaf (_,v,_,_,_,_) -> v.Value <- ValueSome value
@@ -886,6 +907,10 @@ module Octree =
             cached_node.Value <- traverse_map (Vector3(float32 x, float32 y, float32 z)) root
 
         member this.Iter (fn:Node<'T> -> unit) = iter fn root
+    
+        member this.Iteri (fn:int -> Node<'T> -> unit) =
+            let mutable i = -1
+            iteri &i fn root
     
         /// Experimental method, DOT NOT take for granted that it works...
         member this.IterParallel (num_threads:int) (fn:Node<'T> -> unit) =
