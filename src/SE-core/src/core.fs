@@ -171,7 +171,7 @@ type Components<'T>(_ids:array<Entity>, _items:array<'T>) =
             idx <- idx_current
             true
         elif idx_current > 0 && count > 2 then
-            let l = idx_current - 1
+            let l = if idx - 1 < 0 then 0 else idx_prev - 1
             let r = if idx_current < count + 1 then idx_current + 1 else count - 1
             if ids[l] = id then
                 idx <- l
@@ -185,7 +185,7 @@ type Components<'T>(_ids:array<Entity>, _items:array<'T>) =
             idx <- idx_prev
             true
         elif idx_prev > 0 && count > 2 then
-            let l = idx_prev - 1
+            let l = if idx - 1 < 0 then 0 else idx_prev - 1
             let r = if idx_prev < count + 1 then idx_prev + 1 else count - 1
             if ids[l] = id then
                 idx <- l 

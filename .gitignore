@@ -13,6 +13,7 @@ SE-zig-src/
 
 *.log
 *.txt
+*.ini
 *.dat
 *.gnu
 *.bmp

@@ -27,10 +27,14 @@ geometries, and solving PDEs on them. Take a look at `tests/` directories for ex
             is before creating the Octree, to transform the mesh with `SE.Renderer.RGeometry.transform`    
             A simple slight rotation will do.    
 
+**UPDATE:** ImGui.NET example for OpenTK added, so now it supports UI too.    
+Great thanks to `@NogginBops` for [ImGui.NET.OpenTK-example](https://github.com/NogginBops/ImGui.NET_OpenTK_Sample)!
 
+### Laplace PDE on decretized geometry
+![laplace_pde](images/SE_Laplace.gif)  
 
 ### Quadtree Discretization
-![swall_pde](images/Laplace_swallow_volume.gif)
+![swall_pde](images/Laplace_swallow_volume.gif)   
 (to compile a gif from a series of images use the cmd)
 ```
 convert -delay 20 -loop 0 *.png swallow_volume.gif  

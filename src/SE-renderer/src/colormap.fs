@@ -364,7 +364,7 @@ type Colorbar(colormap:Colormap, z_min:float, z_max:float) =
         paint.Color <- SKColors.Black
         paint.Style <- SKPaintStyle.StrokeAndFill
         // Texture.create bitmap 0.7f -0.7f 0.3f 1.8f
-        Texture.create bitmap X Y (w/400.f) (h/300.f)
+        Texture.create bitmap X Y (w/(ClientSize.W/2.f)) (h/(ClientSize.H/2.f))
 
 
     // member this.AsMesh () =

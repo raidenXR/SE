@@ -12,6 +12,7 @@
     <Compile Include="src/camera.fs" />
     <Compile Include="src/window.fs" />
     <Compile Include="src/common.fs" />
+    <Compile Include="src/imgui.fs" />
     <Compile Include="src/colormap.fs" />
     <Compile Include="src/render_helpers.fs" />
     <!-- <Compile Include="src/testgame.fs" /> -->
@@ -32,6 +33,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SE-core\SE-core.fsproj" />
+    <ProjectReference Include="..\..\..\..\csharp\ImGui.NET_OpenTK_Sample\Dear ImGui Sample\Dear ImGui Sample.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,5 +1,7 @@
 *.png
 *.mp4
+*.ini
+*.gif
 
 traces/
 runtimes/

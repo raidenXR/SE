@@ -320,8 +320,8 @@ module Texture =
     let string (str:string) X Y =
         let transform = System.Numerics.Matrix3x2.CreateTranslation(-0.9f, -0.9f) * System.Numerics.Matrix3x2.CreateScale(0.9f, 0.9f)
         let pos = System.Numerics.Vector2.Transform(System.Numerics.Vector2.One, transform)
-        let w = float32(imageinfo.Width) / 400.f
-        let h = float32(imageinfo.Height) / 300.f
+        let w = float32(imageinfo.Width) / (ClientSize.W / 2.f)
+        let h = float32(imageinfo.Height) / (ClientSize.H / 2.f)
         // canvas.Clear(SKColors.Transparent)
         canvas.Clear(SKColors.Gray.WithAlpha(80uy))
         canvas.DrawText(str,pos.X,pos.Y,paint)
@@ -423,17 +423,6 @@ module VideoCapture =
 
                 let size = wnd.FramebufferSize
                 printfn "framebuffer: (%d, %d)" size.X size.Y
-                // save last frame as image
-                printfn "image png conversion"
-    
-                let last_frame = (Seq.last frames) :?> SKBitmapFrame
-                let bmp = last_frame.Bitmap
-                use tmp_img = SKImage.FromBitmap(bmp)
-                use tmp_dat = tmp_img.Encode(SKEncodedImageFormat.Png, 80)
-                use tmp_stm = System.IO.File.OpenWrite(img_path)
-                tmp_dat.SaveTo(tmp_stm)
-                tmp_stm.Close()
-                printfn "image png saved"
 
                 let source = new RawVideoPipeSource(frames, FrameRate = 30)
                 let success = FFMpegArguments
@@ -459,22 +448,20 @@ module VideoCapture =
 
                 let size = wnd.FramebufferSize
                 printfn "framebuffer: (%d, %d)" size.X size.Y
-                // save last frame as image
-                printfn "image png conversion"
-    
-                let last_frame = (Seq.last frames) :?> SKBitmapFrame
-                let bmp = last_frame.Bitmap
-                use tmp_img = SKImage.FromBitmap(bmp)
-                use tmp_dat = tmp_img.Encode(SKEncodedImageFormat.Png, 80)
-                use tmp_stm = System.IO.File.OpenWrite(img_path)
-                tmp_dat.SaveTo(tmp_stm)
-                tmp_stm.Close()
-                printfn "image png saved"
 
-                let source = new RawVideoPipeSource(frames, FrameRate = 30)
+                // // Create GIF with custom frame rate and quality optimization
+                // FFMpegArguments
+                //     .FromFileInput(inputFile)
+                //     .OutputToFile(outputFile, false, options => options
+                //         .WithVideoFilters("fps=15")  // 15 frames per second
+                //         .Scale(320, -1)              // Width 320px, maintain aspect ratio
+                //     )
+                // .ProcessSynchronously();
+
+                let source = new RawVideoPipeSource(frames, FrameRate = 10)
                 let success = FFMpegArguments
                                 .FromPipeInput(source)
-                                .OutputToFile(vid_path, true, (fun options -> options.WithFramerate(10).WithVideoFilters(fun filter -> filter.Mirror(Enums.Mirroring.Vertical) |> ignore) |> ignore))
+                                .OutputToFile(vid_path, true, (fun options -> options.WithFramerate(10).WithVideoFilters(fun filter -> filter.Mirror(Enums.Mirroring.Vertical).Scale(640,-1) |> ignore) |> ignore))
                                 
                 printfn "start processing video conversion on %d frames" (Seq.length frames)
                 let s = success.ProcessSynchronously()
