@@ -31,11 +31,13 @@ geometries, and solving PDEs on them. Take a look at `tests/` directories for ex
 Great thanks to `@NogginBops` for [ImGui.NET.OpenTK-example](https://github.com/NogginBops/ImGui.NET_OpenTK_Sample)!
 
 ### Laplace PDE on decretized geometry
-![laplace_pde](images/SE_Laplace.gif)  
+<!-- ![laplace_pde](images/SE_Laplace.gif)   -->
+<img src="images/SE_Laplace.gif" alt="Alt Text" height="400">  
 
 ### Quadtree Discretization
-![swall_pde](images/Laplace_swallow_volume.gif)   
-(to compile a gif from a series of images use the cmd)
+<img src="images/Laplace_swallow_volume.gif" alt="Alt Text" height="400">   
+<!-- ![swall_pde](images/Laplace_swallow_volume.gif)   -->
+(to compile a gif from a series of images use the cmd)   
 ```
 convert -delay 20 -loop 0 *.png swallow_volume.gif  
 ```
@@ -44,9 +46,14 @@ convert -delay 20 -loop 0 *.png swallow_volume.gif
 these are some examples of the Octree-descritization on the 3d geometries in `models/` directory:    
 (black points are boundary points, while red points are internal)   
 
-|    |           |
+<!--|    |           |
 |----------|:-------------:|
 | ![skull_octree](images/skull_octree.png) |  ![car_octree](images/car_octree.png) |
 | ![pipe_octree](images/pipe_octree.png) |    ![hollow_octree](images/hollow_octree.png)  |
-| ![bunny](images/bunny_octree.png) |    ![dragon_octree](images/dragon_octree.png)  |
+| ![bunny](images/bunny_octree.png) |    ![dragon_octree](images/dragon_octree.png)  |-->
 
+|    |           |
+|----------|:-------------:|
+| <img src="images/skull_octree.png" alt="Alt Text" height="400"> | <img src="images/car_octree.png" alt="Alt Text" height="400"> |
+| <img src="images/pipe_octree.png" alt="Alt Text" height="400"> | <img src="images/hollow_octree.png" alt="Alt Text" height="400"> |
+| <img src="images/bunny_octree.png" alt="Alt Text" height="400"> | <img src="images/dragon_octree.png" alt="Alt Text" height="400"> |

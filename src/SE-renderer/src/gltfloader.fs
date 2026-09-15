@@ -533,6 +533,9 @@ module GLTF =
             }
         
 
+        member this.ReadMeshes() =
+            [for i in 0..root.meshes.Length-1 do yield this.ReadMesh(i)]
+    
         // [<Obsolete>]
         // member this.UpdateAnimation_unmanaged (model:Model, time:float) =
         //     let vertices = model.Vertices
