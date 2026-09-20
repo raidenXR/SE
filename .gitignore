@@ -4,6 +4,8 @@ obj/
 original_source/
 runtimes/
 traces/
+docs/
+output/
 fonts/
 vertices/
 Content/

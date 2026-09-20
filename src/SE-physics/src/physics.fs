@@ -1,6 +1,7 @@
 #nowarn "632"
 namespace SE.Physics
 open SE.Core
+open SE.Spatial
 open SE.ECS
 open System
 open System.Numerics

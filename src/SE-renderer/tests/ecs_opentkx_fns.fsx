@@ -59,8 +59,8 @@ type EntityExtensions =
 // prefab example
 let is_electrolyte_cv = prefab2 (Temperature 300.) (Concentration 3.2)
 let is_electrode_cv = prefab2 (Temperature 600.) (Thickness (3.2e-6))
-let is_electrode_2 = prefab (Temperature 370.)
-let is_electrode_3 = prefab (Temperature 480.)
+let is_electrode_2 = prefab1 (Temperature 370.)
+let is_electrode_3 = prefab1 (Temperature 480.)
 
 let from_yaw_pitch_roll = System.Numerics.Quaternion.CreateFromYawPitchRoll
 let from_quaternion = System.Numerics.Matrix4x4.CreateFromQuaternion

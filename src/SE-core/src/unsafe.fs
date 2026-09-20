@@ -46,15 +46,17 @@ module UnsafeOps =
         interface IComparable<Slice> with
             member this.CompareTo(other:Slice) = this.len.CompareTo(other.len)           
 
-
+    let internal lobj = new Object()
     let internal pool = ResizeArray<Slice>()
     let internal ptrs = System.Collections.Generic.Dictionary<nativeint, int>()
 
     let alloc<'T> n =
-        let len = n * sizeof<'T> 
-        let ptr = NativeMemory.AllocZeroed (unativeint len) 
-        ptrs.Add(nint ptr, len)
-        ptr
+        lock lobj (fun _ ->
+            let len = n * sizeof<'T> 
+            let ptr = NativeMemory.AllocZeroed (unativeint len) 
+            ptrs.Add(nint ptr, len)
+            ptr
+        )
         
     let rent<'T> n =
         match pool.Count with
