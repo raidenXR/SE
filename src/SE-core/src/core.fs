@@ -952,6 +952,25 @@ module Entity =
     let private entity_names = System.Collections.Generic.Dictionary<Entity,string>()
     let private singletons = System.Collections.Generic.Dictionary<string,Entity>()
     let mutable private last: Entity = 0x00u
+    let mutable refs_table = new Dictionary<Type,System.Collections.IDictionary>()
+
+    let private get_ref<'T> () =
+        if not (refs_table.ContainsKey(typeof<'T>)) then
+            let dict = Dictionary<Entity,'T>()
+            refs_table.Add(typeof<'T>, dict :> System.Collections.IDictionary)
+            dict
+        else
+            refs_table[typeof<'T>] :?> Dictionary<Entity,'T>
+
+    let addRef<'T> (t:'T) (id:Entity) =
+        let dict = get_ref<'T>()
+        match dict.TryAdd(id,t) with
+        | true -> id
+        | false -> failwith "refs_table failed to add id:Entity to refs table"
+
+    let getRef<'T> (id:Entity) =
+        let dict = get_ref<'T>()
+        dict[id]
 
     /// creates a new entity - id
     let create () =

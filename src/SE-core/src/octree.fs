@@ -1322,8 +1322,9 @@ module Octree =
         let L = mesh.L 
         let (v_min,v_max) = GridGeneration3D.bounds_SIMD vertices L
         let bits = fill_scanlines N L v_min v_max vertices indices (BitArray(N*N*N))
-        mesh.vertices.Dispose()
-        mesh.indices.Dispose()
+        // mesh.vertices.Dispose()
+        // mesh.indices.Dispose()
+        mesh.Dispose()
         ofStencil<'T> N k v_min v_max bits        
         
 

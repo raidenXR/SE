@@ -54,7 +54,7 @@ module UnsafeOps =
         lock lobj (fun _ ->
             let len = n * sizeof<'T> 
             let ptr = NativeMemory.AllocZeroed (unativeint len) 
-            ptrs.Add(nint ptr, len)
+            ptrs.TryAdd(nint ptr, len)
             ptr
         )
         

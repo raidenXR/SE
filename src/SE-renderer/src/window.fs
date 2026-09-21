@@ -71,8 +71,8 @@ type SE_Window(settings:NativeWindowSettings) =
     let pre_render_fns = ResizeArray<unit -> unit>()
     let render_fns = ResizeArray<unit -> unit>()
     let post_render_fns = ResizeArray<unit -> unit>()
-    // let render_fns_set = System.Collections.Generic.HashSet<unit -> unit>()
   
+    let keys = Array.create 350 false
 
     static let _shared = lazy (
         let n_settings = NativeWindowSettings(
@@ -107,6 +107,13 @@ type SE_Window(settings:NativeWindowSettings) =
 
     member val ElapsedTime = 0. with get,set
 
+    member this.KeyDown (key:Keys) = this.KeyboardState.IsKeyDown(key)
+    member this.Pressed (key:Keys) = this.KeyDown(key)  && not keys[int key]
+    // member this.Pressed (key:Keys) = (this.KeyDown(key) <> keys[int key]) && (not keys[int key])
+
+    member this.KeysCache() = 
+        for i in 0..340 do
+            keys[i] <- this.KeyDown(enum<Keys> i)
 
     member this.Load() =
         let TIME_PERIOD = 8
@@ -138,6 +145,7 @@ type SE_Window(settings:NativeWindowSettings) =
         base.OnResize(new ResizeEventArgs(settings.ClientSize))
         _watchUpdate.Start()        
 
+    member this.Keys = keys
 
     member this.Update(render_fn:unit -> unit) =
         let updatePeriod = if UpdateFrequency = 0. then 0. else 1. / UpdateFrequency
@@ -152,15 +160,15 @@ type SE_Window(settings:NativeWindowSettings) =
             NativeWindow.ProcessWindowEvents(base.IsEventDriven)
 
             let input = this.KeyboardState
-            let e = elapsed
+            let e = elapsed            
             
-            if input.IsKeyDown(Keys.Escape) then this.Close()
-            if input.IsKeyDown(Keys.Up) then camera.Position <- camera.Position + camera.Front * camera.Speed * (float32 e)
-            if input.IsKeyDown(Keys.Down) then camera.Position <- camera.Position - camera.Front * camera.Speed * (float32 e)
-            if input.IsKeyDown(Keys.Right) then camera.Position <- camera.Position + camera.Right * camera.Speed * (float32 e)
-            if input.IsKeyDown(Keys.Left) then camera.Position <- camera.Position - camera.Right * camera.Speed * (float32 e)
-            if input.IsKeyDown(Keys.Space) then camera.Position <- camera.Position + camera.Up * camera.Speed * (float32 e)
-            if input.IsKeyDown(Keys.LeftShift) then camera.Position <- camera.Position - camera.Up * camera.Speed * (float32 e)
+            if this.Pressed(Keys.Escape) then this.Close()
+            if this.KeyDown(Keys.Up) then camera.Position <- camera.Position + camera.Front * camera.Speed * (float32 e)
+            if this.KeyDown(Keys.Down) then camera.Position <- camera.Position - camera.Front * camera.Speed * (float32 e)
+            if this.KeyDown(Keys.Right) then camera.Position <- camera.Position + camera.Right * camera.Speed * (float32 e)
+            if this.KeyDown(Keys.Left) then camera.Position <- camera.Position - camera.Right * camera.Speed * (float32 e)
+            if this.KeyDown(Keys.Space) then camera.Position <- camera.Position + camera.Up * camera.Speed * (float32 e)
+            if this.KeyDown(Keys.LeftShift) then camera.Position <- camera.Position - camera.Up * camera.Speed * (float32 e)
     
             let mouse = this.MouseState
             if first_move then
@@ -184,14 +192,6 @@ type SE_Window(settings:NativeWindowSettings) =
             this.ElapsedTime <- elapsed
 
             render_fn()
-            // for render_fn in pre_render_fns do
-            //     render_fn ()
-                
-            // for render_fn in render_fns do
-            //     render_fn ()
-
-            // for render_fn in post_render_fns do
-            //     render_fn ()
 
             let MaxSlowUpdates = 80
             let SlowUpdatesThreshold = 45
@@ -211,6 +211,7 @@ type SE_Window(settings:NativeWindowSettings) =
             if this.API <> ContextAPI.NoAPI then
                 if this.VSync <> VSyncMode.Adaptive then
                     GLFW.SwapInterval(if IsRunningSlowly then 0 else 1)
+                
 
         // The time we have left to the next update.
         let timeToNextUpdate = updatePeriod - _watchUpdate.Elapsed.TotalSeconds

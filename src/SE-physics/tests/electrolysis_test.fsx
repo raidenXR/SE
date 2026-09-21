@@ -33,7 +33,7 @@ open SE.Renderer
 
 let [<Literal>] N = 130
 let [<Literal>] L = 10
-let [<Literal>] k = 2
+let [<Literal>] k = 3
 let [<Literal>] ss = "../../../resources/shaders/"
 
 // type [<Struct>] Enable = {is_enabled:bool}
@@ -57,20 +57,17 @@ let rotation =
     match path with
     | GLTF.IsTxt -> System.Numerics.Quaternion.CreateFromYawPitchRoll(2.f, 2.f, 1.f) |> System.Numerics.Matrix4x4.CreateFromQuaternion        
     | GLTF.IsPly -> System.Numerics.Quaternion.CreateFromYawPitchRoll(0.f, 0.f, 0.f) |> System.Numerics.Matrix4x4.CreateFromQuaternion        
-    | GLTF.IsGltf -> System.Numerics.Quaternion.CreateFromYawPitchRoll(1.f, 2.f, 2.f) |> System.Numerics.Matrix4x4.CreateFromQuaternion        
+    // | GLTF.IsGltf -> System.Numerics.Quaternion.CreateFromYawPitchRoll(0.5f, 0.5f, 0.5f) |> System.Numerics.Matrix4x4.CreateFromQuaternion        
     | _ -> System.Numerics.Quaternion.CreateFromYawPitchRoll(0.f, 0.f, 0.f) |> System.Numerics.Matrix4x4.CreateFromQuaternion        
 
 let scale =
     match path with
     | GLTF.IsTxt -> 0.2f
     | GLTF.IsPly -> 10.f
-    | GLTF.IsGltf -> 5.f
+    | GLTF.IsGltf -> 3.f
     | _ -> 1.f
       
-
-let trees = new System.Collections.Generic.Dictionary<Entity,Octree.Root<Entity>>()
 let mesh_names = ResizeArray<string>()
-let ent_to_tree tree e = trees.Add(e,tree)
 
 let colorbars = Map[
     Colormap.Hot, new Colorbar(Colormap.Hot, 0., 100.)
@@ -79,8 +76,6 @@ let colorbars = Map[
     Colormap.Gray, new Colorbar(Colormap.Gray, 0., 100.)
     Colormap.Autumn, new Colorbar(Colormap.Autumn, 0., 100.)
 ]
-
-let keys = Array.create 512 false
 
 let inline (!) (u:Octree.Node<'T>) = Octree.valueof u
 let inline Tf32 (Temperature T) = T
@@ -132,7 +127,7 @@ SE_UI.Shared.OnRender (fun _ ->
 // load resources
 system OnLoad [] (fun _ ->
     let wnd = SE_Window.Shared
-    wnd.Camera.Speed <- 2.f
+    wnd.Camera.Speed <- 1.f
     wnd.CursorState <- CursorState.Grabbed
 
     wnd.Load()
@@ -158,25 +153,41 @@ system OnLoad [] (fun _ ->
 )
 
 system OnLoad [] (fun _ ->
-    sw.Start()
+    sw.Restart()
     use gltf = new GLTF.Deserializer(path)
     let meshes = gltf.ReadMeshes()
     let wnd = SE_Window.Shared
     sw.Stop()
-    printfn "read_meshes: %d s" (sw.Elapsed.Seconds)
-    sw.Reset()
+    printfn "read_meshes: %d ms" (sw.Elapsed.Milliseconds)
 
-    sw.Start()
-    let mutable i = 0
-    for mesh in meshes do
-        let tree =
+    sw.Restart()
+    let trees =
+        meshes
+        |> Array.ofSeq
+        |> Array.Parallel.map (fun mesh ->
             mesh
             |> RGeometry.tranform rotation
-            |> Octree.ofMesh<Entity> N k
+            |> Octree.ofMesh<Entity> N k        
+        )
 
-        i <- i + 1
-        mesh_names.Add(sprintf "body_%d: %d/%d" i (tree.GetInternalCount()) (tree.GetCount()))
+    trees
+    |> Array.iteri (fun i tree ->
+        mesh_names.Add(sprintf "body_%d: %d/%d" (i+1) (tree.GetInternalCount()) (tree.GetCount()))
+    )
         
+    // for mesh in meshes do
+    //     let tree =
+    //         mesh
+    //         |> RGeometry.tranform rotation
+    //         |> Octree.ofMesh<Entity> N k
+
+        // i <- i + 1
+        // mesh_names.Add(sprintf "body_%d: %d/%d" i (tree.GetInternalCount()) (tree.GetCount()))
+    sw.Stop()
+    printfn "create_trees: %d ms" (sw.Elapsed.Milliseconds)
+        
+    sw.Restart()
+    for tree in trees do
         // assign entities to leafs
         tree.Iter (fun u ->
             match u with
@@ -198,12 +209,14 @@ system OnLoad [] (fun _ ->
         entity()
         |> Entity.add<IsPoints>
         |> Entity.add<UpdateColors>
+        |> Entity.addRef tree
         |> set points
         |> set (VertexBuffer.create VT2 points)
         |> set (Matrix4.CreateScale(scale))
         |> set true
         |> set Colormap.Jet
-        |> ent_to_tree tree
+        |> ignore
+        // |> ent_to_tree tree
 
         let p = Octree.center (tree.Root)    
         wnd.Camera.Position <- Vector3(p.X, p.Y, p.Z)
@@ -214,53 +227,44 @@ system OnLoad [] (fun _ ->
     entities[3] |> set (colorbars[Colormap.Gray].AsTexture(0.8f, -0.8f, 120.f, 460.f)) |> ignore
 
     sw.Stop()
-    printfn "load_trees: %d s" (sw.Elapsed.Seconds)
-    sw.Reset()
+    printfn "load_trees: %d ms" (sw.Elapsed.Milliseconds)
 )
 
 system PostLoad [] (fun _ ->
     let P = Components.get<Colormap>().Entities
     P[0] |> set Colormap.Winter |> ignore
-    P[1] |> set Colormap.Jet |> ignore
-    P[2] |> set Colormap.Jet |> ignore
+    P[1] |> set Colormap.Winter |> ignore
+    P[2] |> set Colormap.Gray |> ignore
     P[3] |> set Colormap.Gray |> ignore
     P[4] |> set Colormap.Winter |> ignore
-    P[5] |> set Colormap.Hot |> ignore
+    P[5] |> set Colormap.Jet |> ignore
 )
     
     
-let inline pressed key (input:KeyboardState) = input.IsKeyDown(key) && not keys[int key]
+// let inline pressed key (input:KeyboardState) = input.IsKeyDown(key) && not keys[int key]
 
 // controls
 system OnValidate [] (fun _ ->
     let wnd = SE_Window.Shared
-    let input = wnd.KeyboardState
 
-    if pressed Keys.Escape input then
+    if wnd.Pressed Keys.Escape then
         wnd.Close()
         Systems.quit()
 
-    if pressed Keys.P input then
-        sw.Start()
+    if wnd.Pressed Keys.P then
+        sw.Restart()
         Systems.unpause()
         wnd.IsRecording <- true
 
     let mesh = Components.get<Enable>().Entries
-    mesh[0] <- if pressed Keys.D1 input then not mesh[0] else mesh[0]
-    mesh[1] <- if pressed Keys.D2 input then not mesh[1] else mesh[1]
-    mesh[2] <- if pressed Keys.D3 input then not mesh[2] else mesh[2]
-    mesh[3] <- if pressed Keys.D4 input then not mesh[3] else mesh[3]
-    mesh[4] <- if pressed Keys.D5 input then not mesh[4] else mesh[4]
-    mesh[5] <- if pressed Keys.D6 input then not mesh[5] else mesh[5]
-
-    keys[int Keys.Escape] <- input.IsKeyDown(Keys.Escape)
-    keys[int Keys.P] <- input.IsKeyDown(Keys.P)
-    keys[int Keys.D1] <- input.IsKeyDown(Keys.D1)
-    keys[int Keys.D2] <- input.IsKeyDown(Keys.D2)
-    keys[int Keys.D3] <- input.IsKeyDown(Keys.D3)
-    keys[int Keys.D4] <- input.IsKeyDown(Keys.D4)
-    keys[int Keys.D5] <- input.IsKeyDown(Keys.D5)
-    keys[int Keys.D6] <- input.IsKeyDown(Keys.D6)
+    mesh[0] <- if wnd.Pressed Keys.D1 then not mesh[0] else mesh[0]
+    mesh[1] <- if wnd.Pressed Keys.D2 then not mesh[1] else mesh[1]
+    mesh[2] <- if wnd.Pressed Keys.D3 then not mesh[2] else mesh[2]
+    mesh[3] <- if wnd.Pressed Keys.D4 then not mesh[3] else mesh[3]
+    mesh[4] <- if wnd.Pressed Keys.D5 then not mesh[4] else mesh[4]
+    mesh[5] <- if wnd.Pressed Keys.D6 then not mesh[5] else mesh[5]
+    
+    wnd.KeysCache()
 )
 
 // clear all resources
@@ -296,7 +300,7 @@ system PreRender [typeof<Mesh>; typeof<VertexBuffer>; typeof<Enable>] (fun q ->
 
     for e in q do
         if Entity.has<UpdateColors> e && enabled[e] then
-            octree_to_buffer trees[e] colorbars[cbar[e]] mesh[e] T Tf32
+            octree_to_buffer (Entity.getRef<Octree.Root<Entity>> e) colorbars[cbar[e]] mesh[e] T Tf32
 
             VertexBuffer.update vbuf[e] mesh[e]        
             e |> Entity.remove<UpdateColors> |> ignore        
