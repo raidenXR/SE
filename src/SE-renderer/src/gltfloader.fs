@@ -460,8 +460,10 @@ module GLTF =
 
         /// still allocates ResizeArray s  due to not knowing the size beforehand
         member this.ReadMesh(idx:int) =
-            _vertices.Clear()
-            _indices.Clear()
+            // _vertices.Clear()
+            // _indices.Clear()
+            let _vertices = ResizeArray<float32>(1024*100)
+            let _indices = ResizeArray<uint32>(1024*100)
             let mesh = root.meshes[idx]
             
             let mutable base_vertex = 0u
@@ -531,6 +533,34 @@ module GLTF =
                 yield tranform ((t*r*s)*m) (this.ReadMesh(node.mesh))
             }
     
+        member this.ReadMeshesParallel() = 
+            root.nodes
+            |> Array.skip 1
+            |> Array.Parallel.map (fun node ->
+                let m = match node.matrix with
+                        | null -> Matrix4x4.Identity
+                        | m -> Matrix4x4(
+                            M11=m[0], M12=m[1], M13=m[2], M14=m[3],
+                            M21=m[4], M22=m[5], M23=m[6], M24=m[7],
+                            M31=m[8], M32=m[9], M33=m[10], M34=m[11],
+                            M41=m[12], M42=m[13], M43=m[14], M44=m[15]
+                        )
+
+                let r = match node.rotation with
+                        | null -> Matrix4x4.Identity
+                        | r -> Matrix4x4.CreateFromQuaternion(Quaternion(r[0], r[1], r[2], r[3]))
+
+                let t = match node.translation with
+                        | null -> Matrix4x4.Identity
+                        | t -> Matrix4x4.CreateTranslation(Vector3(t[0], t[1], t[2]))
+                    
+                let s = match node.scale with
+                        | null -> Matrix4x4.Identity
+                        | s -> Matrix4x4.CreateTranslation(Vector3(s[0], s[1], s[2]))
+                
+                tranform ((t*r*s)*m) (this.ReadMesh(node.mesh))
+            )
+            
         // [<Obsolete>]
         // member this.UpdateAnimation_unmanaged (model:Model, time:float) =
         //     let vertices = model.Vertices

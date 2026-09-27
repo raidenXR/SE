@@ -505,6 +505,72 @@ module Octree =
             | _ -> traverse_retain p c[idx]              
                
 
+    let rec remove (p:Vector3) n (node:Node<'T>) =
+        match node with
+        | Empty -> false
+        
+        | Leaf (parent,_,_,l,v_min,v_max) when not (intersect p v_min v_max) ->
+            remove p n parent
+        
+        | Leaf (parent,_,i,_,_,_) ->
+            let c = children parent
+            let mutable b' = false
+            let mutable j = 0
+            while not b' && j < c.Length do
+                b' <- if i = j || c[j].IsEmpty then false else true       
+                j <- j + 1
+
+            match b' with
+            | true -> 
+                c[i] <- Empty
+                true
+            | false ->
+                c[i] <- Empty
+                remove p n parent
+            
+        | Node (parent,_,_,l,v_min,v_max) when not (intersect p v_min v_max) ->
+            remove p n parent
+            
+        | Node (_,c,_,l,v1,v2) ->
+            let mutable v_min = v1
+            let mutable v_max = v2
+            let mutable idx = 0
+
+            let o = v_min + (v_max - v_min) / 2f
+            idx <- idx + if p.X < o.X then 0 else 1
+            idx <- idx + if p.Y > o.Y then 0 else 2
+            idx <- idx + if p.Z < o.Z then 0 else 4
+
+            match idx with
+            | 0 ->
+                v_min <- Vector3(v_min.X, o.Y, v_min.Z)            
+                v_max <- Vector3(o.X, v_max.Y, o.Z) 
+            | 1 -> 
+                v_min <- Vector3(o.X, o.Y, v_min.Z)            
+                v_max <- Vector3(v_max.X, v_max.Y, o.Z) 
+            | 2 -> 
+                v_min <- Vector3(v_min.X, v_min.Y, v_min.Z)            
+                v_max <- Vector3(o.X, o.Y, o.Z) 
+            | 3 -> 
+                v_min <- Vector3(o.X, v_min.Y, v_min.Z)            
+                v_max <- Vector3(v_max.X, o.Y, o.Z) 
+            | 4 ->
+                v_min <- Vector3(v_min.X, o.Y, o.Z)
+                v_max <- Vector3(o.X, v_max.Y, v_max.Z)
+            | 5 ->
+                v_min <- Vector3(o.X, o.Y, o.Z)
+                v_max <- Vector3(v_max.X, v_max.Y, v_max.Z)
+            | 6 ->
+                v_min <- Vector3(v_min.X, v_min.Y, o.Z)
+                v_max <- Vector3(o.X, o.Y, v_max.Z)
+            | 7 ->
+                v_min <- Vector3(o.X, v_min.Y, o.Z)
+                v_max <- Vector3(v_max.X, o.Y, v_max.Z)
+            | _ ->
+                failwith "improper idx value"
+
+            remove p n c[idx]
+
     /// return the node closest to the point
     /// NOT nessesary a leaf node, just the furthest lavel that intersects x,y from the root
     let rec traverse_map (p:Vector3) (node:Node<'T>) =
@@ -818,25 +884,34 @@ module Octree =
 
         member this.Put(x:double, y:double, z:double, value:voption<'T>) =
             let p = Vector3(float32 x, float32 y, float32 z)
-            // cached_node <- traverse p n _k cached_node
-            // match cached_node with
             cached_node.Value <- traverse p n _k cached_node.Value
             match cached_node.Value with
             | Leaf (_,v,_,_,_,_) -> v.Value <- value
             | _ -> failwith "Item.get failed"         
 
-        member this.PutF(p:Vector3, value:voption<'T>) =
-            // cached_node <- traverse p n _k cached_node
-            // match cached_node with
+        member this.Put(p:Vector3, value:voption<'T>) =
             cached_node.Value <- traverse p n _k cached_node.Value
             match cached_node.Value with
             | Leaf (_,v,_,_,_,_) -> v.Value <- value
             | _ -> failwith "Item.get failed"         
+
+
+        member this.Remove(x:double, y:double, z:double) =
+            let p = Vector3(float32 x, float32 y, float32 z)
+            cached_node.Value <- if (remove p n cached_node.Value) then root else cached_node.Value
+            
+        member this.Remove(p:Vector3) =
+            cached_node.Value <- if (remove p n cached_node.Value) then root else cached_node.Value
+            
 
         member this.Insert(x:double, y:double, z:double) =
             let p = Vector3(float32 x, float32 y, float32 z)
-            // cached_node <- insert p n _k cached_node
-            // match cached_node with
+            cached_node.Value <- insert p n cached_node.Value
+            match cached_node.Value with
+            | Leaf (_,v,_,_,_,_) -> v.Value <- ValueNone
+            | _ -> failwith "Item.get failed"         
+
+        member this.Insert(p:Vector3) =
             cached_node.Value <- insert p n cached_node.Value
             match cached_node.Value with
             | Leaf (_,v,_,_,_,_) -> v.Value <- ValueNone
@@ -875,6 +950,19 @@ module Octree =
                 | _ -> failwith "Item.get failed"         
 
                     
+        member this.TryGet(p:Vector3) =
+            cached_node.Value <- traverse_retain p cached_node.Value
+            match cached_node.Value with
+            | Leaf (_,v,_,_,_,_) -> v.Value
+            | _ -> ValueNone
+
+        member this.TrySet (p:Vector3) value =
+            cached_node.Value <- traverse_retain p cached_node.Value
+            match cached_node.Value with
+            | Leaf (_,v,_,_,_,_) -> v.Value <- ValueSome value
+            | _ -> ()   
+
+                    
         member this.Item
             with get(i:int,j:int,k:int) =
                 // match (iterate i j k this.dX this.dY this.dZ cached_node) with
@@ -902,9 +990,13 @@ module Octree =
                 | Leaf (_,v,_,_,_,_) -> v.Value <- ValueSome value
                 | _ -> failwith "should always traverse to a leaf node"
 
+
         member this.MapTo(x:double, y:double, z:double) =
-            // cached_node <- traverse_map (Vector3(float32 x, float32 y, float32 z)) root
-            cached_node.Value <- traverse_map (Vector3(float32 x, float32 y, float32 z)) root
+            traverse_map (Vector3(float32 x, float32 y, float32 z)) root
+
+        member this.MapTo(p:Vector3) =
+            traverse_map p root
+
 
         member this.Iter (fn:Node<'T> -> unit) = iter fn root
     
@@ -1014,38 +1106,9 @@ module Octree =
                 for k in 0..N-1 do
                     if stencil[i*N*N+j*N+k] then
                         let v = GridGeneration3D.to_cartesian_system i j k N v_min v_max
-                        octree.PutF(v, ValueNone)
-                        // quadtree.Put(double v.X, double v.Y, double v.Z, ValueNone)
+                        octree.Put(v, ValueNone)
         octree       
 
-    /// sets initial values at the Leaf s of a built Quadtree
-    let init (value:'T) (quadtree:Root<'T>) =
-        let N = quadtree.Rank
-        let v_min = quadtree.Vmin
-        let v_max = quadtree.Vmax
-        let stencil = if quadtree.Stencil <> null then quadtree.Stencil else failwith "Quadtree must have initialized stencil"
-        for i in 0..N-1 do
-            for j in 0..N-1 do
-                for k in 0..N-1 do
-                    let v = GridGeneration3D.to_cartesian_system i j k N v_min v_max
-                    if stencil[i*N*N+j*N+k] then
-                        // quadtree[double v.X, double v.Y, double v.Z] <- value
-                        quadtree.Put(double v.X, double v.Y, double v.Z, ValueSome value)
-        quadtree
-        
-    // let kindof dx dy dz (u:Node<'T>) =
-    //     let b = iterate -1 0 0 dx dy dz u
-    //     let d = iterate 0 -1 0 dx dy dz u
-    //     let k = iterate 0 0 -1 dx dy dz u
-    //     let e = iterate 0 0 0 dx dy dz u
-    //     let f = iterate 0 1 0 dx dy dz u
-    //     let h = iterate 1 0 0 dx dy dz u
-    //     let j = iterate 0 0 1 dx dy dz u
-
-    //     match (b,d,e,f,h,k,j) with
-    //     | _,_,Empty,_,_,_,_ -> External
-    //     | Leaf _, Leaf _, Leaf _, Leaf _, Leaf _, Leaf _, Leaf _ -> Internal
-    //     | _,_,_,_,_,_,_ -> Boundary
 
     let fill_scanlines N L (v_min:Vector3) (v_max:Vector3) (vertices:Span<float32>) (indices:Span<uint>) (bits:BitArray) =
         let dx = (v_max.X - v_min.X) / float32 N
@@ -1160,10 +1223,10 @@ module Octree =
                 bits[bi*N*N+bj*N+bk] <- true
                 bits[ci*N*N+cj*N+ck] <- true
                 bits[di*N*N+dj*N+dk] <- true
-                tree.PutF(a, ValueNone)
-                tree.PutF(b, ValueNone)
-                tree.PutF(c, ValueNone)
-                tree.PutF(d, ValueNone)
+                tree.Put(a, ValueNone)
+                tree.Put(b, ValueNone)
+                tree.Put(c, ValueNone)
+                tree.Put(d, ValueNone)
 
 
         let indices_count = indices.Length / 3
@@ -1197,7 +1260,7 @@ module Octree =
                         
                         if bits[i*N*N+j*N+k] then
                             let v = GridGeneration3D.to_cartesian_system i j k N v_min v_max
-                            tree.PutF(v, ValueNone)
+                            tree.Put(v, ValueNone)
             
                 | GridGeneration3D.Odd -> () // ignore first line, keep only the upper boundaries
 
@@ -1214,7 +1277,7 @@ module Octree =
                         if bits[i*N*N+j*N+k] then
                             while bits[i*N*N+j*N+k] do
                                 let v = GridGeneration3D.to_cartesian_system i j k N v_min v_max
-                                tree.PutF(v, ValueNone)
+                                tree.Put(v, ValueNone)
                                 k <- k + 1  // advance
                             // printfn "Even called"
                             k <- k - 1
@@ -1223,7 +1286,7 @@ module Octree =
                         if fill then
                             bits[i*N*N+j*N+k] <- true
                             let v = GridGeneration3D.to_cartesian_system i j k N v_min v_max
-                            tree.PutF(v, ValueNone)
+                            tree.Put(v, ValueNone)
                         k <- k + 1
                 j <- j + 1
             i <- i + 1

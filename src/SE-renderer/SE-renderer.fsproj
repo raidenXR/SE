@@ -25,11 +25,11 @@
     <PackageReference Include="FFMPegCore" Version="5.4.0" />
   </ItemGroup>
 
-  <ItemGroup>
-    <None Include="shaders/**" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="resources/**" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="models/**" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
+  <!-- <ItemGroup> -->
+    <!-- <None Include="shaders/**" CopyToOutputDirectory="PreserveNewest" /> -->
+    <!-- <None Include="resources/**" CopyToOutputDirectory="PreserveNewest" /> -->
+    <!-- <None Include="models/**" CopyToOutputDirectory="PreserveNewest" /> -->
+  <!-- </ItemGroup> -->
 
   <ItemGroup>
     <ProjectReference Include="..\SE-core\SE-core.fsproj" />

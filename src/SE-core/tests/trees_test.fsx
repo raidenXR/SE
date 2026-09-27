@@ -3,6 +3,7 @@
 // #r "../bin/Release/net10.0/SE-core.dll"
 
 open SE
+open SE.Spatial
 open SE.Core
 open System.Numerics
 open System
@@ -49,7 +50,6 @@ let get_pixels (N:int) (path:string) =
     (stencil, N, Vector2(float32 x_min, float32 y_min), Vector2(float32 x_max, float32 y_max))
 
 let valueof = Quadtree.valueof
-let kindof  = Quadtree.kindof
 
 let _trim node =
     match node with

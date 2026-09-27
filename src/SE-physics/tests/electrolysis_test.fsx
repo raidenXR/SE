@@ -31,7 +31,7 @@ open SE.ECS
 open SE.Spatial
 open SE.Renderer
 
-let [<Literal>] N = 130
+let [<Literal>] N = 430
 let [<Literal>] L = 10
 let [<Literal>] k = 3
 let [<Literal>] ss = "../../../resources/shaders/"
@@ -42,6 +42,15 @@ type [<Struct>] Temperature = Temperature of float
 type UpdateColors = struct end
 type IsPoints = struct end
 
+let mutable dtime = DateTime.Now
+let dt_reset () =
+    dtime <- DateTime.Now
+
+let dt_print () =
+    let t = DateTime.Now
+    printfn "%d ms" (t - dtime).Milliseconds
+    dtime <- t
+
 let sw =
     System.Diagnostics.Stopwatch()
 
@@ -50,8 +59,8 @@ let frames =
 
 let path =
     "../../../resources/models/cell.gltf"
-    // System.Environment.GetCommandLineArgs()[2]
 
+let mutable update_count = 0
     
 let rotation =
     match path with
@@ -116,7 +125,8 @@ SE_UI.Shared.OnRender (fun _ ->
     ImGui.Begin("Panel") |> ignore
     ImGui.SetWindowFontScale(1.2f)
     ImGui.InputFloat3("pos:  ", &p) |> ignore
-    ImGui.InputFloat3("view: ", &v) |> ignore
+    // ImGui.InputFloat3("view: ", &v) |> ignore
+    ImGui.Text($"count: {update_count}")
     
     let mesh = Components.get<Enable>().Entries
     for i in 0..mesh_names.Count-1 do
@@ -154,45 +164,87 @@ system OnLoad [] (fun _ ->
 
 system OnLoad [] (fun _ ->
     sw.Restart()
+    dt_reset()
     use gltf = new GLTF.Deserializer(path)
-    let meshes = gltf.ReadMeshes()
+    let meshes = gltf.ReadMeshesParallel()
     let wnd = SE_Window.Shared
     sw.Stop()
     printfn "read_meshes: %d ms" (sw.Elapsed.Milliseconds)
+    dt_print ()
 
     sw.Restart()
+    dt_reset()
+
+    meshes
+    |> Array.iter (fun mesh -> RGeometry.tranform rotation mesh |> ignore)
+    
+    // define ALL the octrees on the same volume (x,y,z)
+    let mutable (v_min,v_max) = GridGeneration3D.bounds_SIMD (meshes[0].vertices.AsSpan()) meshes[0].L
+    for mesh in meshes do
+        let (_v_min,_v_max) = GridGeneration3D.bounds_SIMD (mesh.vertices.AsSpan()) mesh.L
+        v_min <- System.Numerics.Vector3.Min(v_min, _v_min)        
+        v_max <- System.Numerics.Vector3.Max(v_max, _v_max)        
+    
+    printfn "v_min: %A" v_min
+    printfn "v_max: %A" v_max
+
     let trees =
         meshes
-        |> Array.ofSeq
-        |> Array.Parallel.map (fun mesh ->
-            mesh
-            |> RGeometry.tranform rotation
-            |> Octree.ofMesh<Entity> N k        
+        |> Array.Parallel.map (fun mesh ->                
+            let vertices = mesh.vertices.AsSpan()
+            let indices = mesh.indices.AsSpan()
+            let (_v_min,_v_max) = GridGeneration3D.bounds_SIMD vertices L
+            
+            if (v_min.X > _v_min.X) || (v_min.Y > _v_min.Y) || (v_min.Z > _v_min.Z) then
+                Console.ForegroundColor <- ConsoleColor.Red
+                printfn "node_v_min: %A" _v_min
+                Console.ResetColor()
+                
+            if (v_max.X < _v_max.X) || (v_max.Y < _v_max.Y) || (v_max.Z < _v_max.Z) then
+                Console.ForegroundColor <- ConsoleColor.Red
+                printfn "node_v_max: %A" _v_max
+                Console.ResetColor()
+                
+            let bits = Octree.fill_scanlines N L v_min v_max vertices indices (System.Collections.BitArray(N*N*N))
+            Octree.ofStencil<Entity> N k v_min v_max bits
         )
+
+    // Fix the Electrolyte Control Volume
+    let electrolyte_mesh = Seq.item 5 meshes
+    let electrolyte_tree = Seq.item 5 trees
+    let electrodes_tree = Seq.item 2 trees
+    let tubes_tree = Seq.item 3 trees
+    let vertices = electrolyte_mesh.vertices.AsSpan()
+    let indices  = electrolyte_mesh.indices.AsSpan()
+    let L = electrolyte_mesh.L 
+    let bits = electrodes_tree.Stencil.Or(tubes_tree.Stencil)
+    
+    trees[5] <- Octree.ofStencil<Entity> N k v_min v_max (electrolyte_tree.Stencil.And(bits.Not()))
+
+    // trees[2].Iter (fun u ->
+    //     match u with
+    //     | Octree.Boundary & Octree.Leaf _ -> trees[5].Put(pos u, ValueNone)
+    //     | _ -> ()
+    // )
 
     trees
     |> Array.iteri (fun i tree ->
         mesh_names.Add(sprintf "body_%d: %d/%d" (i+1) (tree.GetInternalCount()) (tree.GetCount()))
     )
-        
-    // for mesh in meshes do
-    //     let tree =
-    //         mesh
-    //         |> RGeometry.tranform rotation
-    //         |> Octree.ofMesh<Entity> N k
 
-        // i <- i + 1
-        // mesh_names.Add(sprintf "body_%d: %d/%d" i (tree.GetInternalCount()) (tree.GetCount()))
     sw.Stop()
     printfn "create_trees: %d ms" (sw.Elapsed.Milliseconds)
+    dt_print()
         
     sw.Restart()
+    dt_reset()
+    let mutable i = 0
     for tree in trees do
         // assign entities to leafs
         tree.Iter (fun u ->
             match u with
-            | Octree.Internal & Octree.Leaf(_,v,_,_,_,_) -> v.Value <- entity() |> set (Temperature(40.)) |> ValueSome 
-            | Octree.Boundary & Octree.Leaf(_,v,_,_,_,_) -> v.Value <- entity() |> set (Temperature(80.)) |> ValueSome 
+            | Octree.Internal & Octree.Leaf(_,v,_,_,_,_) -> v.Value <- entity() |> set (Temperature(10.)) |> ValueSome 
+            | Octree.Boundary & Octree.Leaf(_,v,_,_,_,_) -> v.Value <- entity() |> set (Temperature(20.)) |> ValueSome 
             | _ -> ()
         )
 
@@ -206,10 +258,12 @@ system OnLoad [] (fun _ ->
         octree_to_buffer<Temperature> tree colorbars[Colormap.Gray] points T Tf32
 
         // assign entities to trees
+        i <- i + 1
         entity()
         |> Entity.add<IsPoints>
         |> Entity.add<UpdateColors>
         |> Entity.addRef tree
+        |> Entity.singleton $"body_{i}"
         |> set points
         |> set (VertexBuffer.create VT2 points)
         |> set (Matrix4.CreateScale(scale))
@@ -228,6 +282,7 @@ system OnLoad [] (fun _ ->
 
     sw.Stop()
     printfn "load_trees: %d ms" (sw.Elapsed.Milliseconds)
+    dt_print()
 )
 
 system PostLoad [] (fun _ ->
@@ -238,10 +293,16 @@ system PostLoad [] (fun _ ->
     P[3] |> set Colormap.Gray |> ignore
     P[4] |> set Colormap.Winter |> ignore
     P[5] |> set Colormap.Jet |> ignore
+
+
+    let E = Components.get<Enable>().Entries
+    E[0] <- false
+    E[1] <- false
+    E[2] <- false
+    E[3] <- false
+    E[4] <- false
+    E[5] <- true
 )
-    
-    
-// let inline pressed key (input:KeyboardState) = input.IsKeyDown(key) && not keys[int key]
 
 // controls
 system OnValidate [] (fun _ ->
@@ -300,7 +361,7 @@ system PreRender [typeof<Mesh>; typeof<VertexBuffer>; typeof<Enable>] (fun q ->
 
     for e in q do
         if Entity.has<UpdateColors> e && enabled[e] then
-            octree_to_buffer (Entity.getRef<Octree.Root<Entity>> e) colorbars[cbar[e]] mesh[e] T Tf32
+            // octree_to_buffer (Entity.getRef<Octree.Root<Entity>> e) colorbars[cbar[e]] mesh[e] T Tf32
 
             VertexBuffer.update vbuf[e] mesh[e]        
             e |> Entity.remove<UpdateColors> |> ignore        
@@ -342,6 +403,41 @@ system OnRender [typeof<Mesh>; typeof<VertexBuffer>; typeof<IsPoints>] (fun q ->
 system PostRender [] (fun _ ->
     let wnd = SE_Window.Shared
     wnd.Update (wnd.Context.SwapBuffers)        
+)
+
+let mutable update_bool = true
+
+system OnUpdate [] (fun _ ->
+    if update_bool then
+        update_bool <- false
+        task_new (fun _ ->
+            let T = Components.get<Temperature>()
+            let electrolyte = Entity.fetch "body_6"
+            let electrodes  = Entity.fetch "body_3"
+
+            let electrolyte_tree = Entity.getRef<Octree.Root<Entity>> electrolyte
+            let electrodes_tree  = Entity.getRef<Octree.Root<Entity>> electrodes
+
+            electrodes_tree.IterParallel 4 (fun u ->
+                match u with
+                | Octree.Boundary & Octree.Leaf (_,v,_,_,_,_) ->
+                    match electrolyte_tree.MapTo(pos u) with
+                    | Octree.Leaf (_,v,_,_,_,_) ->
+                        let idx = v.Value.Value
+                        T[idx] <- Temperature(Math.Clamp(Tf32 T[idx] + 1., 0., 100.))
+                    | _ -> ()
+                | _ -> ()
+            )    
+
+            electrolyte
+            |> Entity.add<UpdateColors>
+            |> ignore
+            
+            octree_to_buffer<Temperature> electrolyte_tree colorbars[Entity.get<Colormap> electrolyte] (Entity.get<Mesh> electrolyte) T Tf32
+
+            update_bool <- true
+            update_count <- update_count + 1
+        ) |> ignore
 )
 
 Systems.progress()

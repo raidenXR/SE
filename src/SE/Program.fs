@@ -1,113 +1,398 @@
-open SE
-open SE.Core
-open SE.Spatial
-open SE.Renderer
-open SE.Plotting
+open OpenTK.Core
+open OpenTK.Graphics
+open OpenTK.Graphics.OpenGL4
+open OpenTK.Mathematics
+open OpenTK.Windowing.Common
+open OpenTK.Windowing.Common.Input
+open OpenTK.Windowing.Desktop
+open OpenTK.Windowing.GraphicsLibraryFramework
+
 open System
-open System.Numerics
 open System.Runtime.InteropServices
 open System.Runtime.CompilerServices
+open FSharp.NativeInterop
 
+open SkiaSharp
+open ImGuiNET
+open FFMpegCore
+open FFMpegCore.Pipes
+open SE.Renderer.VideoCapture
 
-let [<Literal>] N = 300
+open SE
+open SE.Core
+open SE.ECS
+open SE.Spatial
+open SE.Renderer
+
+let [<Literal>] N = 230
 let [<Literal>] L = 10
-let [<Literal>] k = 5
-let [<Literal>] max_iter = 200
-printfn "N: %d, k: %d, max_iter: %d" N k max_iter
+let [<Literal>] k = 3
+let [<Literal>] ss = "../../../resources/shaders/"
 
-let path = "./bun_zipper.ply"
-let gltf = if path.Contains(".gltf") then Some (new GLTF.Deserializer(path)) else None
+// type [<Struct>] Enable = {is_enabled:bool}
+type Enable = bool
+type [<Struct>] Temperature = Temperature of float
+type UpdateColors = struct end
+type IsPoints = struct end
 
-// rotate mesh for testing
+let mutable dtime = DateTime.Now
+let dt_reset () =
+    dtime <- DateTime.Now
+
+let dt_print () =
+    let t = DateTime.Now
+    printfn "%d ms" (t - dtime).Milliseconds
+    dtime <- t
+
+let sw =
+    System.Diagnostics.Stopwatch()
+
+let frames =
+    ResizeArray<IVideoFrame>(1000)
+
+let [<Literal>] path = "../../../resources/models/cell.gltf"
+    
 let rotation =
-    Quaternion.CreateFromYawPitchRoll(2.f, 4.f, 3.f)
-    |> Matrix4x4.CreateFromQuaternion
+    match path with
+    | GLTF.IsTxt -> System.Numerics.Quaternion.CreateFromYawPitchRoll(2.f, 2.f, 1.f) |> System.Numerics.Matrix4x4.CreateFromQuaternion        
+    | GLTF.IsPly -> System.Numerics.Quaternion.CreateFromYawPitchRoll(0.f, 0.f, 0.f) |> System.Numerics.Matrix4x4.CreateFromQuaternion        
+    | GLTF.IsGltf -> System.Numerics.Quaternion.CreateFromYawPitchRoll(0.5f, 0.5f, 0.5f) |> System.Numerics.Matrix4x4.CreateFromQuaternion        
+    | _ -> System.Numerics.Quaternion.CreateFromYawPitchRoll(0.f, 0.f, 0.f) |> System.Numerics.Matrix4x4.CreateFromQuaternion        
 
-let mesh =
-    match gltf with
-    | _ when path.Contains(".txt") ->
-        RGeometry.load_txt_unmanaged (path, 0.55f, 0.55f, 0.55f, 1.0f)
-        |> RGeometry.tranform rotation
-        
-    | Some gltf ->
-        gltf.ReadMeshF(0)
-        |> RGeometry.tranform rotation
-        
-    | None ->
-        RGeometry.load_ply_unmanaged (path, 0.55f, 0.55f, 0.53f, 1.0f)
-        |> RGeometry.tranform rotation
+let scale =
+    match path with
+    | GLTF.IsTxt -> 0.2f
+    | GLTF.IsPly -> 10.f
+    | GLTF.IsGltf -> 3.f
+    | _ -> 1.f
+      
+let mesh_names = ResizeArray<string>()
 
+let colorbars = Map[
+    Colormap.Hot, new Colorbar(Colormap.Hot, 0., 100.)
+    Colormap.Jet, new Colorbar(Colormap.Jet, 0., 100.)
+    Colormap.Winter, new Colorbar(Colormap.Winter, 0., 100.)
+    Colormap.Gray, new Colorbar(Colormap.Gray, 0., 100.)
+    Colormap.Autumn, new Colorbar(Colormap.Autumn, 0., 100.)
+]
 
-printfn "Flag: %d" (sizeof<OctreeSOA_2.Flag>)
-printfn "NodeId:   %d" (sizeof<OctreeSOA_2.NodeId>)
-printfn "Data<'T>: %d" (sizeof<OctreeSOA_2.Data<double>>)
+let inline (!) (u:Octree.Node<'T>) = Octree.valueof u
+let inline Tf32 (Temperature T) = T
+let inline vec3 (v:Vector3) = System.Numerics.Vector3(v.X, v.Y, v.Z)
+let pos = Octree.center
 
-let tree_soa = OctreeSOA_2.ofSurface<double> N L k (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
-printfn "nodes.len:      %d" (tree_soa.GetCount())
-printfn "nodes.total:    %d" (tree_soa.GetTotalCount())
-printfn "internal.count: %d" (tree_soa.GetInternalCount())
-printfn "boundary.count: %d" (tree_soa.GetBoundaryCount())
-printfn "TREE_SOA\n\n"
-
-
-let tree = Octree.ofSurface<double> N L k (mesh.vertices.AsSpan()) (mesh.indices.AsSpan())
-printfn "nodes.len:      %d" (tree.GetCount())
-printfn "nodes.total:    %d" (tree.GetTotalCount())
-printfn "internal.count: %d" (tree.GetInternalCount())
-printfn "boundary.count: %d" (tree.GetBoundaryCount())
-printfn "TREE\n\n"
-
-
-mesh.vertices.Dispose()
-mesh.indices.Dispose()
-
-let points = ResizeArray<Vector3>(1000)
-let bounds = ResizeArray<Vector3>(1000)
-
-// tree.Iter (fun node ->
-//     match node with
-//     | Octree.Internal -> points.Add(Octree.center node)
-//     | Octree.Boundary -> bounds.Add(Octree.center node)
-//     | _ -> ()
-// )
-
-tree_soa.Iter (fun x t ->
-    match struct(x,t) with
-    | OctreeSOA_2.Internal -> points.Add(t.Center(x))
-    | OctreeSOA_2.Boundary -> bounds.Add(t.Center(x))
-    | _ -> ()
-)
-
-for i in 1..max_iter do
-    tree_soa.Iter (fun x t -> 
-        match struct(x,t) with
-        | OctreeSOA_2.Internal ->
-            let a = t[x, 0,0,0]
-            let b = t[x,-1,0,0]
-            let d = t[x,+1,0,0]
-            let dx = double (t.Center(d) - t.Center(b)).X
-            if t[d].IsSome then ignore (t[d].Value) else ()
-            if t[a].IsSome then ignore (t[d].Value) else ()
-            if t[b].IsSome then ignore (t[d].Value) else ()
-        | _ -> () 
-    )
-printfn "TREE_SOA\n\n"
-
-for i in 1..max_iter do
-    tree.Iter (fun x ->
-        match x with
-        | Octree.Internal ->
-            let a = x[ 0,0,0]
-            let b = x[-1,0,0]
-            let d = x[+1,0,0]
-            let va = Octree.center a
-            let vb = Octree.center b
-            let vd = Octree.center d
-            let dx = double (vd - vb).X
-            ignore (tree[double vd.X, double vd.Y, double vd.Z])
-            ignore (tree[double va.X, double va.Y, double va.Z])
-            ignore (tree[double vb.X, double vb.Y, double vb.Z])
+let octree_to_buffer<'T> (tree:Octree.Root<Entity>) (colorbar:Colorbar) (mesh:Mesh) (values:Components<'T>) convert =
+    let mutable i = 0
+    tree.Iter (fun u ->
+        match u with
+        | Octree.Internal | Octree.Boundary ->
+        // | Octree.Internal ->
+            let vertices = mesh.vertices.AsSpan()
+            // if (i*mesh.L+6) >= vertices.Length then printfn "i: %d, tree_len: %d" i (tree.GetInternalCount())
+            let p = pos u
+            let c = colorbar[convert values[!u]]
+            vertices[i*mesh.L + 0] <- p.X
+            vertices[i*mesh.L + 1] <- p.Y
+            vertices[i*mesh.L + 2] <- p.Z
+            vertices[i*mesh.L + 3] <- c.X
+            vertices[i*mesh.L + 4] <- c.Y
+            vertices[i*mesh.L + 5] <- c.Z
+            vertices[i*mesh.L + 6] <- c.W
+            i <- i + 1            
         | _ -> ()
     )
-printfn "TREE\n\n"
+
+SE_UI.Shared.OnRender (fun _ ->
+    let camera = SE_Window.Shared.Camera
+    let mutable p = vec3(camera.Position)
+    let mutable v = vec3(camera.GetView())
+    let viewport_size = ImGui.GetMainViewport().Size
+
+    // Position at left edge
+    ImGui.SetNextWindowPos(System.Numerics.Vector2(0.f, 0.f))
+    ImGui.SetNextWindowSize(System.Numerics.Vector2(280.f, 260.f))
+
+    ImGui.Begin("Panel") |> ignore
+    ImGui.SetWindowFontScale(1.2f)
+    ImGui.InputFloat3("pos:  ", &p) |> ignore
+    ImGui.InputFloat3("view: ", &v) |> ignore
+    
+    let mesh = Components.get<Enable>().Entries
+    for i in 0..mesh_names.Count-1 do
+        ImGui.Checkbox(mesh_names[i], &mesh[i]) |> ignore
+    ImGui.End()
+)
+
+// load resources
+system OnLoad [] (fun _ ->
+    let wnd = SE_Window.Shared
+    wnd.Camera.Speed <- 1.f
+    wnd.CursorState <- CursorState.Grabbed
+
+    wnd.Load()
+
+    Shaders.load [
+        "m_shader", ss + "shader.vert", ss + "shader.frag"
+        "p_shader", ss + "particles.vert", ss + "particles.frag"
+        "t_shader", ss + "string_text.vert", ss + "string_text.frag"
+    ]
+
+    GL.ClearColor(0.2f, 0.2f, 0.2f, 1.0f)
+    GL.Enable(EnableCap.DepthTest)
+    GL.Enable(EnableCap.ProgramPointSize)
+    GL.Enable(EnableCap.Blend)
+    GL.BlendEquation(BlendEquationMode.FuncAdd)
+
+    // Required for Skia's premultiplied-alpha pixels
+    GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha)
+
+    SE_UI.Shared.OnLoad(wnd) |> ignore
+
+    printfn "resouces initialization load"
+)
+
+system OnLoad [] (fun _ ->
+    sw.Restart()
+    dt_reset()
+    use gltf = new GLTF.Deserializer(path)
+    let meshes = gltf.ReadMeshes()
+    let wnd = SE_Window.Shared
+    sw.Stop()
+    printfn "read_meshes: %d ms" (sw.Elapsed.Milliseconds)
+    dt_print ()
+
+    sw.Restart()
+    dt_reset()
+    let trees =
+        meshes
+        |> Array.ofSeq
+        |> Array.Parallel.map (fun mesh ->
+            mesh
+            |> RGeometry.tranform rotation
+            |> Octree.ofMesh<Entity> N k        
+        )
+
+    trees
+    |> Array.iteri (fun i tree ->
+        mesh_names.Add(sprintf "body_%d: %d/%d" (i+1) (tree.GetInternalCount()) (tree.GetCount()))
+    )
+        
+    // for mesh in meshes do
+    //     let tree =
+    //         mesh
+    //         |> RGeometry.tranform rotation
+    //         |> Octree.ofMesh<Entity> N k
+
+        // i <- i + 1
+        // mesh_names.Add(sprintf "body_%d: %d/%d" i (tree.GetInternalCount()) (tree.GetCount()))
+    sw.Stop()
+    printfn "create_trees: %d ms" (sw.Elapsed.Milliseconds)
+    dt_print()
+        
+    sw.Restart()
+    dt_reset()
+    let mutable i = 0
+    for tree in trees do
+        // assign entities to leafs
+        tree.Iter (fun u ->
+            match u with
+            | Octree.Internal & Octree.Leaf(_,v,_,_,_,_) -> v.Value <- entity() |> set (Temperature(10.)) |> ValueSome 
+            | Octree.Boundary & Octree.Leaf(_,v,_,_,_,_) -> v.Value <- entity() |> set (Temperature(90.)) |> ValueSome 
+            | _ -> ()
+        )
+
+        let points = {
+            vertices = NativeArray.create<float32>(tree.GetCount()*7)
+            indices = NativeArray.empty<uint32>()
+            L = 7
+        }
+        
+        let T = Components.get<Temperature>()
+        octree_to_buffer<Temperature> tree colorbars[Colormap.Gray] points T Tf32
+
+        // assign entities to trees
+        i <- i + 1
+        entity()
+        |> Entity.add<IsPoints>
+        |> Entity.add<UpdateColors>
+        |> Entity.addRef tree
+        |> Entity.singleton $"body_{i}"
+        |> set points
+        |> set (VertexBuffer.create VT2 points)
+        |> set (Matrix4.CreateScale(scale))
+        |> set true
+        |> set Colormap.Jet
+        |> ignore
+        // |> ent_to_tree tree
+
+        let p = Octree.center (tree.Root)    
+        wnd.Camera.Position <- Vector3(p.X, p.Y, p.Z)
+        
+
+    let entities = Components.get<IsPoints>().Entities
+    entities[2] |> set (colorbars[Colormap.Jet].AsTexture(0.8f, 0.0f, 120.f, 460.f)) |> ignore
+    entities[3] |> set (colorbars[Colormap.Gray].AsTexture(0.8f, -0.8f, 120.f, 460.f)) |> ignore
+
+    sw.Stop()
+    printfn "load_trees: %d ms" (sw.Elapsed.Milliseconds)
+    dt_print()
+)
+
+system PostLoad [] (fun _ ->
+    let P = Components.get<Colormap>().Entities
+    P[0] |> set Colormap.Winter |> ignore
+    P[1] |> set Colormap.Winter |> ignore
+    P[2] |> set Colormap.Gray |> ignore
+    P[3] |> set Colormap.Gray |> ignore
+    P[4] |> set Colormap.Winter |> ignore
+    P[5] |> set Colormap.Jet |> ignore
+
+
+    let E = Components.get<Enable>().Entries
+    E[0] <- false
+    E[1] <- false
+    E[2] <- true
+    E[3] <- true
+    E[4] <- false
+    E[5] <- true
+)
+
+system PostLoad [] (fun _ ->
+    sw.Restart()
+    dt_reset()
+    let e3 = Entity.fetch "body_3"
+    let e6 = Entity.fetch "body_6"
+    let e4 = Entity.fetch "body_4"
+
+    let electrolyte = Entity.getRef<Octree.Root<Entity>> e6
+    let electrodes  = Entity.getRef<Octree.Root<Entity>> e3
+    let tubes       = Entity.getRef<Octree.Root<Entity>> e4
+
+    // removing intersecting points
+    // Boolean operation
+    // DO THE REMOVEF alg with Quadtrees and test that it does truly work.
+    electrodes.Iter (fun u ->
+        match u with
+        | Octree.Internal | Octree.Boundary -> electrolyte.RemoveF(pos u)
+        | _ -> ()
+    )
+
+    tubes.Iter (fun u ->
+        match u with
+        | Octree.Internal | Octree.Boundary ->
+            electrolyte.RemoveF(pos u)
+            electrodes.RemoveF(pos u)
+        | _ -> ()
+    )
+    sw.Stop()
+    printfn "remove_trees: %d ms" (sw.Elapsed.Milliseconds)
+    dt_print()
+)
+    
+    
+// let inline pressed key (input:KeyboardState) = input.IsKeyDown(key) && not keys[int key]
+
+// controls
+system OnValidate [] (fun _ ->
+    let wnd = SE_Window.Shared
+
+    if wnd.Pressed Keys.Escape then
+        wnd.Close()
+        Systems.quit()
+
+    if wnd.Pressed Keys.P then
+        sw.Restart()
+        Systems.unpause()
+        wnd.IsRecording <- true
+
+    let mesh = Components.get<Enable>().Entries
+    mesh[0] <- if wnd.Pressed Keys.D1 then not mesh[0] else mesh[0]
+    mesh[1] <- if wnd.Pressed Keys.D2 then not mesh[1] else mesh[1]
+    mesh[2] <- if wnd.Pressed Keys.D3 then not mesh[2] else mesh[2]
+    mesh[3] <- if wnd.Pressed Keys.D4 then not mesh[3] else mesh[3]
+    mesh[4] <- if wnd.Pressed Keys.D5 then not mesh[4] else mesh[4]
+    mesh[5] <- if wnd.Pressed Keys.D6 then not mesh[5] else mesh[5]
+    
+    wnd.KeysCache()
+)
+
+// clear all resources
+system OnExit [] (fun _ ->
+    for vb in Components.get<VertexBuffer>().Entries do
+        VertexBuffer.delete vb        
+        
+    for mesh in Components.get<Mesh>().Entries do
+        mesh.Dispose()
+        
+    for texture in Components.get<Texture>().Entries do
+        Texture.delete texture
+
+    Shaders.unload()
+    SE_Window.Shared.Dispose()
+    SE_UI.Shared.OnClosed()
+    for pair in colorbars do
+        pair.Value.Dispose()
+    // VideoCapture.create_video_from_frames ".gif" frames SE_Window.Shared
+
+    sw.Stop()
+    printfn "stopwatch: %d s" (sw.Elapsed.Seconds)
+)
+
+
+system PreRender [typeof<Mesh>; typeof<VertexBuffer>; typeof<Enable>] (fun q ->
+    let mesh = Components.get<Mesh>()
+    let vbuf = Components.get<VertexBuffer>()
+    let cbar = Components.get<Colormap>()
+    let enabled = Components.get<Enable>()
+    
+    let T = Components.get<Temperature>()    
+
+    for e in q do
+        if Entity.has<UpdateColors> e && enabled[e] then
+            octree_to_buffer (Entity.getRef<Octree.Root<Entity>> e) colorbars[cbar[e]] mesh[e] T Tf32
+
+            VertexBuffer.update vbuf[e] mesh[e]        
+            e |> Entity.remove<UpdateColors> |> ignore        
+)
+
+system OnRender [] (fun _ ->
+    let wnd = SE_Window.Shared
+    wnd.Update (fun _ -> GL.Clear(ClearBufferMask.ColorBufferBit ||| ClearBufferMask.DepthBufferBit))
+    SE_UI.Shared.OnRenderFrame(SE_Window.Shared)
+)
+
+system OnRender [typeof<Texture>] (fun q ->
+    let t = Components.get<Texture>()
+    let shader = Shaders.get("t_shader")
+
+    for e in q do
+        Texture.draw t[e] shader
+)
+
+system OnRender [typeof<Mesh>; typeof<VertexBuffer>; typeof<IsPoints>] (fun q ->
+    let m = Components.get<Mesh>()
+    let t = Components.get<Matrix4>()
+    let v = Components.get<VertexBuffer>()
+
+    let camera = SE_Window.Shared.Camera
+    let shader = Shaders.get("p_shader")
+    let enable = Components.get<Enable>()
+
+    shader.Use()
+    shader.SetMatrix4("view", camera.GetViewMatrix())
+    shader.SetMatrix4("projection", camera.GetProjectionMatrix())
+
+    for e in q do
+        if enable[e] then
+            shader.SetMatrix4("model", t[e])
+            VertexBuffer.draw v[e] m[e]
+)
+
+system PostRender [] (fun _ ->
+    let wnd = SE_Window.Shared
+    wnd.Update (wnd.Context.SwapBuffers)        
+)
+
+Systems.progress_N (Some 100) true
+
 
