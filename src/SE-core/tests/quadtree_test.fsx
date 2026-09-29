@@ -39,7 +39,7 @@ let get_pixels (N:int) (path:string) =
                 y_max <- max (double i) y_max
                 total_pixels <- total_pixels + 1
 
-    printfn "N: %d, total_pixels: %d" N total_pixels
+    // printfn "N: %d, total_pixels: %d" N total_pixels
     (stencil, N, Vector2(float32 x_min, float32 y_min), Vector2(float32 x_max, float32 y_max))
 
 // create a quadtree over the domain
@@ -55,7 +55,8 @@ let quadtree =
 
 quadtree.Iter (fun u ->
     match u with
-    | (Quadtree.Internal | Quadtree.Boundary) & (Quadtree.Leaf (_,v,_,_,_,_)) -> v.Value <- ValueSome 0.0
+    | Quadtree.Internal & Quadtree.Leaf (_,v,_,_,_,_) -> v.Value <- ValueSome 0.0
+    | Quadtree.Boundary & Quadtree.Leaf (_,v,_,_,_,_) -> v.Value <- ValueSome (Random.Shared.NextDouble())
     | _ -> ()
 )
 
@@ -70,31 +71,54 @@ let quadtree' =
     // stencil2
     |> Quadtree.ofStencil<double> N 3 v_min v_max
 
+
 quadtree'.Iter (fun u ->
     match u with
-    | (Quadtree.Internal | Quadtree.Boundary) & (Quadtree.Leaf (_,v,_,_,_,_)) -> v.Value <- ValueSome 0.0
+    | (Quadtree.Internal | Quadtree.Boundary) & Quadtree.Leaf (_,v,_,_,_,_) -> v.Value <- ValueSome 0.0
     | _ -> ()
 )
 
-quadtree.Iter (fun u  ->
-    // match u with
-    // | Quadtree.Internal -> quadtree'.RemoveF(Quadtree.center u)
-    // | _ -> ()
-    ()
+let mutable mapped_count = 0
+
+quadtree'.Iter (fun u ->
+    match u with
+    | (Quadtree.Boundary | Quadtree.Internal) & Quadtree.Leaf (_,v1,_,_,_,_) ->
+        match quadtree.MapTo(Quadtree.center u) with
+        | Quadtree.Leaf (_,v2,_,_,_,_) ->
+            v1.Value <- v2.Value
+            mapped_count <- mapped_count + 1
+            // printfn "mapped"
+        | _ -> ()
+    | _ -> ()
 )
 
-printfn "internal: %d, count: %d" (quadtree.GetInternalCount()) (quadtree.GetCount())
-printfn "internal: %d, count: %d" (quadtree'.GetInternalCount()) (quadtree'.GetCount())
+
+printfn "internal: %d, boundary: %d, count: %d" (quadtree.GetInternalCount()) (quadtree.GetBoundaryCount()) (quadtree.GetCount())
+printfn "internal: %d, boundary: %d, count: %d" (quadtree'.GetInternalCount()) (quadtree'.GetBoundaryCount()) (quadtree'.GetCount())
+printfn "mapped_count: %d" mapped_count
 
 let sb =
     let sb= System.Text.StringBuilder(1024*1024)
     Quadtree.write_rects_to_sb quadtree'.Root sb
     sb
 
-let (x,y) =
+// let pts = quadtree'.AsPoints()
+// let cls = quadtree'.GetValues()
+// printfn "pts: %d, cls: %d" pts.Length cls.Length
+
+let (z1,x1,y1) =
     quadtree.AsPoints()
     |> Array.map (fun v -> (double v.X, double v.Y))
-    |> Array.unzip    
+    |> Array.unzip
+    ||> Array.zip3 (quadtree.GetValues())
+    |> Array.unzip3
+
+let (z2,x2,y2) =
+    quadtree'.AsPoints()
+    |> Array.map (fun v -> (double v.X, double v.Y))
+    |> Array.unzip
+    ||> Array.zip3 (quadtree'.GetValues())
+    |> Array.unzip3
 
 
 Gnuplot()
@@ -109,10 +133,14 @@ Gnuplot()
 |>> "set palette defined (0 'navy', 1 'blue', 2 'cyan', 3 'green', 4 'yellow', 5 'orange', 6 'red')"
 // |>> $"set cbrange[{Array.min zs_copy}:{Array.max zs_copy}]"
 // |>> "set view map"
-|> Gnuplot.datablockString (string sb) "grid1"
-|> Gnuplot.datablockXY x y "grid2"
-|>> "plot $grid1 using 1:2 with lines lc rgb 'white', \\"
-|>> "$grid2 using 1:2 with points lc rgb 'yellow'"
+// |> Gnuplot.datablockString (string sb) "grid1"
+|> Gnuplot.datablockXYZ x1 y1 z1 "grid1"
+|> Gnuplot.datablockXYZ x2 y2 z2 "grid2"
+// |>> "plot $grid1 with points lc rgb 'white', \\"
+// |>> "$grid2 with points lc rgb 'yellow'"
+// |>> "plot $grid1 with points lc palette, \\"
+// |>> "$grid2 with points lc palette"
+|>> "plot $grid2 with points lc palette, \\"
 |> Gnuplot.run
 |> ignore
 

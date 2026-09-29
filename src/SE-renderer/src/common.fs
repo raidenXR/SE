@@ -386,6 +386,7 @@ type SKBitmapFrame(bmp:SKBitmap, pixels:narray<byte>) =
         
 
 module VideoCapture =
+    let private _frames = lazy (new ResizeArray<IVideoFrame>(1000))
     
     let capture_frame (frames:ResizeArray<IVideoFrame>) (wnd:SE_Window) =
         let size = wnd.FramebufferSize
@@ -472,4 +473,84 @@ module VideoCapture =
             | _ -> printfn "must use appropriate extension, .mp4 or .gif"
 
         
+    let frame (wnd:SE_Window) =
+        let frames = _frames.Force()
+        let size = wnd.FramebufferSize
+        let w = size.X
+        let h = size.Y
+        // use pixels = NativeArray.rent<byte> (w*h*4)
+        let pixels = NativeArray.create<byte> (w*h*4)  // This leaks memory, use regular arrays, DO NOT POOL
+        // let pixels = Array.zeroCreate<byte> (w*h*4)
+        GL.ReadPixels(0, 0, w, h, PixelFormat.Bgra, PixelType.UnsignedByte, pixels.ToInt())
+
+        let bitmap = new SKBitmap(w, h, SKColorType.Bgra8888, SKAlphaType.Premul)
+        // let bit = new SKBitmap(pixels)
+        // use pixels_ptr = fixed pixels
+        let success = bitmap.InstallPixels(new SKImageInfo(w, h, SKColorType.Bgra8888, SKAlphaType.Premul), pixels.ToInt(), w*4)
+
+        if not success then
+            failwith "failed to install pixels on SKBitmap"
+        
+        let frame = new SKBitmapFrame(bitmap, pixels)
+        frames.Add(frame :> IVideoFrame)
+
+
+    let export (ext:string) (wnd:SE_Window) =
+        let frames = _frames.Force()        
+        if (Seq.length frames) > 0 then        
+            match ext with
+            | ".mp4" | "mp4" ->
+                let path = DateTime.Now.ToString(Globalization.CultureInfo("gr-GR")).Replace('/', '-').Replace(':',' ')
+                let vid_path = "vid_" + path + ".mp4"
+                let img_path = "img_" + path + ".png"
+
+                if System.IO.File.Exists(vid_path) then
+                    System.IO.File.Delete(vid_path)
+                if System.IO.File.Exists(img_path) then
+                    System.IO.File.Delete(img_path)
+
+                let size = wnd.FramebufferSize
+                printfn "framebuffer: (%d, %d)" size.X size.Y
+
+                let source = new RawVideoPipeSource(frames, FrameRate = 30)
+                let success = FFMpegArguments
+                                .FromPipeInput(source)
+                                .OutputToFile(vid_path, true, (fun options -> options.WithVideoCodec("libvpx-vp9").WithVideoFilters(fun filter -> filter.Mirror(Enums.Mirroring.Vertical) |> ignore) |> ignore))
+
+                printfn "start processing video conversion on %d frames" (Seq.length frames)
+                let s = success.ProcessSynchronously()
+                // success
+                let str = if s then "video conversion done!" else "video conversion failed"
+                printfn "%s" str
+
+            | ".gif" | "gif" ->
+                let path = DateTime.Now.ToString(Globalization.CultureInfo("gr-GR")).Replace('/', '-').Replace(':',' ')
+                let vid_path = "vid_" + path + ".gif"
+                let img_path = "img_" + path + ".png"
+
+                if System.IO.File.Exists(vid_path) then
+                    System.IO.File.Delete(vid_path)
+                if System.IO.File.Exists(img_path) then
+                    System.IO.File.Delete(img_path)
+
+                let size = wnd.FramebufferSize
+                printfn "framebuffer: (%d, %d)" size.X size.Y
+
+                let source = new RawVideoPipeSource(frames, FrameRate = 10)
+                let success = FFMpegArguments
+                                .FromPipeInput(source)
+                                .OutputToFile(vid_path, true, (fun options -> options.WithFramerate(10).WithVideoFilters(fun filter -> filter.Mirror(Enums.Mirroring.Vertical).Scale(640,-1) |> ignore) |> ignore))
+                                
+                printfn "start processing video conversion on %d frames" (Seq.length frames)
+                let s = success.ProcessSynchronously()
+                // success
+                let str = if s then "video conversion done!" else "video conversion failed"
+                printfn "%s" str
+
+            | _ -> printfn "must use appropriate extension, .mp4 or .gif"
+
+
+            for frame in frames do
+                ((frame :?> SKBitmapFrame) :> IDisposable).Dispose()
+
 

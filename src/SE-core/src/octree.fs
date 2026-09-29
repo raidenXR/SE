@@ -201,6 +201,14 @@ module Octree =
         | Leaf _ -> j <- j + 1
         | Empty -> ()
 
+    // let rec measure_dist_rec (o:Vector3) (out:byref<Node<'T>>) (node:Node<'T>) =
+    //     match node with
+    //     | Node (_,children,_,_,_,_) ->
+    //          for c in children do measure_dist_rec o &out c
+    //     | Leaf _ ->
+    //         out <- if (o - center node).Length() < (o - center out).Length() then node else out 
+    //     | Empty -> ()        
+
     let rec count_total_rec (j:byref<int>) (node:Node<'T>) =
         match node with 
         | Node (_,children,_,_,_,_) ->
@@ -571,6 +579,10 @@ module Octree =
 
             remove p n c[idx]
 
+
+    // let measure_closest (p:Vector3) (node:Node<'T>) (out:byref<Node<'T>>) =
+                
+
     /// return the node closest to the point
     /// NOT nessesary a leaf node, just the furthest lavel that intersects x,y from the root
     let rec traverse_map (p:Vector3) (node:Node<'T>) =
@@ -594,10 +606,107 @@ module Octree =
 
             if idx < 0 || idx > 7 then failwith "improper idx value"
 
+            // fix this part to return closest leaf node and not just the nodes
             match c[idx] with
-            | Empty -> node                
+            | Empty ->
+                // c[idx]
+                let mutable j' = -1
+                let mutable d' = (p - center node).Length()
+                
+                for j in 0..7 do
+                    match c[j] with
+                    | Node _ | Leaf _ when j <> idx ->
+                        let x' = (p - center c[j]).Length()
+                        if d' > x' then
+                            d' <- x'
+                            j' <- j
+                    | _ -> ()                        
+                    
+                if j' > -1 then c[j'] else c[idx]
+                    
             | _ -> traverse_map p c[idx]              
 
+
+    let rec traverse_closest (p:Vector3) (node:Node<'T>) =
+        match node with
+        | Empty -> failwith "MUST not traverse to EMPTY"
+
+        // | Leaf (parent,_,_,l,v_min,v_max) when not (intersect p v_min v_max) ->
+            // node
+        
+        | Leaf _ -> node
+        
+        | Node (parent,c,_,l,v_min,v_max) when not (intersect p v_min v_max) ->
+            let mutable j' = -1
+            let mutable d' = (p - center node).Length()
+            
+            for j in 0..7 do
+                match c[j] with
+                | Node _ | Leaf _  ->
+                    let x' = (p - center c[j]).Length()
+                    if d' > x' then
+                        d' <- x'
+                        j' <- j
+                | _ -> ()                        
+
+            if j' > -1 then
+                traverse_closest p c[j']
+            else
+                let mutable jj = 0
+                let mutable dd = Single.MaxValue
+                
+                for j in 0..7 do
+                    match c[j] with
+                    | Leaf _  ->
+                        let x' = (p - center c[j]).Length()
+                        if dd > x' then
+                            dd <- x'
+                            jj <- j
+                    | _ -> ()
+                c[jj]                  
+                
+
+        | Node (_,c,_,l,v_min,v_max) ->   // traverse forward 
+            let mutable idx = 0
+            let o = v_min + (v_max - v_min) / 2f
+            idx <- idx + if p.X < o.X then 0 else 1
+            idx <- idx + if p.Y > o.Y then 0 else 2
+            idx <- idx + if p.Z < o.Z then 0 else 4
+
+            if idx < 0 || idx > 7 then failwith "improper idx value"
+
+            match c[idx] with
+            | Empty ->
+                let mutable j' = -1
+                let mutable d' = (p - center node).Length()
+            
+                for j in 0..7 do
+                    match c[j] with
+                    | Node _ | Leaf _  ->
+                        let x' = (p - center c[j]).Length()
+                        if d' > x' then
+                            d' <- x'
+                            j' <- j
+                    | _ -> ()                        
+
+                if j' > -1 then
+                    traverse_closest p c[j']
+                else
+                    let mutable jj = 0
+                    let mutable dd = Single.MaxValue
+                
+                    for j in 0..7 do
+                        match c[j] with
+                        | Leaf _  ->
+                            let x' = (p - center c[j]).Length()
+                            if dd > x' then
+                                dd <- x'
+                                jj <- j
+                        | _ -> ()
+                    c[jj]                  
+                  
+            | _ -> traverse_closest p c[idx]              
+            
     // let contains i j idx =        
     //     0 <= i + j + idx && i + j + idx <= 7
 
@@ -992,10 +1101,16 @@ module Octree =
 
 
         member this.MapTo(x:double, y:double, z:double) =
-            traverse_map (Vector3(float32 x, float32 y, float32 z)) root
+            // cached_node.Value <- traverse_map (Vector3(float32 x, float32 y, float32 z)) cached_node.Value
+            // cached_node.Value
+            // traverse_map (Vector3(float32 x, float32 y, float32 z)) root
+            traverse_closest (Vector3(float32 x, float32 y, float32 z)) root
 
         member this.MapTo(p:Vector3) =
-            traverse_map p root
+            // cached_node.Value <- traverse_map p cached_node.Value
+            // cached_node.Value
+            // traverse_map p root
+            traverse_closest p root
 
 
         member this.Iter (fn:Node<'T> -> unit) = iter fn root

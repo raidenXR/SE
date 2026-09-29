@@ -23,7 +23,6 @@ open SkiaSharp
 open ImGuiNET
 open FFMpegCore
 open FFMpegCore.Pipes
-open SE.Renderer.VideoCapture
 
 open SE
 open SE.Core
@@ -41,6 +40,9 @@ type Enable = bool
 type [<Struct>] Temperature = Temperature of float
 type UpdateColors = struct end
 type IsPoints = struct end
+
+// type [<Struct>] UpdateCount = UpdateCount of int
+// type [<Struct>] UpdateBool  = UpdateBool of bool
 
 let mutable dtime = DateTime.Now
 let dt_reset () =
@@ -61,6 +63,7 @@ let path =
     "../../../resources/models/cell.gltf"
 
 let mutable update_count = 0
+let mutable update_bool = false
     
 let rotation =
     match path with
@@ -127,6 +130,7 @@ SE_UI.Shared.OnRender (fun _ ->
     ImGui.InputFloat3("pos:  ", &p) |> ignore
     // ImGui.InputFloat3("view: ", &v) |> ignore
     ImGui.Text($"count: {update_count}")
+    // ImGui.Text($"count: {Singletons.get<UpdateCount>()}")
     
     let mesh = Components.get<Enable>().Entries
     for i in 0..mesh_names.Count-1 do
@@ -221,12 +225,6 @@ system OnLoad [] (fun _ ->
     
     trees[5] <- Octree.ofStencil<Entity> N k v_min v_max (electrolyte_tree.Stencil.And(bits.Not()))
 
-    // trees[2].Iter (fun u ->
-    //     match u with
-    //     | Octree.Boundary & Octree.Leaf _ -> trees[5].Put(pos u, ValueNone)
-    //     | _ -> ()
-    // )
-
     trees
     |> Array.iteri (fun i tree ->
         mesh_names.Add(sprintf "body_%d: %d/%d" (i+1) (tree.GetInternalCount()) (tree.GetCount()))
@@ -243,8 +241,8 @@ system OnLoad [] (fun _ ->
         // assign entities to leafs
         tree.Iter (fun u ->
             match u with
-            | Octree.Internal & Octree.Leaf(_,v,_,_,_,_) -> v.Value <- entity() |> set (Temperature(10.)) |> ValueSome 
-            | Octree.Boundary & Octree.Leaf(_,v,_,_,_,_) -> v.Value <- entity() |> set (Temperature(20.)) |> ValueSome 
+            | Octree.Internal & Octree.Leaf(_,v,_,_,_,_) -> v.Value <- entity() |> set (Temperature(5.)) |> ValueSome 
+            | Octree.Boundary & Octree.Leaf(_,v,_,_,_,_) -> v.Value <- entity() |> set (Temperature(5.)) |> ValueSome 
             | _ -> ()
         )
 
@@ -315,6 +313,8 @@ system OnValidate [] (fun _ ->
     if wnd.Pressed Keys.P then
         sw.Restart()
         Systems.unpause()
+        update_bool <- true
+        // Singletons.set (UpdateBool(true))
         wnd.IsRecording <- true
 
     let mesh = Components.get<Enable>().Entries
@@ -344,7 +344,8 @@ system OnExit [] (fun _ ->
     SE_UI.Shared.OnClosed()
     for pair in colorbars do
         pair.Value.Dispose()
-    // VideoCapture.create_video_from_frames ".gif" frames SE_Window.Shared
+        
+    VideoCapture.export ".gif" SE_Window.Shared
 
     sw.Stop()
     printfn "stopwatch: %d s" (sw.Elapsed.Seconds)
@@ -362,6 +363,8 @@ system PreRender [typeof<Mesh>; typeof<VertexBuffer>; typeof<Enable>] (fun q ->
     for e in q do
         if Entity.has<UpdateColors> e && enabled[e] then
             // octree_to_buffer (Entity.getRef<Octree.Root<Entity>> e) colorbars[cbar[e]] mesh[e] T Tf32
+
+            VideoCapture.frame SE_Window.Shared
 
             VertexBuffer.update vbuf[e] mesh[e]        
             e |> Entity.remove<UpdateColors> |> ignore        
@@ -405,11 +408,11 @@ system PostRender [] (fun _ ->
     wnd.Update (wnd.Context.SwapBuffers)        
 )
 
-let mutable update_bool = true
-
 system OnUpdate [] (fun _ ->
     if update_bool then
+    // if UpdateBool(Singletons.get<UpdateBool>()) then
         update_bool <- false
+        // Singletons.set (UpdateBool(false))
         task_new (fun _ ->
             let T = Components.get<Temperature>()
             let electrolyte = Entity.fetch "body_6"
@@ -429,15 +432,22 @@ system OnUpdate [] (fun _ ->
                 | _ -> ()
             )    
 
+            octree_to_buffer<Temperature> electrolyte_tree colorbars[Entity.get<Colormap> electrolyte] (Entity.get<Mesh> electrolyte) T Tf32
+
             electrolyte
             |> Entity.add<UpdateColors>
             |> ignore
-            
-            octree_to_buffer<Temperature> electrolyte_tree colorbars[Entity.get<Colormap> electrolyte] (Entity.get<Mesh> electrolyte) T Tf32
 
             update_bool <- true
+            // Singletons.set (UpdateBool(true))
             update_count <- update_count + 1
+            // Singletons.set (UpdateCount(Singletons.get<UpdateCount>()) + 1)
         ) |> ignore
+)
+
+system OnValidate [] (fun _ ->
+    if update_count > 100 then
+        Systems.quit()
 )
 
 Systems.progress()

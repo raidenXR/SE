@@ -818,6 +818,20 @@ module Queries =
                 queries[types].rebuild <- true
             
             
+module Singletons =
+    let private objects = System.Collections.Concurrent.ConcurrentDictionary<Type,Object>()
+
+    let set<'T> (t:'T) =
+        match objects.TryAdd(typeof<'T>, t) with
+        | true -> ()
+        | false -> objects[typeof<'T>] <- t
+
+    let get<'T> () =
+        let mutable v: Object = null
+        match objects.TryGetValue(typeof<'T>, &v) with
+        | true -> v :?> 'T
+        | false -> failwith $"Singletons does not contain tupe: {typeof<'T>.Name}"
+
 
 /// Systems manager              
 module Systems = 

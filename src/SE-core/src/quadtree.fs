@@ -473,9 +473,106 @@ module Quadtree =
 
             if idx < 0 || idx > 3 then failwith "improper idx value"
 
+            // fix this part to return closest leaf node and not just the nodes
             match c[idx] with
-            | Empty -> node                
+            | Empty ->
+                // c[idx]
+                let mutable j' = -1
+                let mutable d' = (p - center node).Length()
+                
+                for j in 0..3 do
+                    match c[j] with
+                    | Node _ | Leaf _ when j <> idx ->
+                        let x' = (p - center c[j]).Length()
+                        if d' > x' then
+                            d' <- x'
+                            j' <- j
+                    | _ -> ()                        
+
+                if j' > -1 then c[j'] else c[idx]
+                    
             | _ -> traverse_map p c[idx]              
+
+
+    let rec traverse_closest (p:Vector2) (node:Node<'T>) =
+        match node with
+        | Empty -> failwith "MUST not traverse to EMPTY"
+
+        // | Leaf (parent,_,_,l,v_min,v_max) when not (intersect p v_min v_max) ->
+            // node
+        
+        | Leaf _ -> node
+        
+        | Node (parent,c,_,l,v_min,v_max) when not (intersect p v_min v_max) ->
+            let mutable j' = -1
+            let mutable d' = (p - center node).Length()
+            
+            for j in 0..3 do
+                match c[j] with
+                | Node _ | Leaf _  ->
+                    let x' = (p - center c[j]).Length()
+                    if d' > x' then
+                        d' <- x'
+                        j' <- j
+                | _ -> ()                        
+
+            if j' > -1 then
+                traverse_closest p c[j']
+            else
+                let mutable jj = 0
+                let mutable dd = Single.MaxValue
+                
+                for j in 0..3 do
+                    match c[j] with
+                    | Leaf _  ->
+                        let x' = (p - center c[j]).Length()
+                        if dd > x' then
+                            dd <- x'
+                            jj <- j
+                    | _ -> ()
+                c[jj]                  
+                
+
+        | Node (_,c,_,l,v_min,v_max) ->   // traverse forward 
+            let mutable idx = 0
+            let o = v_min + (v_max - v_min) / 2f
+            idx <- idx + if p.X < o.X then 0 else 1
+            idx <- idx + if p.Y > o.Y then 0 else 2
+
+            if idx < 0 || idx > 3 then failwith "improper idx value"
+
+            match c[idx] with
+            | Empty ->
+                let mutable j' = -1
+                let mutable d' = (p - center node).Length()
+            
+                for j in 0..3 do
+                    match c[j] with
+                    | Node _ | Leaf _  ->
+                        let x' = (p - center c[j]).Length()
+                        if d' > x' then
+                            d' <- x'
+                            j' <- j
+                    | _ -> ()                        
+
+                if j' > -1 then
+                    traverse_closest p c[j']
+                else
+                    let mutable jj = 0
+                    let mutable dd = Single.MaxValue
+                
+                    for j in 0..3 do
+                        match c[j] with
+                        | Leaf _  ->
+                            let x' = (p - center c[j]).Length()
+                            if dd > x' then
+                                dd <- x'
+                                jj <- j
+                        | _ -> ()
+                    c[jj]                  
+                  
+            | _ -> traverse_closest p c[idx]              
+            
 
     // let contains i j idx =        
     //     0 <= i + j + idx && i + j + idx <= 3
@@ -790,6 +887,7 @@ module Quadtree =
         // member internal this.Tmp_node with get() = tmp_node and set value = tmp_node <- value
         member internal this.Cached_node with get() = cached_node and set value = cached_node <- value
 
+
         member this.Put(x:double, y:double, value:voption<'T>) =
             let p = Vector2(float32 x, float32 y)
             cached_node <- traverse p n k cached_node
@@ -797,18 +895,20 @@ module Quadtree =
             | Leaf (_,v,_,_,_,_) -> v.Value <- value
             | _ -> failwith "Item.get failed"         
 
-        member this.PutF(p:Vector2, value:voption<'T>) =
+        member this.Put(p:Vector2, value:voption<'T>) =
             cached_node <- traverse p n k cached_node
             match cached_node with
             | Leaf (_,v,_,_,_,_) -> v.Value <- value
             | _ -> failwith "Item.get failed"         
 
+
         member this.Remove(x:double, y:double) =
             let p = Vector2(float32 x, float32 y)
             cached_node <- if (remove p n cached_node) then root else cached_node
             
-        member this.RemoveF(p:Vector2) =
+        member this.Remove(p:Vector2) =
             cached_node <- if (remove p n cached_node) then root else cached_node
+            
             
         member this.Insert(x:double, y:double) =
             let p = Vector2(float32 x, float32 y)
@@ -816,6 +916,13 @@ module Quadtree =
             match cached_node with
             | Leaf (_,v,_,_,_,_) -> v.Value <- ValueNone
             | _ -> failwith "Item.get failed"         
+
+        member this.Insert(p:Vector2) =
+            cached_node <- insert p n cached_node
+            match cached_node with
+            | Leaf (_,v,_,_,_,_) -> v.Value <- ValueNone
+            | _ -> failwith "Item.get failed"         
+
 
         member this.Update(pred_trim: Node<'T> -> bool, pred_dense: Node<'T> -> bool, set_value: Node<'T> -> 'T) =
             update n k root pred_trim pred_dense set_value
@@ -862,7 +969,16 @@ module Quadtree =
                 // | _ -> failwith "should always traverse to a leaf node"
 
         member this.MapTo(x:double, y:double) =
-            cached_node <- traverse_map (Vector2(float32 x, float32 y)) root
+            // cached_node <- traverse_map (Vector2(float32 x, float32 y)) cached_node
+            // cached_node
+            // traverse_map (Vector2(float32 x, float32 y)) root
+            traverse_closest (Vector2(float32 x, float32 y)) root
+
+        member this.MapTo(p:Vector2) =
+            // cached_node <- traverse_map p cached_node
+            // cached_node
+            // traverse_map p root
+            traverse_closest p root
 
         member this.Iter (fn:Node<'T> -> unit) = iter fn root
 
