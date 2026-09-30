@@ -630,40 +630,30 @@ module Octree =
     let rec traverse_closest (p:Vector3) (node:Node<'T>) =
         match node with
         | Empty -> failwith "MUST not traverse to EMPTY"
-
-        // | Leaf (parent,_,_,l,v_min,v_max) when not (intersect p v_min v_max) ->
-            // node
         
         | Leaf _ -> node
         
         | Node (parent,c,_,l,v_min,v_max) when not (intersect p v_min v_max) ->
             let mutable j' = -1
+            let mutable jj = 0
             let mutable d' = (p - center node).Length()
             
             for j in 0..7 do
                 match c[j] with
-                | Node _ | Leaf _  ->
+                | Node _  ->
                     let x' = (p - center c[j]).Length()
                     if d' > x' then
                         d' <- x'
                         j' <- j
+                | Leaf _ ->
+                    let x' = (p - center c[j]).Length()
+                    if d' > x' then
+                        d' <- x'
+                        j' <- j
+                        jj <- j                    
                 | _ -> ()                        
 
-            if j' > -1 then
-                traverse_closest p c[j']
-            else
-                let mutable jj = 0
-                let mutable dd = Single.MaxValue
-                
-                for j in 0..7 do
-                    match c[j] with
-                    | Leaf _  ->
-                        let x' = (p - center c[j]).Length()
-                        if dd > x' then
-                            dd <- x'
-                            jj <- j
-                    | _ -> ()
-                c[jj]                  
+            if j' > -1 then traverse_closest p c[j'] else c[jj]                  
                 
 
         | Node (_,c,_,l,v_min,v_max) ->   // traverse forward 
@@ -678,32 +668,25 @@ module Octree =
             match c[idx] with
             | Empty ->
                 let mutable j' = -1
+                let mutable jj = 0
                 let mutable d' = (p - center node).Length()
             
                 for j in 0..7 do
                     match c[j] with
-                    | Node _ | Leaf _  ->
+                    | Node _  ->
                         let x' = (p - center c[j]).Length()
                         if d' > x' then
                             d' <- x'
                             j' <- j
+                    | Leaf _ ->
+                        let x' = (p - center c[j]).Length()
+                        if d' > x' then
+                            d' <- x'
+                            j' <- j
+                            jj <- j                    
                     | _ -> ()                        
 
-                if j' > -1 then
-                    traverse_closest p c[j']
-                else
-                    let mutable jj = 0
-                    let mutable dd = Single.MaxValue
-                
-                    for j in 0..7 do
-                        match c[j] with
-                        | Leaf _  ->
-                            let x' = (p - center c[j]).Length()
-                            if dd > x' then
-                                dd <- x'
-                                jj <- j
-                        | _ -> ()
-                    c[jj]                  
+                if j' > -1 then traverse_closest p c[j'] else c[jj]                  
                   
             | _ -> traverse_closest p c[idx]              
             
@@ -1225,36 +1208,37 @@ module Octree =
         octree       
 
 
+    let rec subdivide R N v_min v_max (bits:BitArray) (a:Vector3) (b:Vector3) (c:Vector3) =        
+        // let t = GridGeneration3D.triangle_center a b c
+        if (b-a).Length() >= R || (a-c).Length() >= R || (c-b).Length() >= R then 
+            let ab = GridGeneration3D.center a b
+            let ac = GridGeneration3D.center a c
+            let bc = GridGeneration3D.center b c
+            subdivide R N v_min v_max bits a ab ac 
+            subdivide R N v_min v_max bits ab b bc       
+            subdivide R N v_min v_max bits ab bc ac       
+            subdivide R N v_min v_max bits ac bc c     
+        else
+            let d = GridGeneration3D.triangle_center a b c
+            let (ai,aj,ak) = GridGeneration3D.to_stencil_system N a v_min v_max
+            let (bi,bj,bk) = GridGeneration3D.to_stencil_system N b v_min v_max
+            let (ci,cj,ck) = GridGeneration3D.to_stencil_system N c v_min v_max
+            let (di,dj,dk) = GridGeneration3D.to_stencil_system N d v_min v_max
+            bits[ai*N*N+aj*N+ak] <- true
+            bits[bi*N*N+bj*N+bk] <- true
+            bits[ci*N*N+cj*N+ck] <- true
+            bits[di*N*N+dj*N+dk] <- true
+
+
     let fill_scanlines N L (v_min:Vector3) (v_max:Vector3) (vertices:Span<float32>) (indices:Span<uint>) (bits:BitArray) =
         let dx = (v_max.X - v_min.X) / float32 N
         let dy = (v_max.Y - v_min.Y) / float32 N
         let dz = (v_max.Z - v_min.Z) / float32 N
         let dr = Vector3(dx,dy,dz)
+        let R = dr.Length()
         // let vs = ResizeArray<Vector2>(1024)
         // let tree = Root<byte>(N, 0, v_min, v_max)
         let center = GridGeneration3D.center
-
-        let rec subdivide (a:Vector3) (b:Vector3) (c:Vector3) =        
-            // let t = GridGeneration3D.triangle_center a b c
-            let R = dr.Length()
-            if (b-a).Length() >= R || (a-c).Length() >= R || (c-b).Length() >= R then 
-                let ab = center a b
-                let ac = center a c
-                let bc = center b c
-                subdivide a ab ac 
-                subdivide ab b bc       
-                subdivide ab bc ac       
-                subdivide ac bc c     
-            else
-                let d = GridGeneration3D.triangle_center a b c
-                let (ai,aj,ak) = GridGeneration3D.to_stencil_system N a v_min v_max
-                let (bi,bj,bk) = GridGeneration3D.to_stencil_system N b v_min v_max
-                let (ci,cj,ck) = GridGeneration3D.to_stencil_system N c v_min v_max
-                let (di,dj,dk) = GridGeneration3D.to_stencil_system N d v_min v_max
-                bits[ai*N*N+aj*N+ak] <- true
-                bits[bi*N*N+bj*N+bk] <- true
-                bits[ci*N*N+cj*N+ck] <- true
-                bits[di*N*N+dj*N+dk] <- true
 
         let indices_count = indices.Length / 3
         let p = &MemoryMarshal.GetReference(vertices)
@@ -1265,7 +1249,7 @@ module Octree =
             let v0 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i0))
             let v1 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i1))
             let v2 = Unsafe.As<float32,Vector3>(&Unsafe.Add(&p, L*i2))            
-            subdivide v0 v1 v2
+            subdivide R N v_min v_max bits v0 v1 v2
         
         // let mutable i = 0
         // while i < N do

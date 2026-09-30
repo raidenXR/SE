@@ -32,7 +32,7 @@ open SE.Renderer
 
 let [<Literal>] N = 430
 let [<Literal>] L = 10
-let [<Literal>] k = 3
+let [<Literal>] k = 2
 let [<Literal>] ss = "../../../resources/shaders/"
 
 // type [<Struct>] Enable = {is_enabled:bool}
@@ -56,9 +56,6 @@ let dt_print () =
 let sw =
     System.Diagnostics.Stopwatch()
 
-let frames =
-    ResizeArray<IVideoFrame>(1000)
-
 let path =
     "../../../resources/models/cell.gltf"
 
@@ -69,7 +66,7 @@ let rotation =
     match path with
     | GLTF.IsTxt -> System.Numerics.Quaternion.CreateFromYawPitchRoll(2.f, 2.f, 1.f) |> System.Numerics.Matrix4x4.CreateFromQuaternion        
     | GLTF.IsPly -> System.Numerics.Quaternion.CreateFromYawPitchRoll(0.f, 0.f, 0.f) |> System.Numerics.Matrix4x4.CreateFromQuaternion        
-    // | GLTF.IsGltf -> System.Numerics.Quaternion.CreateFromYawPitchRoll(0.5f, 0.5f, 0.5f) |> System.Numerics.Matrix4x4.CreateFromQuaternion        
+    | GLTF.IsGltf -> System.Numerics.Quaternion.CreateFromYawPitchRoll(0.1f, 0.2f, 0.1f) |> System.Numerics.Matrix4x4.CreateFromQuaternion        
     | _ -> System.Numerics.Quaternion.CreateFromYawPitchRoll(0.f, 0.f, 0.f) |> System.Numerics.Matrix4x4.CreateFromQuaternion        
 
 let scale =
@@ -171,6 +168,7 @@ system OnLoad [] (fun _ ->
     dt_reset()
     use gltf = new GLTF.Deserializer(path)
     let meshes = gltf.ReadMeshesParallel()
+    // let meshes = [|meshes[2]; meshes[3]; meshes[5]|]
     let wnd = SE_Window.Shared
     sw.Stop()
     printfn "read_meshes: %d ms" (sw.Elapsed.Milliseconds)
@@ -218,12 +216,17 @@ system OnLoad [] (fun _ ->
     let electrolyte_tree = Seq.item 5 trees
     let electrodes_tree = Seq.item 2 trees
     let tubes_tree = Seq.item 3 trees
+    // let electrolyte_mesh = Seq.item 2 meshes
+    // let electrolyte_tree = Seq.item 2 trees
+    // let electrodes_tree = Seq.item 0 trees
+    // let tubes_tree = Seq.item 1 trees
     let vertices = electrolyte_mesh.vertices.AsSpan()
     let indices  = electrolyte_mesh.indices.AsSpan()
     let L = electrolyte_mesh.L 
     let bits = electrodes_tree.Stencil.Or(tubes_tree.Stencil)
     
     trees[5] <- Octree.ofStencil<Entity> N k v_min v_max (electrolyte_tree.Stencil.And(bits.Not()))
+    // trees[2] <- Octree.ofStencil<Entity> N k v_min v_max (electrolyte_tree.Stencil.And(bits.Not()))
 
     trees
     |> Array.iteri (fun i tree ->
@@ -268,7 +271,6 @@ system OnLoad [] (fun _ ->
         |> set true
         |> set Colormap.Jet
         |> ignore
-        // |> ent_to_tree tree
 
         let p = Octree.center (tree.Root)    
         wnd.Camera.Position <- Vector3(p.X, p.Y, p.Z)
@@ -277,6 +279,8 @@ system OnLoad [] (fun _ ->
     let entities = Components.get<IsPoints>().Entities
     entities[2] |> set (colorbars[Colormap.Jet].AsTexture(0.8f, 0.0f, 120.f, 460.f)) |> ignore
     entities[3] |> set (colorbars[Colormap.Gray].AsTexture(0.8f, -0.8f, 120.f, 460.f)) |> ignore
+    // entities[0] |> set (colorbars[Colormap.Jet].AsTexture(0.8f, 0.0f, 120.f, 460.f)) |> ignore
+    // entities[1] |> set (colorbars[Colormap.Gray].AsTexture(0.8f, -0.8f, 120.f, 460.f)) |> ignore
 
     sw.Stop()
     printfn "load_trees: %d ms" (sw.Elapsed.Milliseconds)
@@ -291,6 +295,9 @@ system PostLoad [] (fun _ ->
     P[3] |> set Colormap.Gray |> ignore
     P[4] |> set Colormap.Winter |> ignore
     P[5] |> set Colormap.Jet |> ignore
+    // P[0] |> set Colormap.Winter |> ignore
+    // P[1] |> set Colormap.Gray |> ignore
+    // P[2] |> set Colormap.Jet |> ignore
 
 
     let E = Components.get<Enable>().Entries
@@ -300,6 +307,9 @@ system PostLoad [] (fun _ ->
     E[3] <- false
     E[4] <- false
     E[5] <- true
+    // E[0] <- false
+    // E[1] <- false
+    // E[2] <- true
 )
 
 // controls
@@ -314,7 +324,6 @@ system OnValidate [] (fun _ ->
         sw.Restart()
         Systems.unpause()
         update_bool <- true
-        // Singletons.set (UpdateBool(true))
         wnd.IsRecording <- true
 
     let mesh = Components.get<Enable>().Entries
@@ -324,6 +333,9 @@ system OnValidate [] (fun _ ->
     mesh[3] <- if wnd.Pressed Keys.D4 then not mesh[3] else mesh[3]
     mesh[4] <- if wnd.Pressed Keys.D5 then not mesh[4] else mesh[4]
     mesh[5] <- if wnd.Pressed Keys.D6 then not mesh[5] else mesh[5]
+    // mesh[0] <- if wnd.Pressed Keys.D1 then not mesh[0] else mesh[0]
+    // mesh[1] <- if wnd.Pressed Keys.D2 then not mesh[1] else mesh[1]
+    // mesh[2] <- if wnd.Pressed Keys.D3 then not mesh[2] else mesh[2]
     
     wnd.KeysCache()
 )
@@ -362,8 +374,6 @@ system PreRender [typeof<Mesh>; typeof<VertexBuffer>; typeof<Enable>] (fun q ->
 
     for e in q do
         if Entity.has<UpdateColors> e && enabled[e] then
-            // octree_to_buffer (Entity.getRef<Octree.Root<Entity>> e) colorbars[cbar[e]] mesh[e] T Tf32
-
             VideoCapture.frame SE_Window.Shared
 
             VertexBuffer.update vbuf[e] mesh[e]        
@@ -410,9 +420,7 @@ system PostRender [] (fun _ ->
 
 system OnUpdate [] (fun _ ->
     if update_bool then
-    // if UpdateBool(Singletons.get<UpdateBool>()) then
         update_bool <- false
-        // Singletons.set (UpdateBool(false))
         task_new (fun _ ->
             let T = Components.get<Temperature>()
             let electrolyte = Entity.fetch "body_6"
@@ -439,9 +447,7 @@ system OnUpdate [] (fun _ ->
             |> ignore
 
             update_bool <- true
-            // Singletons.set (UpdateBool(true))
             update_count <- update_count + 1
-            // Singletons.set (UpdateCount(Singletons.get<UpdateCount>()) + 1)
         ) |> ignore
 )
 
