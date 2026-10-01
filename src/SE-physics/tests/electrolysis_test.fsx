@@ -1,5 +1,7 @@
-#r "../bin/Release/net10.0/SE-renderer.dll"
-#r "../bin/Release/net10.0/SE-core.dll"
+#r "../bin/Debug/net10.0/SE-renderer.dll"
+#r "../bin/Debug/net10.0/SE-core.dll"
+// #r "../bin/Release/net10.0/SE-renderer.dll"
+// #r "../bin/Release/net10.0/SE-core.dll"
 #r "nuget: OpenTK, 4.9.4"
 #r "nuget: SkiaSharp, 2.88.6"
 #r "nuget: ImGui.NET, 1.91.6.1"
@@ -30,9 +32,9 @@ open SE.ECS
 open SE.Spatial
 open SE.Renderer
 
-let [<Literal>] N = 430
+let [<Literal>] N = 400
 let [<Literal>] L = 10
-let [<Literal>] k = 2
+let [<Literal>] k = 3
 let [<Literal>] ss = "../../../resources/shaders/"
 
 // type [<Struct>] Enable = {is_enabled:bool}
@@ -66,7 +68,7 @@ let rotation =
     match path with
     | GLTF.IsTxt -> System.Numerics.Quaternion.CreateFromYawPitchRoll(2.f, 2.f, 1.f) |> System.Numerics.Matrix4x4.CreateFromQuaternion        
     | GLTF.IsPly -> System.Numerics.Quaternion.CreateFromYawPitchRoll(0.f, 0.f, 0.f) |> System.Numerics.Matrix4x4.CreateFromQuaternion        
-    | GLTF.IsGltf -> System.Numerics.Quaternion.CreateFromYawPitchRoll(0.1f, 0.2f, 0.1f) |> System.Numerics.Matrix4x4.CreateFromQuaternion        
+    // | GLTF.IsGltf -> System.Numerics.Quaternion.CreateFromYawPitchRoll(0.1f, 0.2f, 0.1f) |> System.Numerics.Matrix4x4.CreateFromQuaternion        
     | _ -> System.Numerics.Quaternion.CreateFromYawPitchRoll(0.f, 0.f, 0.f) |> System.Numerics.Matrix4x4.CreateFromQuaternion        
 
 let scale =
@@ -125,9 +127,7 @@ SE_UI.Shared.OnRender (fun _ ->
     ImGui.Begin("Panel") |> ignore
     ImGui.SetWindowFontScale(1.2f)
     ImGui.InputFloat3("pos:  ", &p) |> ignore
-    // ImGui.InputFloat3("view: ", &v) |> ignore
     ImGui.Text($"count: {update_count}")
-    // ImGui.Text($"count: {Singletons.get<UpdateCount>()}")
     
     let mesh = Components.get<Enable>().Entries
     for i in 0..mesh_names.Count-1 do
@@ -165,68 +165,36 @@ system OnLoad [] (fun _ ->
 
 system OnLoad [] (fun _ ->
     sw.Restart()
-    dt_reset()
-    use gltf = new GLTF.Deserializer(path)
-    let meshes = gltf.ReadMeshesParallel()
-    // let meshes = [|meshes[2]; meshes[3]; meshes[5]|]
     let wnd = SE_Window.Shared
-    sw.Stop()
-    printfn "read_meshes: %d ms" (sw.Elapsed.Milliseconds)
-    dt_print ()
-
-    sw.Restart()
-    dt_reset()
-
-    meshes
-    |> Array.iter (fun mesh -> RGeometry.tranform rotation mesh |> ignore)
+    use gltf = new GLTF.Deserializer(path)
     
-    // define ALL the octrees on the same volume (x,y,z)
-    let mutable (v_min,v_max) = GridGeneration3D.bounds_SIMD (meshes[0].vertices.AsSpan()) meshes[0].L
-    for mesh in meshes do
-        let (_v_min,_v_max) = GridGeneration3D.bounds_SIMD (mesh.vertices.AsSpan()) mesh.L
-        v_min <- System.Numerics.Vector3.Min(v_min, _v_min)        
-        v_max <- System.Numerics.Vector3.Max(v_max, _v_max)        
+    let meshes =
+        gltf.ReadMeshesParallel()
+        |> Array.map (fun mesh -> RGeometry.tranform rotation mesh)
     
+    let (v_min,v_max) =
+        meshes
+        |> RGeometry.meshes_bounds
+
+    let trees = 
+        meshes
+        |> Array.zip3 [|N/4; N/4; N; N; N/4; N|] [|k; k; k-1; k; k; k-1|]  // for BitArray operations bit Arrays must be the same size, so same N
+        |> Octree.ofMeshes v_min v_max
+
     printfn "v_min: %A" v_min
     printfn "v_max: %A" v_max
 
-    let trees =
-        meshes
-        |> Array.Parallel.map (fun mesh ->                
-            let vertices = mesh.vertices.AsSpan()
-            let indices = mesh.indices.AsSpan()
-            let (_v_min,_v_max) = GridGeneration3D.bounds_SIMD vertices L
-            
-            if (v_min.X > _v_min.X) || (v_min.Y > _v_min.Y) || (v_min.Z > _v_min.Z) then
-                Console.ForegroundColor <- ConsoleColor.Red
-                printfn "node_v_min: %A" _v_min
-                Console.ResetColor()
-                
-            if (v_max.X < _v_max.X) || (v_max.Y < _v_max.Y) || (v_max.Z < _v_max.Z) then
-                Console.ForegroundColor <- ConsoleColor.Red
-                printfn "node_v_max: %A" _v_max
-                Console.ResetColor()
-                
-            let bits = Octree.fill_scanlines N L v_min v_max vertices indices (System.Collections.BitArray(N*N*N))
-            Octree.ofStencil<Entity> N k v_min v_max bits
-        )
-
     // Fix the Electrolyte Control Volume
-    let electrolyte_mesh = Seq.item 5 meshes
-    let electrolyte_tree = Seq.item 5 trees
-    let electrodes_tree = Seq.item 2 trees
-    let tubes_tree = Seq.item 3 trees
-    // let electrolyte_mesh = Seq.item 2 meshes
-    // let electrolyte_tree = Seq.item 2 trees
-    // let electrodes_tree = Seq.item 0 trees
-    // let tubes_tree = Seq.item 1 trees
+    let electrolyte_mesh = meshes[5]
+    let electrolyte_tree = trees[5]
+    let electrodes_tree  = trees[2]
+    let tubes_tree       = trees[3]
     let vertices = electrolyte_mesh.vertices.AsSpan()
     let indices  = electrolyte_mesh.indices.AsSpan()
     let L = electrolyte_mesh.L 
     let bits = electrodes_tree.Stencil.Or(tubes_tree.Stencil)
     
-    trees[5] <- Octree.ofStencil<Entity> N k v_min v_max (electrolyte_tree.Stencil.And(bits.Not()))
-    // trees[2] <- Octree.ofStencil<Entity> N k v_min v_max (electrolyte_tree.Stencil.And(bits.Not()))
+    trees[5] <- Octree.ofStencil<Entity> N (k-1) v_min v_max (electrolyte_tree.Stencil.And(bits.Not()))
 
     trees
     |> Array.iteri (fun i tree ->
@@ -235,10 +203,8 @@ system OnLoad [] (fun _ ->
 
     sw.Stop()
     printfn "create_trees: %d ms" (sw.Elapsed.Milliseconds)
-    dt_print()
         
     sw.Restart()
-    dt_reset()
     let mutable i = 0
     for tree in trees do
         // assign entities to leafs
@@ -279,12 +245,9 @@ system OnLoad [] (fun _ ->
     let entities = Components.get<IsPoints>().Entities
     entities[2] |> set (colorbars[Colormap.Jet].AsTexture(0.8f, 0.0f, 120.f, 460.f)) |> ignore
     entities[3] |> set (colorbars[Colormap.Gray].AsTexture(0.8f, -0.8f, 120.f, 460.f)) |> ignore
-    // entities[0] |> set (colorbars[Colormap.Jet].AsTexture(0.8f, 0.0f, 120.f, 460.f)) |> ignore
-    // entities[1] |> set (colorbars[Colormap.Gray].AsTexture(0.8f, -0.8f, 120.f, 460.f)) |> ignore
 
     sw.Stop()
     printfn "load_trees: %d ms" (sw.Elapsed.Milliseconds)
-    dt_print()
 )
 
 system PostLoad [] (fun _ ->
@@ -295,10 +258,6 @@ system PostLoad [] (fun _ ->
     P[3] |> set Colormap.Gray |> ignore
     P[4] |> set Colormap.Winter |> ignore
     P[5] |> set Colormap.Jet |> ignore
-    // P[0] |> set Colormap.Winter |> ignore
-    // P[1] |> set Colormap.Gray |> ignore
-    // P[2] |> set Colormap.Jet |> ignore
-
 
     let E = Components.get<Enable>().Entries
     E[0] <- false
@@ -307,9 +266,6 @@ system PostLoad [] (fun _ ->
     E[3] <- false
     E[4] <- false
     E[5] <- true
-    // E[0] <- false
-    // E[1] <- false
-    // E[2] <- true
 )
 
 // controls
@@ -333,9 +289,6 @@ system OnValidate [] (fun _ ->
     mesh[3] <- if wnd.Pressed Keys.D4 then not mesh[3] else mesh[3]
     mesh[4] <- if wnd.Pressed Keys.D5 then not mesh[4] else mesh[4]
     mesh[5] <- if wnd.Pressed Keys.D6 then not mesh[5] else mesh[5]
-    // mesh[0] <- if wnd.Pressed Keys.D1 then not mesh[0] else mesh[0]
-    // mesh[1] <- if wnd.Pressed Keys.D2 then not mesh[1] else mesh[1]
-    // mesh[2] <- if wnd.Pressed Keys.D3 then not mesh[2] else mesh[2]
     
     wnd.KeysCache()
 )

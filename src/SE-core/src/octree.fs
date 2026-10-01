@@ -1489,7 +1489,18 @@ module Octree =
         mesh.Dispose()
         ofStencil<'T> N k v_min v_max bits        
         
-
+    /// WARNING: It Disposes the unmanged resources of mesh
+    // create octrees out of a collection of meshes with varying N,k in parallel!!
+    let ofMeshes<'T> v_min v_max (meshes:array<int*int*Mesh>) =
+        meshes
+        |> Array.Parallel.map (fun (N,k,mesh) ->
+            let vertices = mesh.vertices.AsSpan()
+            let indices  = mesh.indices.AsSpan()
+            let bits = fill_scanlines N mesh.L v_min v_max vertices indices (BitArray(N*N*N))
+            mesh.Dispose()
+            ofStencil<'T> N k v_min v_max bits        
+        )
+                    
     // [<Obsolete>]
     // let ofSurfaceEXT<'T> (N:int) L k (vertices:Span<float32>) (indices:Span<uint>) =
     //     let (v_min,v_max) = GridGeneration3D.bounds_SIMD vertices L

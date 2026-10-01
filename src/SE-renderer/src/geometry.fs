@@ -573,6 +573,11 @@ module RGeometry =
         | _ -> failwith "unknow format type"
 
 
+    let meshes_bounds (meshes:Mesh[]) =
+        meshes
+        |> Array.Parallel.map (fun mesh -> SE.Core.GridGeneration3D.bounds_SIMD (mesh.vertices.AsSpan()) (mesh.L))
+        |> Array.fold (fun (v_min,v_max) (v1,v2) -> (Vector3.Min(v1,v_min)), Vector3.Max(v2,v_max)) (Vector3.One*Single.MaxValue, Vector3.One*Single.MinValue)
+
     // let inline is_clamped v1 v v2 =
     //     v > v1 && v < v2
 
