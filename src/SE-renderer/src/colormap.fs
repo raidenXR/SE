@@ -237,8 +237,8 @@ type Colorbar(colormap:Colormap, z_min:float, z_max:float) =
 
     member this.Item
         with get(z:double) =
-            if float32 z < zmin then failwith "z is less than zmin"
-            if float32 z > zmax then failwith "z is greater than zmax"
+            if float32 z < zmin then failwith $"z{z} is less than zmin:{zmin}"
+            if float32 z > zmax then failwith $"z:{z} is greater than zmax:{zmax}"
             let value = (float32 z - zmin) / (zmax - zmin)
             let c = colormap[int ((float32 (Colormaps.MAP_SIZE - 1)) * value)]
             Vector4(float32 c.Red, float32 c.Green, float32 c.Blue, float32 c.Alpha)

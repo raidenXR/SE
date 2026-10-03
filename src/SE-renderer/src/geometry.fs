@@ -549,7 +549,8 @@ module RGeometry =
 
     let tranform (transform:Matrix4x4) (mesh:Mesh) = 
         let vertices = cast<float32> mesh.vertices.Ptr
-        let L = 10
+        // let L = 10
+        let L = mesh.L
         let len = mesh.vertices.Length / L
         for i in 0..len-1 do
             let p = cast<Vector3>(~~(vertices ++ (i*L)))
@@ -577,6 +578,17 @@ module RGeometry =
         meshes
         |> Array.Parallel.map (fun mesh -> SE.Core.GridGeneration3D.bounds_SIMD (mesh.vertices.AsSpan()) (mesh.L))
         |> Array.fold (fun (v_min,v_max) (v1,v2) -> (Vector3.Min(v1,v_min)), Vector3.Max(v2,v_max)) (Vector3.One*Single.MaxValue, Vector3.One*Single.MinValue)
+
+
+    let colorfill (r:float32, g:float32, b:float32, a:float32) (mesh:Mesh) =
+        let vertices = cast<float32> mesh.vertices.Ptr
+        let c = Vector4(r,g,b,a)
+        let L = mesh.L
+        let len = mesh.vertices.Length / L
+        for i in 0..len-1 do
+            let p = cast<Vector4>(~~(vertices ++ (i*L) ++ (L-4)))
+            FSharp.NativeInterop.NativePtr.write p c
+        mesh
 
     // let inline is_clamped v1 v v2 =
     //     v > v1 && v < v2

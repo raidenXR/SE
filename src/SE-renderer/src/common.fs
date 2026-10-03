@@ -192,12 +192,13 @@ type Texture =
 module VertexBuffer =
     open SE.Spatial
 
+    // creates VertexBuffers for dynamic draws
     let create vt (mesh:Mesh) =
         match vt with
         | VT1 ->
             let vbo = GL.GenBuffer()
             GL.BindBuffer (BufferTarget.ArrayBuffer, vbo)
-            GL.BufferData (BufferTarget.ArrayBuffer, mesh.vertices.BufferSize, mesh.vertices.ToInt(), BufferUsageHint.StaticDraw)
+            GL.BufferData (BufferTarget.ArrayBuffer, mesh.vertices.BufferSize, mesh.vertices.ToInt(), BufferUsageHint.DynamicDraw)
     
             let vao = GL.GenVertexArray()
             GL.BindVertexArray(vao)
@@ -210,7 +211,7 @@ module VertexBuffer =
 
             let ebo = GL.GenBuffer()
             GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo)
-            GL.BufferData(BufferTarget.ElementArrayBuffer, mesh.indices.BufferSize, mesh.indices.ToInt(), BufferUsageHint.StaticDraw)
+            GL.BufferData(BufferTarget.ElementArrayBuffer, mesh.indices.BufferSize, mesh.indices.ToInt(), BufferUsageHint.DynamicDraw)
             VB1(vao, vbo, ebo)
 
         | VT2 ->
@@ -229,33 +230,57 @@ module VertexBuffer =
 
     let update vb (mesh:Mesh) =
         match vb with
-        | VB1(vao,vbo,ebo) ->
+        | VB1 (vao,vbo,ebo) ->
+            GL.BindVertexArray(vao)
             GL.BindBuffer(BufferTarget.ArrayBuffer, ebo)
             GL.BufferSubData(BufferTarget.ArrayBuffer, IntPtr.Zero, mesh.indices.BufferSize, mesh.indices.ToInt())
             GL.BindBuffer(BufferTarget.ArrayBuffer, 0)
         
-        | VB2(vao,vbo) ->
+        | VB2 (vao,vbo) ->
             GL.BindBuffer(BufferTarget.ArrayBuffer, vbo)
             GL.BufferSubData(BufferTarget.ArrayBuffer, IntPtr.Zero, mesh.vertices.BufferSize, mesh.vertices.ToInt())
             GL.BindBuffer(BufferTarget.ArrayBuffer, 0)
 
     let draw vb (mesh:Mesh) =
         match vb with
-        | VB1(vao,vbo,ebo) ->
+        | VB1 (vao,vbo,ebo) ->
             GL.BindVertexArray(vao)
             GL.DrawElements(PrimitiveType.Triangles, mesh.indices.Length, DrawElementsType.UnsignedInt, 0)
 
-        | VB2(vao,vbo) ->
+        | VB2 (vao,vbo) ->
             GL.BindVertexArray(vao)
             GL.DrawArrays(PrimitiveType.Points, 0, mesh.vertices.Length)         
 
+
+    let update_sliced vb count (mesh:Mesh) =
+        match vb with
+        | VB1 (vao,vbo,ebo) ->
+            GL.BindBuffer(BufferTarget.ArrayBuffer, ebo)
+            GL.BufferSubData(BufferTarget.ArrayBuffer, IntPtr.Zero, mesh.Stride * count, mesh.indices.ToInt())
+            GL.BindBuffer(BufferTarget.ArrayBuffer, 0)
+        
+        | VB2 (vao,vbo) ->
+            GL.BindBuffer(BufferTarget.ArrayBuffer, vbo)
+            GL.BufferSubData(BufferTarget.ArrayBuffer, IntPtr.Zero, mesh.Stride * count, mesh.vertices.ToInt())
+            GL.BindBuffer(BufferTarget.ArrayBuffer, 0)
+
+    let draw_sliced vb count (mesh:Mesh) =
+        match vb with
+        | VB1 (vao,vbo,ebo) ->
+            GL.BindVertexArray(vao)
+            GL.DrawElements(PrimitiveType.Triangles, count, DrawElementsType.UnsignedInt, 0)
+
+        | VB2 (vao,vbo) ->
+            GL.BindVertexArray(vao)
+            GL.DrawArrays(PrimitiveType.Points, 0, count)         
+
     let delete vb =
         match vb with
-        | VB1(vao,vbo,ebo) ->
+        | VB1 (vao,vbo,ebo) ->
             GL.DeleteVertexArray(vao)
             GL.DeleteBuffer(vbo)
             GL.DeleteBuffer(ebo)            
-        | VB2(vao,vbo) ->
+        | VB2 (vao,vbo) ->
             GL.DeleteVertexArray(vao)
             GL.DeleteBuffer(vbo)            
 

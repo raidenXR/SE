@@ -3,6 +3,7 @@
 // #r "../bin/Release/net10.0/SE-core.dll"
 
 open SE
+open SE.Spatial
 open SE.Core
 open System.Numerics
 open System
@@ -48,39 +49,24 @@ let get_pixels (N:int) (path:string) =
     printfn "N: %d, total_pixels: %d" N total_pixels
     (stencil, N, Vector2(float32 x_min, float32 y_min), Vector2(float32 x_max, float32 y_max))
 
-let valueof = Quadtree.valueof
-let kindof  = Quadtree.kindof
+let (!) = Quadtree.valueof
+let pos = Quadtree.center
 
-let _trim node =
-    match node with
-    | Quadtree.Node (_,c,_,_,_,_) when Quadtree.is_quadant node ->
-        let v0 = valueof c[0]
-        let v1 = valueof c[1]
-        let v2 = valueof c[2]
-        let v3 = valueof c[3]
+let _trim = function
+    | FilledBranch & Node (_,c,_,_,_,_) ->
         let d = 50.
-        abs(v0 - v1) < d || abs(v0 - v2) < d || abs(v1 - v3) < d
+        abs(!c[0] - !c[1]) < d || abs(!c[0] - !c[2]) < d || abs(!c[2] - !c[3]) < d
     | _ -> false
         
-let _dense node =
-    match node with
-    | Quadtree.Node (_,c,_,_,_,_) when Quadtree.is_quadant node ->
-        let v0 = valueof c[0]
-        let v1 = valueof c[1]
-        let v2 = valueof c[2]
-        let v3 = valueof c[3]
+let _dense = function
+    | FilledBranch & Node (_,c,_,_,_,_) ->
         let d = 100.
-        abs(v0 - v1) > d || abs(v0 - v2) > d || abs(v1 - v3) > d
+        abs(!c[0] - !c[1]) > d || abs(!c[2] - !c[3]) > d || abs(!c[2] - !c[3]) > d
     | _ -> false
         
-let _set (node:Quadtree.Node<double>) =
-    match node with
-    | Quadtree.Node (_,c,_,_,_,_) when Quadtree.is_quadant node ->
-        let v0 = valueof c[0]
-        let v1 = valueof c[1]
-        let v2 = valueof c[2]
-        let v3 = valueof c[3]
-        (v0 + v1 + v2 + v3) / 4.0
+let _set = function
+    | FilledBranch & Node (_,c,_,_,_,_) ->
+        (!c[0] + !c[1] + !c[2] + !c[3]) / 4.0
     | _ -> failwith "_set SHOULD apply only on quadants" 
     
     
@@ -110,7 +96,6 @@ for stencil in stencils do
     let T =
         stencil
         |> Quadtree.ofStencil<double> N 5 v_min v_max
-        |> Quadtree.init 0.00
 
     T.Add <- (+)
     T.Div <- (/)
@@ -118,10 +103,8 @@ for stencil in stencils do
     let dx = T.dX
     let dy = T.dY
     T.Root |> Quadtree.iter (fun node ->
-        T.CurrentNode <- node
-        match (kindof dx dy node) with
-        // match (kindof T) with
-        | Quadtree.Boundary -> T[0,0] <- 300.0
+        match node with
+        | (Quadtree.Boundary | Quadtree.Internal) & Leaf (_,v,_,_,_,_) -> v.Value <- ValueSome 300.0
         | _ -> ()
     )
 
@@ -159,24 +142,18 @@ do
     let dx = T.dX
     let dy = T.dY
     T.Root |> Quadtree.iter (fun node ->
-        T.CurrentNode <- node
-        match (kindof dx dy node) with
-        // match (kindof T[i]) with
-        | Quadtree.Internal ->  // apply the Partial Differential equation
-            let c = Quadtree.center node
-            let x = double c.X
-            let y = double c.Y
-            T'.MapTo(x,y)
-            T[0,0] <- T'[0,0] + 0.5*ratio*(T'[1,0] + T'[-1,0] + T'[0,1] + T'[0,-1] - 4.0*T'[0,0])
+        match node with
+        | Quadtree.Internal & Quadtree.Leaf (_,v,_,_,_,_) ->  // apply the Partial Differential equation
+            match T'.MapTo(pos node) with
+            | Leaf _ as u & Internal -> v.Value <- ValueSome <| !u[0,0] + 0.5*ratio*(!u[1,0] + !u[-1,0] + !u[0,1] + !u[0,-1] - 4.0 * !u[0,0])
+            | _ -> ()
 
-        | Quadtree.Boundary ->  // apply dirichlet conditions
-            T[0,0] <- 300.0
+        | Quadtree.Boundary & Quadtree.Leaf (_,v,_,_,_,_) ->  // apply the Partial Differential equation
+            v.Value <- ValueSome 300.0
     
-        | Quadtree.External -> // do nothing, ignore external nodes
-            ()
+        | _ -> () // do nothing, ignore external nodes
     )
     
-
 #time
 for i in 2..quadtrees.Count-1 do
     let T = quadtrees
@@ -186,30 +163,22 @@ for i in 2..quadtrees.Count-1 do
     let dt = 6.
     for n in 1..500 do
         T[i].Root |> Quadtree.iter (fun node ->
-            T[i].CurrentNode <- node
-            match (kindof dx dy node) with
-            // match (kindof T[i]) with
-            | Quadtree.Internal ->  // apply the Partial Differential equation
-                let (Quadtree.Leaf (_,_,_,_,v_min,v_max)) = node
-                let c = Quadtree.center node
-                let x = double c.X
-                let y = double c.Y
-                T[i-2].MapTo(x,y)
-                T[i-1].MapTo(x,y)
-                T[i][0,0] <- 2.*T[i-1][0,0] - T[i-2][0,0] + ratio*(T[i-1][1,0] + T[i-1][-1,0] - 4.* T[i-1][0,0] + T[i-1][0,1] + T[i-1][0,-1])
-                // T[0,0] <- (T[1,0] + T[-1,0] + T[0,1] + T[0,-1]) / 4.
-                // T[i][0,0] <- T[i-1][0,0] + (KAPPA*dt/(SPH*RHO*double(dr*dr))) * (T[i-1][1,0] + T[i-1][-1,0] + T[i-1][0,1] + T[i-1][0,-1] - 4.*T[i-1][0,0])
+            match node with
+            | Quadtree.Internal & Quadtree.Leaf (_,V,_,_,_,_) ->
+                match (T[i-2].MapTo(pos node), T[i-1].MapTo(pos node)) with
+                | Leaf _ & Internal, Leaf _ & Internal as (u,v) ->
+                    V.Value <- ValueSome <| 2. * !v[0,0] - !u[0,0] + ratio*(!v[1,0] + !v[-1,0] - 4.* !v[0,0] + !v[0,1] + !v[0,-1])
+                | _ -> ()
             
-            | Quadtree.Boundary ->  // apply dirichlet conditions
-                T[i][0,0] <- 300.0
+            | Quadtree.Boundary & Quadtree.Leaf (_,V,_,_,_,_) ->  // apply dirichlet conditions
+                V.Value <- ValueSome 300.0
         
-            | Quadtree.External -> // do nothing, ignore external nodes
-                ()
+            | _ -> () // do nothing, ignore external nodes
         )
         T[i].Update(_trim, _dense, _set)
 
-    Quadtree.morph (quadtrees[i-1].Root) (quadtrees[i-2].Root) (+) (/)
-    Quadtree.morph (quadtrees[i-0].Root) (quadtrees[i-1].Root) (+) (/)
+    // Quadtree.morph (quadtrees[i-1].Root) (quadtrees[i-2].Root) (+) (/)
+    // Quadtree.morph (quadtrees[i-0].Root) (quadtrees[i-1].Root) (+) (/)
             
     printfn "quadtree.count: %d" (T[i].GetCount()) 
     printfn "quadtree.total_count: %d" (T[i].GetTotalCount()) 
@@ -232,7 +201,11 @@ let (z_min,z_max) =
         z_min <- min z_min (Array.min (q.GetValues()))
         z_max <- max z_max (Array.max (q.GetValues()))
     z_min,z_max
-        
+
+// let (z_min,z_max) =
+//     quadtrees
+//     |> Seq.map (for q -> q.GetValues())
+//     |> Seq.map (fun q -> (Seq.min q, Seq.max q))
 
 let mutable ii = 0
 for T in quadtrees do

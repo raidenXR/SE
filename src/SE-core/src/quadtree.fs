@@ -185,46 +185,79 @@ module Quadtree =
         | _, _ -> failwith "Not Implemented case"
 
 
-    let is_quadant = function
-        | Node (p,c,_,_,_,_) -> Array.forall (function Leaf _ -> true | _ -> false) c 
-        | _ -> false
+    // let is_quadant = function
+        // | Node (p,c,_,_,_,_) -> Array.forall (function Leaf _ -> true | _ -> false) c 
+        // | _ -> false
 
+    let (|FilledBranch|LowestBranch|MidBranch|) node =
+        match node with
+        | Node _ -> MidBranch 
+        | Leaf (p,_,_,_,_,_) when Array.forall (function Leaf _ -> true | _ -> false) (children p) -> FilledBranch
+        | Leaf (p,_,_,_,_,_) when Array.forall (function Node _ -> false | _ -> true) (children p) -> LowestBranch
+        | _ -> MidBranch
+
+    // /// convert a Node to Leaf
+    // let rec trim n k v (node:Node<'T>) =
+    //     match node with 
+    //     | Leaf (p,_,_,l,_,_) when n = l ->
+    //         if (Array.forall (function Node _ -> false | _ -> true) (children p)) then 
+    //             match p with
+    //             | Node (P,C,I,L,V1,V2) ->
+    //                 let mutable value: ValueOption<'T> = v
+    //                 for ci in C do
+    //                     match ci with
+    //                     | Leaf (_,V,_,_,_,_) when V.Value.IsSome -> value <- ValueSome V.Value.Value
+    //                     | _ -> ()
+                        
+    //                 (children P)[I] <- Leaf (P,ref value,I,L,V1,V2)
+    //                 (children P)[I]
+    //             | _ -> node
+    //         else
+    //             node
+
+    //     | Leaf (p,_,_,l,_,_) when n - l < k ->
+    //         if (Array.forall (function Leaf _ -> true | _ -> false) (children p)) then 
+    //             match p with
+    //             | Node (P,C,I,L,V1,V2) ->
+    //                 let mutable value: ValueOption<'T> = v
+    //                 for ci in C do
+    //                     match ci with
+    //                     | Leaf (_,V,_,_,_,_) when V.Value.IsSome -> value <- ValueSome V.Value.Value
+    //                     | _ -> ()
+                        
+    //                 (children P)[I] <- Leaf (P,ref value,I,L,V1,V2)
+    //                 (children P)[I]
+    //             | _ -> node
+    //         else
+    //             node
+    //     | Empty ->
+    //         failwith "tried to trim Empty Node"
+    //     | _ -> node
+    
     /// convert a Node to Leaf
     let rec trim n k v (node:Node<'T>) =
         match node with 
-        | Leaf (p,_,_,l,_,_) when n = l ->
-            if (Array.forall (function Node _ -> false | _ -> true) (children p)) then 
-                match p with
-                | Node (P,C,I,L,V1,V2) ->
-                    let mutable value: ValueOption<'T> = v
-                    for ci in C do
-                        match ci with
-                        | Leaf (_,V,_,_,_,_) when V.Value.IsSome -> value <- ValueSome V.Value.Value
-                        | _ -> ()
-                        
-                    (children P)[I] <- Leaf (P,ref value,I,L,V1,V2)
-                    (children P)[I]
-                | _ -> node
-            else
-                node
+        | Leaf (Node(p,c,i,ll,v1,v2),_,_,l,_,_) & LowestBranch when n = l ->
+            let mutable value: ValueOption<'T> = v
+            for ci in c do
+                match ci with
+                | Leaf (_,v,_,_,_,_) when v.Value.IsSome -> value <- ValueSome v.Value.Value
+                | _ -> ()
+                
+            (children p)[i] <- Leaf (p,ref value,i,ll,v1,v2)
+            (children p)[i]
 
-        | Leaf (p,_,_,l,_,_) when n - l < k ->
-            if (Array.forall (function Leaf _ -> true | _ -> false) (children p)) then 
-                match p with
-                | Node (P,C,I,L,V1,V2) ->
-                    let mutable value: ValueOption<'T> = v
-                    for ci in C do
-                        match ci with
-                        | Leaf (_,V,_,_,_,_) when V.Value.IsSome -> value <- ValueSome V.Value.Value
-                        | _ -> ()
-                        
-                    (children P)[I] <- Leaf (P,ref value,I,L,V1,V2)
-                    (children P)[I]
-                | _ -> node
-            else
-                node
-        | Empty ->
-            failwith "tried to trim Empty Node"
+        | Leaf (Node(p,c,i,ll,v1,v2),_,_,l,_,_) & FilledBranch when n - l < k ->
+            let mutable value: ValueOption<'T> = v
+            for ci in c do
+                match ci with
+                | Leaf (_,v,_,_,_,_) when v.Value.IsSome -> value <- ValueSome v.Value.Value
+                | _ -> ()
+                
+            (children p)[i] <- Leaf (p,ref value,i,l,v1,v2)
+            (children p)[i]
+            
+        | Empty -> failwith "tried to trim Empty Node"
         | _ -> node
 
     /// convert a Leaf to Node
@@ -747,7 +780,7 @@ module Quadtree =
     /// traverses the whole tree and trims / denses the quadants
     let rec update n k (node:Node<'T>) (pred_trim:Node<'T> -> bool) (pred_dense:Node<'T> -> bool) (set_value:Node<'T> -> 'T) =
         match node with
-        | Node (p,c,i,_,_,_) when is_quadant node ->
+        | Quadant & Node (p,c,i,_,_,_) ->
             if pred_trim node then
                 // printfn "trimmed"
                 trim n k (ValueSome(set_value node)) node |> ignore

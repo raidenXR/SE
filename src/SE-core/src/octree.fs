@@ -253,49 +253,80 @@ module Octree =
         | _, _ -> failwith "Not Implemented case"
 
 
-    let is_quadant = function
-        | Node (p,c,_,_,_,_) -> Array.forall (function Leaf _ -> true | _ -> false) c 
-        | _ -> false
+    // let is_quadant = function
+    //     | Node (p,c,_,_,_,_) -> Array.forall (function Leaf _ -> true | _ -> false) c 
+    //     | _ -> false
 
+    let (|FilledBranch|LowestBranch|MidBranch|) node =
+        match node with
+        | Node _ -> MidBranch 
+        | Leaf (p,_,_,_,_,_) when Array.forall (function Leaf _ -> true | _ -> false) (children p) -> FilledBranch
+        | Leaf (p,_,_,_,_,_) when Array.forall (function Node _ -> false | _ -> true) (children p) -> LowestBranch
+        | _ -> MidBranch
+
+    // /// convert a Node to Leaf
+    // let rec trim n k v (node:Node<'T>) =
+    //     match node with 
+    //     | Leaf (p,_,_,l,_,_) when n = l ->
+    //         if (Array.forall (function Node _ -> false | _ -> true) (children p)) then 
+    //             match p with
+    //             | Node (P,C,I,L,V1,V2) ->
+    //                 let mutable value: ValueOption<'T> = v
+    //                 for ci in C do
+    //                     match ci with
+    //                     | Leaf (_,V,_,_,_,_) when V.Value.IsSome -> value <- ValueSome V.Value.Value
+    //                     | _ -> ()
+                        
+    //                 (children P)[I] <- Leaf (P,ref value,I,L,V1,V2)
+    //                 (children P)[I]
+    //             | _ -> node
+    //         else
+    //             node
+
+    //     | Leaf (p,_,_,l,_,_) when n - l < k ->
+    //         if (Array.forall (function Leaf _ -> true | _ -> false) (children p)) then 
+    //             match p with
+    //             | Node (P,C,I,L,V1,V2) ->
+    //                 let mutable value: ValueOption<'T> = v
+    //                 for ci in C do
+    //                     match ci with
+    //                     | Leaf (_,V,_,_,_,_) when V.Value.IsSome -> value <- ValueSome V.Value.Value
+    //                     | _ -> ()
+                        
+    //                 (children P)[I] <- Leaf (P,ref value,I,L,V1,V2)
+    //                 (children P)[I]
+    //             | _ -> node
+    //         else
+    //             node
+    //     | Empty ->
+    //         failwith "tried to trim Empty Node"
+    //     | _ -> node
 
     /// convert a Node to Leaf
     let rec trim n k v (node:Node<'T>) =
         match node with 
-        | Leaf (p,_,_,l,_,_) when n = l ->
-            if (Array.forall (function Node _ -> false | _ -> true) (children p)) then 
-                match p with
-                | Node (P,C,I,L,V1,V2) ->
-                    let mutable value: ValueOption<'T> = v
-                    for ci in C do
-                        match ci with
-                        | Leaf (_,V,_,_,_,_) when V.Value.IsSome -> value <- ValueSome V.Value.Value
-                        | _ -> ()
-                        
-                    (children P)[I] <- Leaf (P,ref value,I,L,V1,V2)
-                    (children P)[I]
-                | _ -> node
-            else
-                node
+        | Leaf (Node(p,c,i,ll,v1,v2),_,_,l,_,_) & LowestBranch when n = l ->
+            let mutable value: ValueOption<'T> = v
+            for ci in c do
+                match ci with
+                | Leaf (_,v,_,_,_,_) when v.Value.IsSome -> value <- ValueSome v.Value.Value
+                | _ -> ()
+                
+            (children p)[i] <- Leaf (p,ref value,i,ll,v1,v2)
+            (children p)[i]
 
-        | Leaf (p,_,_,l,_,_) when n - l < k ->
-            if (Array.forall (function Leaf _ -> true | _ -> false) (children p)) then 
-                match p with
-                | Node (P,C,I,L,V1,V2) ->
-                    let mutable value: ValueOption<'T> = v
-                    for ci in C do
-                        match ci with
-                        | Leaf (_,V,_,_,_,_) when V.Value.IsSome -> value <- ValueSome V.Value.Value
-                        | _ -> ()
-                        
-                    (children P)[I] <- Leaf (P,ref value,I,L,V1,V2)
-                    (children P)[I]
-                | _ -> node
-            else
-                node
-        | Empty ->
-            failwith "tried to trim Empty Node"
+        | Leaf (Node(p,c,i,ll,v1,v2),_,_,l,_,_) & FilledBranch when n - l < k ->
+            let mutable value: ValueOption<'T> = v
+            for ci in c do
+                match ci with
+                | Leaf (_,v,_,_,_,_) when v.Value.IsSome -> value <- ValueSome v.Value.Value
+                | _ -> ()
+                
+            (children p)[i] <- Leaf (p,ref value,i,ll,v1,v2)
+            (children p)[i]
+            
+        | Empty -> failwith "tried to trim Empty Node"
         | _ -> node
-
 
     /// convert a Leaf to Node
     let rec dense n (node:Node<'T>) =
@@ -824,19 +855,31 @@ module Octree =
             fn i node
         | Empty -> ()
 
+    /// iterate all the leaf nodes of the tree
+    /// The equivalent of a for-loop for the quadtree
+    let rec iteri_internal (i:byref<int>) (fn:int -> Node<'T> -> unit) (node:Node<'T>) =
+        match node with
+        | Node (_,c,_,_,_,_) ->
+            for ci in c do                
+                iteri &i fn ci
+        | Leaf _ & Internal ->
+            i <- i + 1
+            fn i node
+        | _ -> ()
+
 
     /// traverses the whole tree and trims / denses the quadants
-    let rec update n k (node:Node<'T>) (pred_trim:Node<'T> -> bool) (pred_dense:Node<'T> -> bool) (set_value:Node<'T> -> 'T) =
+    let rec update n k (node:Node<'T>) (_trim:Node<'T> -> bool) (_dense:Node<'T> -> bool) (_set:Node<'T> -> 'T) =
         match node with
-        | Node (p,c,i,_,_,_) when is_quadant node ->
-            if pred_trim node then
-                trim n k (ValueSome(set_value node)) node |> ignore
+        | Node (p,c,i,_,_,_) & FilledBranch ->
+            if _trim node then
+                trim n k (ValueSome(_set node)) node |> ignore
 
-            elif pred_dense node then
+            elif _dense node then
                 dense n node |> ignore
 
         | Node (_,c,_,_,_,_) ->
-            for ci in c do update n k ci pred_trim pred_dense set_value
+            for ci in c do update n k ci _trim _dense _set
 
         | _ -> ()
 
@@ -1101,6 +1144,11 @@ module Octree =
         member this.Iteri (fn:int -> Node<'T> -> unit) =
             let mutable i = -1
             iteri &i fn root
+    
+    
+        member this.IteriInternal (fn:int -> Node<'T> -> unit) =
+            let mutable i = -1
+            iteri_internal &i fn root
     
         /// Experimental method, DOT NOT take for granted that it works...
         member this.IterParallel (num_threads:int) (fn:Node<'T> -> unit) =
