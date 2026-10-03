@@ -4,6 +4,7 @@
 
 open SE
 open SE.Core
+open SE.Spatial
 open System.Numerics
 open System
 open GridGeneration2D

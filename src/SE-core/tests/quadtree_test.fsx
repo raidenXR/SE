@@ -43,15 +43,16 @@ let get_pixels (N:int) (path:string) =
     (stencil, N, Vector2(float32 x_min, float32 y_min), Vector2(float32 x_max, float32 y_max))
 
 // create a quadtree over the domain
-let (stencil1,N1,v_min1,v_max1) = get_pixels 400 "keyframes_domain/cool_image_01.png"
-let (stencil2,N2,v_min2,v_max2) = get_pixels 400 "keyframes_domain/cool_image_02.png"
-let N = 400
+let [<Literal>] N = 300
+let [<Literal>] k = 4
+let (stencil1,N1,v_min1,v_max1) = get_pixels N "keyframes_domain/cool_image_01.png"
+let (stencil2,N2,v_min2,v_max2) = get_pixels N "keyframes_domain/cool_image_02.png"
 let v_min = Vector2.Zero
 let v_max = Vector2.One * 1000.f
 
 let quadtree =
     stencil1
-    |> Quadtree.ofStencil<double> N 3 v_min v_max
+    |> Quadtree.ofStencil<double> N k v_min v_max
 
 quadtree.Iter (fun u ->
     match u with
@@ -69,7 +70,7 @@ let quadtree' =
     //         stencil2[idx] <- if stencil1[idx] then false else stencil2[idx]
     stencil2.And(quadtree.Stencil.Not())
     // stencil2
-    |> Quadtree.ofStencil<double> N 3 v_min v_max
+    |> Quadtree.ofStencil<double> N k v_min v_max
 
 
 quadtree'.Iter (fun u ->
@@ -99,7 +100,7 @@ printfn "mapped_count: %d" mapped_count
 
 let sb =
     let sb= System.Text.StringBuilder(1024*1024)
-    Quadtree.write_rects_to_sb quadtree'.Root sb
+    Quadtree.write_rects_to_sb quadtree.Root sb
     sb
 
 // let pts = quadtree'.AsPoints()
@@ -133,9 +134,10 @@ Gnuplot()
 |>> "set palette defined (0 'navy', 1 'blue', 2 'cyan', 3 'green', 4 'yellow', 5 'orange', 6 'red')"
 // |>> $"set cbrange[{Array.min zs_copy}:{Array.max zs_copy}]"
 // |>> "set view map"
-// |> Gnuplot.datablockString (string sb) "grid1"
+|> Gnuplot.datablockString (string sb) "grid0"
 |> Gnuplot.datablockXYZ x1 y1 z1 "grid1"
 |> Gnuplot.datablockXYZ x2 y2 z2 "grid2"
+// |>> "plot $grid0 with lines lc rgb 'white', \\"
 // |>> "plot $grid1 with points lc rgb 'white', \\"
 // |>> "$grid2 with points lc rgb 'yellow'"
 // |>> "plot $grid1 with points lc palette, \\"

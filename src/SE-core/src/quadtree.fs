@@ -254,7 +254,7 @@ module Quadtree =
                 | Leaf (_,v,_,_,_,_) when v.Value.IsSome -> value <- ValueSome v.Value.Value
                 | _ -> ()
                 
-            (children p)[i] <- Leaf (p,ref value,i,l,v1,v2)
+            (children p)[i] <- Leaf (p,ref value,i,ll,v1,v2)
             (children p)[i]
             
         | Empty -> failwith "tried to trim Empty Node"
@@ -778,19 +778,17 @@ module Quadtree =
 
 
     /// traverses the whole tree and trims / denses the quadants
-    let rec update n k (node:Node<'T>) (pred_trim:Node<'T> -> bool) (pred_dense:Node<'T> -> bool) (set_value:Node<'T> -> 'T) =
+    let rec update n k (node:Node<'T>) (_trim:Node<'T> -> bool) (_dense:Node<'T> -> bool) (_set:Node<'T> -> 'T) =
         match node with
-        | Quadant & Node (p,c,i,_,_,_) ->
-            if pred_trim node then
-                // printfn "trimmed"
-                trim n k (ValueSome(set_value node)) node |> ignore
+        | Leaf (p,c,i,_,_,_) & FilledBranch ->
+            if _trim node then
+                trim n k (ValueSome(_set node)) node |> ignore
 
-            elif pred_dense node then
-                // printfn "densed"
+            elif _dense node then
                 dense n node |> ignore
 
         | Node (_,c,_,_,_,_) ->
-            for ci in c do update n k ci pred_trim pred_dense set_value
+            for ci in c do update n k ci _trim _dense _set
 
         | _ -> ()
 
