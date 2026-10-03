@@ -871,7 +871,7 @@ module Octree =
     /// traverses the whole tree and trims / denses the quadants
     let rec update n k (node:Node<'T>) (_trim:Node<'T> -> bool) (_dense:Node<'T> -> bool) (_set:Node<'T> -> 'T) =
         match node with
-        | Node (p,c,i,_,_,_) & FilledBranch ->
+        | Leaf (p,c,i,_,_,_) & FilledBranch ->
             if _trim node then
                 trim n k (ValueSome(_set node)) node |> ignore
 

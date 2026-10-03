@@ -30,7 +30,7 @@ geometries, and solving PDEs on them. Take a look at `tests/` directories for ex
 **UPDATE:** ImGui.NET example for OpenTK added, so now it supports UI too.    
 Great thanks to `@NogginBops` for [ImGui.NET.OpenTK-example](https://github.com/NogginBops/ImGui.NET_OpenTK_Sample)!
 
-### Laplace PDE on decretized geometry
+### Laplace PDE on descretized geometry
 <!-- ![laplace_pde](images/SE_Laplace.gif)   -->
 <img src="images/SE_Laplace.gif" alt="Alt Text" height="400">  
 
@@ -41,6 +41,11 @@ Great thanks to `@NogginBops` for [ImGui.NET.OpenTK-example](https://github.com/
 ```
 convert -delay 20 -loop 0 *.png swallow_volume.gif  
 ```
+
+### PDE on descretized geometry, multiple meshes and dynamic coarsening
+<!-- ![laplace_pde](images/cell_dynamic.gif)   -->
+<img src="images/cell_dynamic.gif" alt="Alt Text" height="400">  
+
 
 ### Octree Discretization
 these are some examples of the Octree-descritization on the 3d geometries in `models/` directory:    

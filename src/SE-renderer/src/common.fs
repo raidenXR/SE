@@ -227,7 +227,6 @@ module VertexBuffer =
             GL.VertexAttribPointer(1, (GLTF.size "VEC4"), VertexAttribPointerType.Float, false, mesh.Stride, 3*sizeof<float32>)
             VB2(vao,vbo)
 
-
     let update vb (mesh:Mesh) =
         match vb with
         | VB1 (vao,vbo,ebo) ->
@@ -241,6 +240,7 @@ module VertexBuffer =
             GL.BufferSubData(BufferTarget.ArrayBuffer, IntPtr.Zero, mesh.vertices.BufferSize, mesh.vertices.ToInt())
             GL.BindBuffer(BufferTarget.ArrayBuffer, 0)
 
+
     let draw vb (mesh:Mesh) =
         match vb with
         | VB1 (vao,vbo,ebo) ->
@@ -249,7 +249,7 @@ module VertexBuffer =
 
         | VB2 (vao,vbo) ->
             GL.BindVertexArray(vao)
-            GL.DrawArrays(PrimitiveType.Points, 0, mesh.vertices.Length)         
+            GL.DrawArrays(PrimitiveType.Points, 0, mesh.vertices.Length) 
 
 
     let update_sliced vb count (mesh:Mesh) =

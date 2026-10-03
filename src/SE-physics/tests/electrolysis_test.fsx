@@ -1,7 +1,7 @@
-#r "../bin/Debug/net10.0/SE-renderer.dll"
-#r "../bin/Debug/net10.0/SE-core.dll"
-// #r "../bin/Release/net10.0/SE-renderer.dll"
-// #r "../bin/Release/net10.0/SE-core.dll"
+// #r "../bin/Debug/net10.0/SE-renderer.dll"
+// #r "../bin/Debug/net10.0/SE-core.dll"
+#r "../bin/Release/net10.0/SE-renderer.dll"
+#r "../bin/Release/net10.0/SE-core.dll"
 #r "nuget: OpenTK, 4.9.4"
 #r "nuget: SkiaSharp, 2.88.6"
 #r "nuget: ImGui.NET, 1.91.6.1"
@@ -63,8 +63,9 @@ let pos = Octree.center
 let _trim node =
     let T = Components.get<Temperature>()
     match node with
-    | Octree.FilledBranch & Octree.Node (_,c,_,_,_,_) ->
-        let d = 0.3
+    | Octree.Leaf (p,_,_,_,_,_) ->
+        let c = Octree.children p
+        let d = 0.2
         let T0 = Tf32 T[!c[0]]
         let T1 = Tf32 T[!c[1]]
         let T2 = Tf32 T[!c[2]]
@@ -74,15 +75,15 @@ let _trim node =
         let T6 = Tf32 T[!c[6]]
         let T7 = Tf32 T[!c[7]]
         let b = abs(T0-T1) < d || abs(T0-T2) < d || abs(T2-T3) < d || abs(T3-T4) < d || abs(T4-T5) < d || abs(T5-T6) < d || abs(T6-T7) < d
-        if b then printfn "_trim run"
         b
     | _ -> false
         
 let _dense node =
     let T = Components.get<Temperature>()
     match node with
-    | Octree.FilledBranch & Octree.Node (_,c,_,_,_,_) ->
-        let d = 1.
+    | Octree.Leaf (p,_,_,_,_,_) ->
+        let c = Octree.children p
+        let d = 1.5
         let T0 = Tf32 T[!c[0]]
         let T1 = Tf32 T[!c[1]]
         let T2 = Tf32 T[!c[2]]
@@ -92,22 +93,21 @@ let _dense node =
         let T6 = Tf32 T[!c[6]]
         let T7 = Tf32 T[!c[7]]
         let b = abs(T0-T1) > d || abs(T0-T2) > d || abs(T2-T3) > d || abs(T3-T4) > d || abs(T4-T5) > d || abs(T5-T6) > d || abs(T6-T7) > d
-        if b then printfn "_dense run"
         b
     | _ -> false
         
 let _set node =
     let T = Components.get<Temperature>()
     match node with
-    | Octree.FilledBranch & Octree.Node (_,c,_,_,_,_) ->
+    | Octree.Leaf (p,_,_,_,_,_) ->
+        let c = Octree.children p
         let mutable t = 0.
         for ci in c do
             t <- t + Tf32 T[!ci] 
             Entity.remove !ci |> ignore
 
-        entity()
-        |> set (Temperature(t/8.))
-    | _ -> failwith "_set SHOULD apply only on quadants" 
+        entity() |> set (Temperature(t/8.))
+    | _ -> failwith "set must exectute ONLY on Leafs"        
     
 let sw =
     System.Diagnostics.Stopwatch()
@@ -151,7 +151,6 @@ let colorbars = Map[
 let octree_to_buffer<'T> (tree:Octree.Root<Entity>) (colorbar:Colorbar) (mesh:Mesh) convert =
     let T = Components.get<'T>()
     let L = mesh.L
-    // let mutable i = 0
     match L with
     | 7 ->
         tree.Iteri (fun i u ->
@@ -165,22 +164,6 @@ let octree_to_buffer<'T> (tree:Octree.Root<Entity>) (colorbar:Colorbar) (mesh:Me
             vertices[i*L + 4] <- c.Y
             vertices[i*L + 5] <- c.Z
             vertices[i*L + 6] <- c.W
-            // match u with
-            // | Octree.Internal | Octree.Boundary ->
-            // // | Octree.Internal ->
-            //     let vertices = mesh.vertices.AsSpan()
-            //     // if (i*mesh.L+6) >= vertices.Length then printfn "i: %d, tree_len: %d" i (tree.GetInternalCount())
-            //     let p = pos u
-            //     let c = colorbar[convert values[!u]]
-            //     vertices[i*mesh.L + 0] <- p.X
-            //     vertices[i*mesh.L + 1] <- p.Y
-            //     vertices[i*mesh.L + 2] <- p.Z
-            //     vertices[i*mesh.L + 3] <- c.X
-            //     vertices[i*mesh.L + 4] <- c.Y
-            //     vertices[i*mesh.L + 5] <- c.Z
-            //     vertices[i*mesh.L + 6] <- c.W
-            //     // i <- i + 1            
-            // | _ -> ()
         )
     | 10 ->
         let vertices = mesh.vertices.AsSpan()
@@ -193,9 +176,6 @@ let octree_to_buffer<'T> (tree:Octree.Root<Entity>) (colorbar:Colorbar) (mesh:Me
                 vertices[i*L + 7] <- c.Y
                 vertices[i*L + 8] <- c.Z
                 vertices[i*L + 9] <- c.W
-                // v[i*L+9] <- 0.55f
-                // FSharp.NativeInterop.NativePtr.write c_ptr (Vector4(c.X, c.Y, c.Z, c.W))
-                // printfn "color set"
             | _ -> ()
     | _ ->
         failwith "Not valid mesh.L value"
@@ -324,16 +304,13 @@ system OnLoad [] (fun _ ->
     let body5 = entity() |> solid |> Entity.singleton "body_5" |> set (VertexBuffer.create VT1 meshes[4]) |> set meshes[4]
     
     let points = {
-        // vertices = NativeArray.create<float32>(trees[2].GetCount()*7)
         vertices = NativeArray.create<float32>(N*N*N*7)
         indices = NativeArray.empty<uint32>()
         L = 7
     }
     
     octree_to_buffer<Temperature> trees[2] colorbars[Colormap.Jet] points Tf32
-    let c = 1.f / float32 update_count
-    RGeometry.colorfill (c, c, c, 1.f) meshes[2] |> ignore
-    // octree_to_buffer<Voltage> trees[0] colorbars[Colormap.Gray] meshes[2] (fun (Voltage v) -> v)
+    octree_to_buffer<Voltage> trees[0] colorbars[Colormap.Gray] meshes[2] (fun (Voltage v) -> v)
 
     let body6 =
         entity()
@@ -360,15 +337,9 @@ system PostLoad [] (fun _ ->
     E[0] <- false
     E[1] <- false
     E[2] <- true
-    E[3] <- false
+    E[3] <- true
     E[4] <- false
     E[5] <- true
-
-    // C[0] |> Entity.get<Mesh> |> RGeometry.colorfill (0.5f, 0.5f, 0.5f, 1.0f) |> VertexBuffer.update (Entity.get<VertexBuffer> C[0])
-    // C[1] |> Entity.get<Mesh> |> RGeometry.colorfill (0.6f, 0.3f, 0.4f, 1.0f) |> VertexBuffer.update (Entity.get<VertexBuffer> C[1])
-    // C[2] |> Entity.get<Mesh> |> RGeometry.colorfill (0.5f, 0.3f, 0.4f, 1.0f) |> VertexBuffer.update (Entity.get<VertexBuffer> C[2])
-    // C[3] |> Entity.get<Mesh> |> RGeometry.colorfill (0.4f, 0.5f, 0.5f, 0.2f) |> VertexBuffer.update (Entity.get<VertexBuffer> C[3])
-    // C[4] |> Entity.get<Mesh> |> RGeometry.colorfill (0.8f, 0.7f, 0.8f, 0.2f) |> VertexBuffer.update (Entity.get<VertexBuffer> C[4])
 
     entity() |> set (colorbars[Colormap.Jet].AsTexture(0.8f, 0.0f, 120.f, 460.f)) |> ignore
     entity() |> set (colorbars[Colormap.Gray].AsTexture(0.8f, -0.8f, 120.f, 460.f)) |> ignore    
@@ -432,7 +403,7 @@ system OnExit [] (fun _ ->
     // for pair in colorbars do
     //     pair.Value.Dispose()
         
-    // VideoCapture.export ".gif" SE_Window.Shared
+    VideoCapture.export ".gif" SE_Window.Shared
 
     sw.Stop()
     printfn "stopwatch: %d s" (sw.Elapsed.Seconds)
@@ -598,8 +569,6 @@ system OnUpdate [] (fun _ ->
                         | _ -> ()
                     | _ -> ()
                 )    
-                printfn "surface iter %d" update_count
-            // octree_to_buffer<Temperature> electrolyte_tree colorbars[Colormap.Jet] (Entity.get<Mesh> electrolyte) Tf32
             with
                 | _ as e -> printfn "surface.iter: %s" e.Message
 
@@ -642,9 +611,7 @@ system OnUpdate [] (fun _ ->
 
             try
                 octree_to_buffer<Temperature> b6_tree colorbars[Colormap.Jet] (Entity.get<Mesh> b6) Tf32
-                // octree_to_buffer<Voltage> b3_tree colorbars[Colormap.Gray] (Entity.get<Mesh> b3) (fun (Voltage v) -> Math.Clamp(v, 0., 90.))
-                let c = 1.f / (float32 update_count + 1.f)
-                RGeometry.colorfill (c, c, c, 1.f) (Entity.get<Mesh> b3) |> ignore
+                octree_to_buffer<Voltage> b3_tree colorbars[Colormap.Gray] (Entity.get<Mesh> b3) (fun (Voltage v) -> Math.Clamp(v, 0., 90.))
             with
                 | _ as e -> printfn "copy_to_buffer: %s" e.Message 
 
@@ -654,7 +621,6 @@ system OnUpdate [] (fun _ ->
                 tree'.Update(_trim, _dense, _set)
 
                 let electrolyte_count = b6_tree.GetCount()
-                printfn "electrolyte_count: %d" electrolyte_count
 
                 mesh_names[5] <- sprintf "body_%d: %d/%d" (5+1) (b6_tree.GetInternalCount()) (electrolyte_count)
                 b6 |> Entity.add<UpdateColors> |> set electrolyte_count |> ignore

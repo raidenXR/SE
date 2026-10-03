@@ -581,13 +581,17 @@ module RGeometry =
 
 
     let colorfill (r:float32, g:float32, b:float32, a:float32) (mesh:Mesh) =
-        let vertices = cast<float32> mesh.vertices.Ptr
+        let vertices = mesh.vertices.AsSpan()
         let c = Vector4(r,g,b,a)
         let L = mesh.L
         let len = mesh.vertices.Length / L
         for i in 0..len-1 do
-            let p = cast<Vector4>(~~(vertices ++ (i*L) ++ (L-4)))
-            FSharp.NativeInterop.NativePtr.write p c
+            vertices[i*L + (L-4) + 0] <- r
+            vertices[i*L + (L-4) + 1] <- g
+            vertices[i*L + (L-4) + 2] <- b
+            vertices[i*L + (L-4) + 3] <- a
+            // let p = cast<Vector4>(~~(vertices ++ (i*L) ++ (L-4)))
+            // FSharp.NativeInterop.NativePtr.write p c
         mesh
 
     // let inline is_clamped v1 v v2 =
