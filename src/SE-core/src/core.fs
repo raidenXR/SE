@@ -1066,10 +1066,14 @@ module Entity =
         if r = 0u then failwith $"{str} -tag is not present in Entities"
         r
 
-    let singleton str e =
-        if not (singletons.ContainsKey(str) || singletons.ContainsValue(e)) then
+    let singleton str =
+        let mutable e = 0u;
+        match singletons.TryGetValue(str, &e) with
+        | true -> e
+        | false -> 
+            e <- create()
             singletons.Add(str,e)
-        e
+            e
 
     /// prints the component-types that are assigned over an entity
     /// mostly for debugging purposes
@@ -1102,14 +1106,15 @@ module Entity =
         Console.Write(sprintf id)
     //     Console.Write("0x{0:X6}, ", id)
 
-    /// gets an entity assigned as singleton
-    let fetch str = singletons[str]
+    // /// gets an entity assigned as singleton
+    // let fetch str = singletons[str]
 
         
 // uses these as keywords for better scripting ergonomy of the API        
 [<AutoOpen>]
 module FnDecls =
     let entity = Entity.create
+    let singleton = Entity.singleton
     let set = Entity.set
     let entity_tagged (str:string) = Entity.create () |> Entity.tag str
     let system = Systems.add

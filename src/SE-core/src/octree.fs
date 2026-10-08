@@ -1532,9 +1532,7 @@ module Octree =
         let L = mesh.L 
         let (v_min,v_max) = GridGeneration3D.bounds_SIMD vertices L
         let bits = fill_scanlines N L v_min v_max vertices indices (BitArray(N*N*N))
-        // mesh.vertices.Dispose()
-        // mesh.indices.Dispose()
-        mesh.Dispose()
+        // mesh.Dispose()
         ofStencil<'T> N k v_min v_max bits        
         
     /// WARNING: It Disposes the unmanged resources of mesh
@@ -1545,10 +1543,59 @@ module Octree =
             let vertices = mesh.vertices.AsSpan()
             let indices  = mesh.indices.AsSpan()
             let bits = fill_scanlines N mesh.L v_min v_max vertices indices (BitArray(N*N*N))
-            mesh.Dispose()
+            // mesh.Dispose()
             ofStencil<'T> N k v_min v_max bits        
         )
                     
+
+    let inline (!) (Leaf(_,v,_,_,_,_)) = v.Value.Value
+
+    let inline _trim<'T> d ([<InlineIfLambda>]fn: 'T -> double) node =
+        let T = SE.ECS.Components.get<'T>()
+        match node with
+        | Leaf (p,_,_,_,_,_) ->
+            let c = children p
+            let T0 = fn(T[!c[0]])
+            let T1 = fn(T[!c[1]])
+            let T2 = fn(T[!c[2]])
+            let T3 = fn(T[!c[3]])
+            let T4 = fn(T[!c[4]])
+            let T5 = fn(T[!c[5]])
+            let T6 = fn(T[!c[6]])
+            let T7 = fn(T[!c[7]])
+            abs(T0-T1) < d || abs(T0-T2) < d || abs(T2-T3) < d || abs(T3-T4) < d || abs(T4-T5) < d || abs(T5-T6) < d || abs(T6-T7) < d
+        | _ -> false
+        
+    let inline _dense<'T> d ([<InlineIfLambda>]fn: 'T -> double) node =
+        let T = SE.ECS.Components.get<'T>()
+        match node with
+        | Leaf (p,_,_,_,_,_) ->
+            let c = children p
+            let T0 = fn(T[!c[0]])
+            let T1 = fn(T[!c[1]])
+            let T2 = fn(T[!c[2]])
+            let T3 = fn(T[!c[3]])
+            let T4 = fn(T[!c[4]])
+            let T5 = fn(T[!c[5]])
+            let T6 = fn(T[!c[6]])
+            let T7 = fn(T[!c[7]])
+            let b = abs(T0-T1) > d || abs(T0-T2) > d || abs(T2-T3) > d || abs(T3-T4) > d || abs(T4-T5) > d || abs(T5-T6) > d || abs(T6-T7) > d
+            b
+        | _ -> false
+        
+    // let _set<'T> ([<InlineIfLambda>]fn: 'T -> double) node =
+    //     let T = SE.ECS.Components.get<'T>()
+    //     match node with
+    //     | Leaf (p,_,_,_,_,_) ->
+    //         let c = children p
+    //         let mutable t = 0.
+    //         for ci in c do
+    //             t <- t + fn(T[!ci]) 
+    //             SE.ECS.Entity.remove !ci |> ignore
+
+    //         SE.ECS.Entity.create() |> SE.ECS.Entity.set (Temperature(t/8.))
+    //     | _ -> failwith "set must exectute ONLY on Leafs"        
+
     // [<Obsolete>]
     // let ofSurfaceEXT<'T> (N:int) L k (vertices:Span<float32>) (indices:Span<uint>) =
     //     let (v_min,v_max) = GridGeneration3D.bounds_SIMD vertices L

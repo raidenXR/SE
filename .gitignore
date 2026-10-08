@@ -13,6 +13,7 @@ output/
 BenchmarkDotNet.Artifacts/
 SE-zig-src/
 
+*.db
 *.log
 *.txt
 *.ini

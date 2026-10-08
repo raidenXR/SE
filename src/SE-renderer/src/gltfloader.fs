@@ -417,8 +417,8 @@ module GLTF =
         let root = JsonSerializer.Deserialize<Root>(gltf)
         let fs = System.IO.File.ReadAllBytes(gltf_bin)
 
-        let _vertices = ResizeArray<float32>(10000)
-        let _indices = ResizeArray<uint32>(20000)
+        // let _vertices = ResizeArray<float32>(10000)
+        // let _indices = ResizeArray<uint32>(20000)
 
         let tranform (transform:Matrix4x4) (mesh:Spatial.Mesh) = 
             let vertices = cast<float32> mesh.vertices.Ptr
@@ -463,7 +463,7 @@ module GLTF =
             // _vertices.Clear()
             // _indices.Clear()
             let _vertices = ResizeArray<float32>(1024*100)
-            let _indices = ResizeArray<uint32>(1024*100)
+            let _indices = ResizeArray<uint32>(1024*300)
             let mesh = root.meshes[idx]
             
             let mutable base_vertex = 0u
@@ -480,9 +480,9 @@ module GLTF =
                 let p_bv = root.bufferViews[p_accessor.bufferView]
                 let n_bv = root.bufferViews[n_accessor.bufferView]
                 let i_bv = root.bufferViews[i_accessor.bufferView]
-                let p_span = this.AsSpan<Vector3>(p_bv.byteOffset + p_accessor.byteOffset, p_accessor.count)
-                let n_span = this.AsSpan<Vector3>(n_bv.byteOffset + n_accessor.byteOffset, n_accessor.count)
-                let i_span = this.AsSpan<uint16>(i_bv.byteOffset + i_accessor.byteOffset, i_accessor.count)
+                let p_span: ReadOnlySpan<Vector3> = this.AsSpan<Vector3>(p_bv.byteOffset + p_accessor.byteOffset, p_accessor.count)
+                let n_span: ReadOnlySpan<Vector3> = this.AsSpan<Vector3>(n_bv.byteOffset + n_accessor.byteOffset, n_accessor.count)
+                let i_span: ReadOnlySpan<uint16> = this.AsSpan<uint16>(i_bv.byteOffset + i_accessor.byteOffset, i_accessor.count)
                 let vertices_count = p_accessor.count
 
                 for i in 0..vertices_count - 1 do
@@ -507,15 +507,19 @@ module GLTF =
             }
         
 
-        member this.ReadMeshes() = seq {
+        member this.ReadMeshes() = [|
             for node in (Array.skip 1 root.nodes) do
                 let m = match node.matrix with
                         | null -> Matrix4x4.Identity
                         | m -> Matrix4x4(
-                            M11=m[0], M12=m[1], M13=m[2], M14=m[3],
-                            M21=m[4], M22=m[5], M23=m[6], M24=m[7],
-                            M31=m[8], M32=m[9], M33=m[10], M34=m[11],
-                            M41=m[12], M42=m[13], M43=m[14], M44=m[15]
+                            // M11=m[0], M12=m[1], M13=m[2], M14=m[3],
+                            // M21=m[4], M22=m[5], M23=m[6], M24=m[7],
+                            // M31=m[8], M32=m[9], M33=m[10], M34=m[11],
+                            // M41=m[12], M42=m[13], M43=m[14], M44=m[15]
+                            M11=m[0], M12=m[4], M13=m[8], M14=m[12],
+                            M21=m[1], M22=m[5], M23=m[9], M24=m[13],
+                            M31=m[2], M32=m[6], M33=m[10], M34=m[14],
+                            M41=m[3], M42=m[7], M43=m[11], M44=m[15]
                         )
 
                 let r = match node.rotation with
@@ -528,10 +532,10 @@ module GLTF =
                         
                 let s = match node.scale with
                         | null -> Matrix4x4.Identity
-                        | s -> Matrix4x4.CreateTranslation(Vector3(s[0], s[1], s[2]))
+                        | s -> Matrix4x4.CreateScale(Vector3(s[0], s[1], s[2]))
                                             
-                yield tranform ((t*r*s)*m) (this.ReadMesh(node.mesh))
-            }
+                tranform ((t*r*s)*m) (this.ReadMesh(node.mesh))
+            |]
     
         member this.ReadMeshesParallel() = 
             root.nodes
@@ -540,10 +544,14 @@ module GLTF =
                 let m = match node.matrix with
                         | null -> Matrix4x4.Identity
                         | m -> Matrix4x4(
-                            M11=m[0], M12=m[1], M13=m[2], M14=m[3],
-                            M21=m[4], M22=m[5], M23=m[6], M24=m[7],
-                            M31=m[8], M32=m[9], M33=m[10], M34=m[11],
-                            M41=m[12], M42=m[13], M43=m[14], M44=m[15]
+                            // M11=m[0], M12=m[1], M13=m[2], M14=m[3],
+                            // M21=m[4], M22=m[5], M23=m[6], M24=m[7],
+                            // M31=m[8], M32=m[9], M33=m[10], M34=m[11],
+                            // M41=m[12], M42=m[13], M43=m[14], M44=m[15]
+                            M11=m[0], M12=m[4], M13=m[8], M14=m[12],
+                            M21=m[1], M22=m[5], M23=m[9], M24=m[13],
+                            M31=m[2], M32=m[6], M33=m[10], M34=m[14],
+                            M41=m[3], M42=m[7], M43=m[11], M44=m[15]
                         )
 
                 let r = match node.rotation with
@@ -556,7 +564,7 @@ module GLTF =
                     
                 let s = match node.scale with
                         | null -> Matrix4x4.Identity
-                        | s -> Matrix4x4.CreateTranslation(Vector3(s[0], s[1], s[2]))
+                        | s -> Matrix4x4.CreateScale(Vector3(s[0], s[1], s[2]))
                 
                 tranform ((t*r*s)*m) (this.ReadMesh(node.mesh))
             )

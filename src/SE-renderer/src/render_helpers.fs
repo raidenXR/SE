@@ -126,6 +126,55 @@ module Imaging =
 
 
 module Helpers =
+    open SE.ECS
+    open SE.Spatial
+    open SE.Spatial.Octree
+    
+    let octreeToBuffer<'T> (colorbar:Colorbar) convert e =
+        let mesh = Entity.get<Mesh> e
+        let tree = Entity.getRef<Octree.Root<Entity>> e
+        let T = Components.get<'T>()
+        let L = mesh.L
+        match L with
+        | 7 ->
+            tree.Iteri (fun i u ->
+                let vertices = mesh.vertices.AsSpan()
+                let p = Octree.center u
+                let c = colorbar[convert T[!u]]
+                vertices[i*L + 0] <- p.X
+                vertices[i*L + 1] <- p.Y
+                vertices[i*L + 2] <- p.Z
+                vertices[i*L + 3] <- c.X
+                vertices[i*L + 4] <- c.Y
+                vertices[i*L + 5] <- c.Z
+                vertices[i*L + 6] <- c.W
+            )
+        | 10 ->
+            let vertices = mesh.vertices.AsSpan()
+            let v = &MemoryMarshal.GetReference(vertices)
+            let len = mesh.vertices.Length / L
+            for i in 0..len-1 do
+                let p = Unsafe.As<float32,Vector3>(&Unsafe.Add(&v, i*L))
+                let n = Unsafe.As<float32,Vector3>(&Unsafe.Add(&v, i*L + 3))
+                let c = match tree.MapTo(p) with
+                        | Octree.Leaf (_,v,_,_,_,_) -> colorbar[convert T[v.Value.Value]]
+                        | _ -> Unsafe.As<float32,Vector4>(&Unsafe.Add(&v, i*L + 6))
+
+                vertices[i*L + 1] <- p.Y
+                vertices[i*L + 0] <- p.X
+                vertices[i*L + 2] <- p.Z
+                vertices[i*L + 3] <- n.X
+                vertices[i*L + 4] <- n.Y
+                vertices[i*L + 5] <- n.Z
+                vertices[i*L + 6] <- c.X
+                vertices[i*L + 7] <- c.Y
+                vertices[i*L + 8] <- c.Z
+                vertices[i*L + 9] <- c.W
+        | _ ->
+            failwith "Not valid mesh.L value"
+
+
+
     let createMesh (model:Model) =
         let vbo = GL.GenBuffer()
         GL.BindBuffer (BufferTarget.ArrayBuffer, vbo)

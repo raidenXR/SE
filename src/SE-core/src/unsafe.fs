@@ -90,7 +90,7 @@ type [<Struct>] narray<'T when 'T:unmanaged> =
     val mutable private is_disposed: bool
     val mutable private is_pooled: bool
 
-    internal new(ptr:voidptr, len:int, is_pooled:bool) = {
+    new(ptr:voidptr, len:int, is_pooled:bool) = {
         ptr = ptr
         len = len
         is_disposed = false

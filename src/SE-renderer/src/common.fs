@@ -228,14 +228,19 @@ module VertexBuffer =
             VB2(vao,vbo)
 
     let update vb (mesh:Mesh) =
-        match vb with
-        | VB1 (vao,vbo,ebo) ->
-            GL.BindVertexArray(vao)
-            GL.BindBuffer(BufferTarget.ArrayBuffer, ebo)
-            GL.BufferSubData(BufferTarget.ArrayBuffer, IntPtr.Zero, mesh.indices.BufferSize, mesh.indices.ToInt())
-            GL.BindBuffer(BufferTarget.ArrayBuffer, 0)
+        // match vb with
+        // | VB1 (vao,vbo,ebo) ->
+        //     GL.BindVertexArray(vao)
+        //     GL.BindBuffer(BufferTarget.ArrayBuffer, ebo)
+        //     GL.BufferSubData(BufferTarget.ArrayBuffer, IntPtr.Zero, mesh.indices.BufferSize, mesh.indices.ToInt())
+        //     GL.BindBuffer(BufferTarget.ArrayBuffer, 0)
         
-        | VB2 (vao,vbo) ->
+        // | VB2 (vao,vbo) ->
+        //     GL.BindBuffer(BufferTarget.ArrayBuffer, vbo)
+        //     GL.BufferSubData(BufferTarget.ArrayBuffer, IntPtr.Zero, mesh.vertices.BufferSize, mesh.vertices.ToInt())
+        //     GL.BindBuffer(BufferTarget.ArrayBuffer, 0)
+        match vb with
+        | VB1 (_,vbo,_) | VB2 (_,vbo) ->
             GL.BindBuffer(BufferTarget.ArrayBuffer, vbo)
             GL.BufferSubData(BufferTarget.ArrayBuffer, IntPtr.Zero, mesh.vertices.BufferSize, mesh.vertices.ToInt())
             GL.BindBuffer(BufferTarget.ArrayBuffer, 0)

@@ -23,6 +23,8 @@ type [<Struct>] Mesh = {vertices:narray<float32>; L:int; indices:narray<uint32>}
         this.indices.Dispose()
 
     member this.Stride = this.L * sizeof<float32>
+
+    static member points n = {vertices=NativeArray.create<float32> n; indices=NativeArray.empty<uint32>(); L=7}
         
 
 type [<Struct>] Triangle = {n0:Vector3; n1:Vector3; n2:Vector3}
