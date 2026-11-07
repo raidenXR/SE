@@ -35,7 +35,7 @@ open SE.Spatial
 open SE.Renderer
 open SE.Data
 
-let [<Literal>] N = 240
+let [<Literal>] N = 300
 let [<Literal>] L = 10
 let [<Literal>] k = 3
 let [<Literal>] ss = "../../../resources/shaders/"
@@ -223,6 +223,12 @@ system OnLoad [] (fun _ ->
     trees[2].Iter (fun (Octree.Leaf(_,v,_,_,_,_)) -> v.Value <- entity() |> set (Temperature(300.)) |> ValueSome)
     tree2_t'.Iter (fun (Octree.Leaf(_,v,_,_,_,_)) -> v.Value <- entity() |> set (Temperature(300.)) |> ValueSome)
     singleton "tree'" |> Entity.addRef tree2_t' |> ignore
+
+    // trees[0].Iter (fun u ->
+    //     match u with
+    //     | Octree.Boundary _ -> ()
+    //     | Octree.Internal _ -> ()
+    // )
 
     mesh_names.Add(sprintf "body_%d:" (0+1)) 
     mesh_names.Add(sprintf "body_%d:" (1+1)) 

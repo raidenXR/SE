@@ -55,7 +55,8 @@ type [<Struct>] Model =
         {
             // vertices = vertices
             // indices = indices
-            mesh = {vertices = vertices; indices = indices; L = List.sum attribs}
+            // mesh = {vertices = vertices; indices = indices; L = List.sum attribs}
+            mesh = new Mesh(vertices, indices, L = List.sum attribs)
             is_disposed = false
             l = List.sum attribs
             stride = (List.sum attribs) * (sizeof<float32>)
@@ -70,7 +71,8 @@ type [<Struct>] Model =
         {
             // vertices = vertices
             // indices = NativeArray.create 10
-            mesh = {vertices = vertices; indices = NativeArray.empty(); L = List.sum attribs}
+            // mesh = {vertices = vertices; indices = NativeArray.empty(); L = List.sum attribs}
+            mesh = new Mesh(vertices, NativeArray.empty(), List.sum attribs)
             is_disposed = false
             l = List.sum attribs
             stride = (List.sum attribs) * (sizeof<float32>)
@@ -463,11 +465,12 @@ module RGeometry =
             v[10*i + 8] <- g
             v[10*i + 9] <- a
         
-        {
-            vertices = vertices
-            indices = indices
-            L = 10
-        }
+        // {
+        //     vertices = vertices
+        //     indices = indices
+        //     L = 10
+        // }
+        new Mesh(vertices, indices, 10)
         
 
     /// deserializes the vertices and indices from a .txt file
@@ -541,11 +544,12 @@ module RGeometry =
 
     let load_txt_unmanaged (path:string, r:float32, g:float32, b:float32, a:float32) =
         let (vertices,indices) = load_txt(path,r,g,b,a)
-        {
-            vertices = NativeArray.ofArray vertices
-            indices  = NativeArray.ofArray indices
-            L = 10
-        }
+        // {
+        //     vertices = NativeArray.ofArray vertices
+        //     indices  = NativeArray.ofArray indices
+        //     L = 10
+        // }
+        new Mesh(NativeArray.ofArray vertices, NativeArray.ofArray indices, 10)
 
     let tranform (transform:Matrix4x4) (mesh:Mesh) = 
         let vertices = cast<float32> mesh.vertices.Ptr

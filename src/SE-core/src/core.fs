@@ -198,6 +198,51 @@ type Components<'T>(_ids:array<Entity>, _items:array<'T>) =
         elif count >= 8 then binary_search 0 count id &idx
         else linear_search 0 count id &idx
                     
+    let cache_index2 (i:int) =
+        idx_prev <- idx_current
+        idx_current <- i
+        id_prev <- id_current
+        id_current <- ids[i]
+
+    let contains2 (id:Entity) (idx:byref<int>) =
+        idx <- -1
+
+        if count = 0 || id < ids[0] || id > ids[count - 1] then
+            false
+        else
+            let mutable found = -1
+
+            if idx_current >= 0 && idx_current < count && ids[idx_current] = id then
+                found <- idx_current
+            elif idx_current >= 0 && idx_current + 1 < count && ids[idx_current + 1] = id then
+                found <- idx_current + 1
+            elif idx_current > 0 && ids[idx_current - 1] = id then
+                found <- idx_current - 1
+            elif idx_prev >= 0 && idx_prev < count && ids[idx_prev] = id then
+                found <- idx_prev
+            elif count < 8 then
+                let mutable i = 0
+                while i < count && found = -1 do
+                    if ids[i] = id then found <- i
+                    i <- i + 1
+            else
+                let mutable low = 0
+                let mutable high = count - 1
+                while low <= high && found = -1 do
+                    let mid = low + (high - low) / 2
+                    if ids[mid] = id then
+                        found <- mid
+                    elif ids[mid] < id then
+                        low <- mid + 1
+                    else
+                        high <- mid - 1
+
+            if found < 0 then
+                false
+            else
+                idx <- found
+                if found <> idx_current then cache_index2 found
+                true
 
     let warning condition (str:string) =
         if condition then
@@ -335,7 +380,26 @@ type Components<'T>(_ids:array<Entity>, _items:array<'T>) =
                 | true -> 
                     &items[i]
                    
-
+    member this.Get2
+        with get(id:Entity) =
+            if id_current = id && idx_current > -1 then
+                &items[idx_current]
+            else
+                let mutable i = -1
+                match contains2 id &i with
+                | false -> 
+                    // #if DEBUG
+                    let s = $"0x{id:X6}"
+                    Console.ForegroundColor <- ConsoleColor.Red
+                    printfn $"Component<{typeof<'T>.Name}> Does not contain this Entity: {s}"
+                    // printEntities ()
+                    Console.ForegroundColor <- ConsoleColor.White
+                    failwith "components[idx] failed"
+                    // #endif
+                    &items[0]
+                | true -> 
+                    &items[i]
+                   
     member this.Entities with get() = Entities(ids, 0, count)
 
     member this.Entries with get() = Span(items, 0, count)

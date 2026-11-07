@@ -1,7 +1,6 @@
 open System
 open System.Numerics
-open SE.Core
-open SE.Numerics
+open SE.ECS
 
 open BenchmarkDotNet.Attributes
 open BenchmarkDotNet.Running
@@ -13,23 +12,29 @@ type [<Struct>] Velocity = Velocity of Vector3
 type [<Struct>] Rotation = Rotation of float
 type [<Struct>] Temperature = Temperature of float
 type [<Struct>] TemperaturT = {temp:float}
+type [<Struct>] TempStruct = val mutable T: double; new(T: double) = {T = T}
 
 type [<Struct>] ValueFlag = struct end
 
 
 [<SimpleJob>]
 type Benchmarks() =
-    let _size = 1000
+    let _size = 400_000
     let float_array = Array.zeroCreate<float> (_size)
+    let rs = Array.zeroCreate<Entity> (_size/2)
+    
     do
         Components.clearAll ()
         Entity.reset()
         for i in 0.._size - 1 do
             let A = 
                 entity()
-                |> Entity.set (300.0)
-                |> Entity.set {temp = 300.0}
-                |> Entity.set (Temperature 300.0)
+                |> set (300.0)
+                |> set true
+                |> set 0.1f
+                |> set (TempStruct 0.31)
+                |> set {temp = 300.0}
+                |> set (Temperature 300.0)
                 |> Entity.add<ValueFlag>
 
             let B =
@@ -38,110 +43,145 @@ type Benchmarks() =
 
             relate A B (ValueFlag())
 
+        let ids = Components.get<double>().Entities
+        for i in 0..rs.Length-1 do
+            rs[i] <- ids[Random.Shared.Next(ids.Count)]        
+
     
     // [<Params(100, 1000)>]
     // member val size = 0 with get, set
     
-    [<Benchmark>]
-    member this.components_as_span () =
-        let components = Components.get<float>()
-        let idx_a = Random.Shared.Next(0, components.Count / 2)
-        let idx_b = Random.Shared.Next(2 + components.Count / 2, components.Count - 6) + 5
-        let e = components.Entities.Slice(idx_a, idx_b - idx_a)
-        let s = components.AsSpan(e)
-        ()
+    // [<Benchmark>]
+    // member this.components_as_span () =
+    //     let components = Components.get<Temperature>()
+    //     let idx_a = Random.Shared.Next(0, components.Count / 2)
+    //     let idx_b = Random.Shared.Next(2 + components.Count / 2, components.Count - 6) + 5
+    //     let e = components.Entities.Slice(idx_a, idx_b - idx_a)
+    //     let s = components.AsSpan(e)
+    //     ()
     
-    [<Benchmark>]
-    member this.components_contains () =
-        let components = Components.get<float>()
-        let idx = Random.Shared.Next(components.Count)
-        let e  = components.Entities[idx]        
-        components.Contains(e) |> ignore        
+    // [<Benchmark>]
+    // member this.components_contains () =
+    //     let components = Components.get<bool>()
+    //     let idx = Random.Shared.Next(components.Count)
+    //     let e  = components.Entities[idx]        
+    //     components.Contains(e) |> ignore        
 
     [<Benchmark>]
     member this.components_get_item () =
-        let components = Components.get<float>()
-        let idx = Random.Shared.Next(components.Count)
-        let e  = components.Entities[idx]        
-        components[e] |> ignore        
+        let components = Components.get<double>()
+        for e in rs do
+            components[e] |> ignore
+        // let idx = Random.Shared.Next(components.Count)
+        // let e  = components.Entities[idx]        
+        // components[e] |> ignore        
 
     [<Benchmark>]
-    member this.relation_has_out () =
-        let components = Components.get<float>()
-        let idx = Random.Shared.Next(components.Count)
-        let e  = components.Entities[idx]
-        Relation.has<ValueFlag> Out e |> ignore
-        
-    [<Benchmark>]
-    member this.relation_has_in () =
-        let components = Components.get<Vector3>()
-        let idx = Random.Shared.Next(components.Count)
-        let e  = components.Entities[idx]
-        Relation.has<ValueFlag> In e |> ignore
-        
-    [<Benchmark>]
-    member this.relation_get_item () =
-        let components_a = Components.get<float>()
-        let components_b = Components.get<Vector3>()
-        let count = min components_a.Count components_b.Count
-        let idx = Random.Shared.Next(count)
-        let a  = components_a.Entities[idx]
-        let b  = components_b.Entities[idx]
-        Relation.value<ValueFlag> a b |> ignore
-        
-    // [<Benchmark>]
-    // member this.RegularArray () =
-    //     let r = Random.Shared.NextDouble() * 10.0 - 5.0
-    //     for i in 0..float_array.Length - 1 do
-    //         float_array[i] <- float_array[i] + r 
+    member this.components_get_item_2 () =
+        let components = Components.get<float32>()
+        for e in rs do
+            components.Get2(e) |> ignore
+        // let idx = Random.Shared.Next(components.Count)
+        // let e  = components.Entities[idx]        
+        // components.Get2(e) |> ignore        
 
     // [<Benchmark>]
-    // member this.ComputePrimitive () =
-    //     let r = Random.Shared.NextDouble() * 10.0 - 5.0
+    // member this.relation_has_out () =
     //     let components = Components.get<float>()
-    //     let entries = components.Entries
-    //     let entities = components.Entities
-    //     for e in entities do
-    //         let x = &components[e]
-    //         x <- x + r
-
+    //     let idx = Random.Shared.Next(components.Count)
+    //     let e  = components.Entities[idx]
+    //     Relation.has<ValueFlag> Out e |> ignore
+        
     // [<Benchmark>]
-    // member this.ComputePrimitiveiSequential () =
-    //     let r = Random.Shared.NextDouble() * 10.0 - 5.0
-    //     let components = Components.get<float>()
-    //     let entries = components.Entries
-    //     let entities = components.Entities
-    //     for i in 0..entries.Length - 1 do
-    //         let x = &entries[i]
-    //         x <- x + r
+    // member this.relation_has_in () =
+    //     let components = Components.get<Vector3>()
+    //     let idx = Random.Shared.Next(components.Count)
+    //     let e  = components.Entities[idx]
+    //     Relation.has<ValueFlag> In e |> ignore
+        
+    // [<Benchmark>]
+    // member this.relation_get_item () =
+    //     let components_a = Components.get<float>()
+    //     let components_b = Components.get<Vector3>()
+    //     let count = min components_a.Count components_b.Count
+    //     let idx = Random.Shared.Next(count)
+    //     let a  = components_a.Entities[idx]
+    //     let b  = components_b.Entities[idx]
+    //     Relation.value<ValueFlag> a b |> ignore
+        
+    [<Benchmark>]
+    member this.RegularArray () =
+        let r = Random.Shared.NextDouble() * 10.0 - 5.0
+        for i in 0..float_array.Length - 1 do
+            float_array[i] <- float_array[i] + r 
+
+    [<Benchmark>]
+    member this.ComputePrimitive () =
+        let r = Random.Shared.NextDouble() * 10.0 - 5.0
+        let components = Components.get<float>()
+        let entries = components.Entries
+        let entities = components.Entities
+        for e in entities do
+            let x = &components[e]
+            x <- x + r
+
+    [<Benchmark>]
+    member this.ComputeStruct () =
+        let r = Random.Shared.NextDouble() * 10.0 - 5.0
+        let components = Components.get<TempStruct>()
+        let entries = components.Entries
+        let entities = components.Entities
+        for e in entities do
+            let x = &components[e]
+            x.T <- x.T + r
+
+    [<Benchmark>]
+    member this.ComputeStructSequential () =
+        let r = Random.Shared.NextDouble() * 10.0 - 5.0
+        let components = Components.get<TempStruct>()
+        let entries = components.Entries
+        let entities = components.Entities
+        for i in 0..entries.Length - 1 do
+            let x = &entries[i]
+            x.T <- x.T + r
             
-    // [<Benchmark>]
-    // member this.ComputeRecord () =
-    //     let r = Random.Shared.NextDouble() * 10.0 - 5.0
-    //     let components = Components.get<TemperaturT>()
-    //     let entries = components.Entries
-    //     let entities = components.Entities
-    //     for e in entities do
-    //         let x = &components[e]
-    //         x <- {temp = x.temp + r}
+    [<Benchmark>]
+    member this.ComputePrimitiveiSequential () =
+        let r = Random.Shared.NextDouble() * 10.0 - 5.0
+        let components = Components.get<float>()
+        let entries = components.Entries
+        let entities = components.Entities
+        for i in 0..entries.Length - 1 do
+            let x = &entries[i]
+            x <- x + r
+            
+    [<Benchmark>]
+    member this.ComputeRecord () =
+        let r = Random.Shared.NextDouble() * 10.0 - 5.0
+        let components = Components.get<TemperaturT>()
+        let entries = components.Entries
+        let entities = components.Entities
+        for e in entities do
+            let x = &components[e]
+            x <- {temp = x.temp + r}
 
-    // [<Benchmark>]
-    // member this.ComputeRecordSequential () =
-    //     let r = Random.Shared.NextDouble() * 10.0 - 5.0
-    //     let components = Components.get<TemperaturT>()
-    //     let entries = components.Entries
-    //     let entities = components.Entities
-    //     for i in 0..entries.Length - 1 do
-    //         let x = &entries[i]
-    //         x <- {temp = x.temp + r}
+    [<Benchmark>]
+    member this.ComputeRecordSequential () =
+        let r = Random.Shared.NextDouble() * 10.0 - 5.0
+        let components = Components.get<TemperaturT>()
+        let entries = components.Entries
+        let entities = components.Entities
+        for i in 0..entries.Length - 1 do
+            let x = &entries[i]
+            x <- {temp = x.temp + r}
 
-    // [<Benchmark>]
-    // member this.ComputeDURead () =
-    //     let r = Random.Shared.NextDouble() * 10.0 - 5.0
-    //     let components = Components.get<Temperature>()
-    //     for e in components.Entities do
-    //         let (Temperature x) = components[e]
-    //         ignore x        
+    [<Benchmark>]
+    member this.ComputeDURead () =
+        let r = Random.Shared.NextDouble() * 10.0 - 5.0
+        let components = Components.get<Temperature>()
+        for e in components.Entities do
+            let (Temperature x) = components[e]
+            ignore x        
 
     // [<Benchmark>]
     // member this.ComputeDU () =

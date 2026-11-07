@@ -10,10 +10,12 @@
     <Compile Include="src/serializers.fs" />
     <Compile Include="src/unsafe.fs" />
     <Compile Include="src/core.fs" />
+    <Compile Include="src/core_new.fs" />
     <Compile Include="src/grid_generation.fs" />
     <Compile Include="src/geometry.fs" />
     <Compile Include="src/quadtree.fs" />
     <Compile Include="src/octree.fs" />
+    <Compile Include="src/octree_flatten.fs" />
     <!-- <Compile Include="src/octree_experimental.fs" /> -->
     <!-- <Compile Include="src/octree_SOA.fs" /> -->
     <!-- <Compile Include="src/octree_SOA_2.fs" /> -->

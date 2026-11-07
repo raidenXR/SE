@@ -152,6 +152,24 @@ module Plotting =
             gnu.writeln "EOD\n"
             gnu
 
+        let datablockVec2 (vecs:array<Vector2>) (tag:string) (gnu:Gnuplot) =
+            gnu.writeln $"\n${tag} << EOD"
+            for v in vecs do gnu.writeln $"{v.X}  {v.Y}"
+            gnu.writeln "EOD\n"
+            gnu
+
+        let datablockVec3 (vecs:array<Vector3>) (tag:string) (gnu:Gnuplot) =
+            gnu.writeln $"\n${tag} << EOD"
+            for v in vecs do gnu.writeln $"{v.X}  {v.Y}  {v.Z}"
+            gnu.writeln "EOD\n"
+            gnu
+
+        let datablockVec4 (vecs:array<Vector4>) (tag:string) (gnu:Gnuplot) =
+            gnu.writeln $"\n${tag} << EOD"
+            for v in vecs do gnu.writeln $"{v.X}  {v.Y}  {v.Z}  {v.W}"
+            gnu.writeln "EOD\n"
+            gnu
+
         let datablockPolygons2 (p:array<Vector3>) (tag:string) (gnu:Gnuplot) =
             gnu.writeln $"\n${tag} << EOD"
             let l = Array.length p / 4

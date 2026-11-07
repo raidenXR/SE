@@ -177,8 +177,7 @@ system OnLoad [] (fun _ ->
     let mesh = {vertices = vertices; indices = indices; L = L}
     octree_to_buffer tree colorbar_jet mesh
     
-    entity()
-    |> Entity.singleton "vertex_buffer"
+    singleton "vertex_buffer"
     |> Entity.add<IsPoints>
     |> set mesh
     |> set (VertexBuffer.create VT2 mesh)
@@ -245,8 +244,7 @@ system OnUpdate [] (fun _ ->
                 T[tree[pos u].Value] <- T[!u]    
             )
 
-            "vertex_buffer"
-            |> Entity.fetch
+            singleton "vertex_buffer"            
             |> Entity.add<UpdateColors>
             // |> ignore      
             |> Entity.get<Mesh>

@@ -500,11 +500,12 @@ module GLTF =
                     _indices.Add(base_vertex + uint32 i)
                 base_vertex <- base_vertex + (uint32 vertices_count)
 
-            {
-                SE.Spatial.Mesh.vertices = NativeArray.ofSeq(_vertices)
-                SE.Spatial.Mesh.indices = NativeArray.ofSeq(_indices)
-                SE.Spatial.Mesh.L = 10
-            }
+            // {
+            //     SE.Spatial.Mesh.vertices = NativeArray.ofSeq(_vertices)
+            //     SE.Spatial.Mesh.indices = NativeArray.ofSeq(_indices)
+            //     SE.Spatial.Mesh.L = 10
+            // }
+            new Spatial.Mesh(NativeArray.ofSeq _vertices, NativeArray.ofSeq _indices, 10)
         
 
         member this.ReadMeshes() = [|

@@ -9,7 +9,9 @@
     <!-- <Compile Include="benchmarks/benchmarks.fs" /> -->
     <!-- <Compile Include="benchmarks/renderer.fs" /> -->
     <!-- <Compile Include="benchmarks/quadtree.fs" /> -->
-    <Compile Include="benchmarks/octree.fs" />
+    <!-- <Compile Include="benchmarks/octree.fs" /> -->
+    <Compile Include="benchmarks/octree_v2.fs" />
+    <!-- <Compile Include="benchmarks/ecs_perf.fs" /> -->
   </ItemGroup>
 
   <ItemGroup>

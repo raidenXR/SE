@@ -9,7 +9,7 @@ open Microsoft.Data.Sqlite
 
 module Blob =        
     let bits (x:BitArray) =
-        let bits = Array.zeroCreate<byte> (x.Count)
+        let bits = Array.zeroCreate<byte> (x.Count / (sizeof<byte> * 8))
         printfn "bitset: %d" x.Count
         x.CopyTo(bits, 0)
         bits
