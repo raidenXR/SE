@@ -136,11 +136,12 @@ module Deserialize =
                 System.Buffer.MemoryCopy(~~ptr1, vertices, vsize, vsize)
                 System.Buffer.MemoryCopy(~~ptr2, indices, isize, isize)
                 
-                yield {
-                    vertices = new narray<float32>(vertices, vcount, false)
-                    indices  = new narray<uint32>(indices, icount, false)
-                    L = L
-                }
+                // yield {
+                    // vertices = new narray<float32>(vertices, vcount, false)
+                    // indices  = new narray<uint32>(indices, icount, false)
+                    // L = L
+                // }
+                yield new Mesh(new narray<float32>(vertices, vcount, false), new narray<uint32>(indices, icount, false), L)
         |]
         // } |> Array.ofSeq
         

@@ -14,9 +14,9 @@ open System.Runtime.InteropServices
 open System.Runtime.CompilerServices
 
 
-let [<Literal>] N = 300
+let [<Literal>] N = 200
 let [<Literal>] L = 10
-let [<Literal>] k = 3
+let [<Literal>] k = 2
 let [<Literal>] max_iter = 300
 printfn "N: %d, k: %d, max_iter: %d" N k max_iter
 
@@ -56,7 +56,7 @@ printfn "total_capacity %d" (tree1.BufferSize)
 printfn "TREE_flatten\n\n"
 GC.Collect()
 
-// exit 0
+exit 0
 
 // #time
 // let tree2 = OctreeFlatten.ofMesh_2<double> N k mesh

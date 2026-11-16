@@ -835,25 +835,18 @@ module OctreeFlatten =
                     match c[j].flag with
                     | Flag.Node ->
                         let x' = (p - c[j].Center).Length()
-
                         if d' > x' then
                             d' <- x'
                             j' <- j
-
                     | Flag.Leaf ->
                         let x' = (p - c[j].Center).Length()
-
                         if d' > x' then
                             d' <- x'
                             j' <- j
                             jj <- j
-
                     | _ -> ()
 
-                if j' > -1 then
-                    traverse_closest p (n.children + j')
-                else
-                    n.children + jj
+                if j' > -1 then traverse_closest p (n.children + j') else n.children + jj
 
             | Flag.Node ->
                 let c = children i
@@ -863,8 +856,7 @@ module OctreeFlatten =
                 idx <- idx + if p.Y > o.Y then 0 else 2
                 idx <- idx + if p.Z < o.Z then 0 else 4
 
-                if idx < 0 || idx > 7 then
-                    failwith "improper idx value"
+                if idx < 0 || idx > 7 then failwith "improper idx value"
 
                 match c[idx].flag with
                 | Flag.Empty ->
@@ -876,28 +868,20 @@ module OctreeFlatten =
                         match c[j].flag with
                         | Flag.Node ->
                             let x' = (p - c[j].Center).Length()
-
                             if d' > x' then
                                 d' <- x'
                                 j' <- j
-
                         | Flag.Leaf ->
                             let x' = (p - c[j].Center).Length()
-
                             if d' > x' then
                                 d' <- x'
                                 j' <- j
                                 jj <- j
-
                         | _ -> ()
 
-                    if j' > -1 then
-                        traverse_closest p (n.children + j')
-                    else
-                        n.children + jj
+                    if j' > -1 then traverse_closest p (n.children + j') else n.children + jj
 
-                | _ ->
-                    traverse_closest p (n.children + idx)
+                | _ -> traverse_closest p (n.children + idx)
 
             | flag -> invalidOp $"{flag} is not defined"
 
@@ -957,9 +941,10 @@ module OctreeFlatten =
             with [<MethodImpl(MethodImplOptions.AggressiveInlining)>] get idx =
                 &nodes[idx]
 
-        /// Uses greedy child-center traversal, not a global nearest-leaf search.
         member this.MapTo(p: Vector3) =
-            traverse_closest p 0
+            let idx = traverse_closest p 0
+            if idx < 1 || idx >= count then failwith "MapClosest() failed to find node"
+            else nodes[idx]
 
         member this.Remove(p: Vector3) =
             if remove p n' cached_node.Value then
@@ -980,17 +965,17 @@ module OctreeFlatten =
 
         member this.Item with get(u,i,j,k) =
             let idx = iterate_node i j k u
-            &nodes[idx]
+            nodes[idx]
+            // &nodes[idx]
 
         member this.Item with get(p:Vector3) =
             let idx = traverse_retain p cached_node.Value
-            &nodes[idx]
+            nodes[idx]
+            // &nodes[idx]
             
-            // if u < 0 || u > count - 1 then
-            //     failwith "node cannot be Empty"
-            // else
-            //     let idx = iterate_node i j k u
-            //     if idx < 0 || idx > count-1 then Empty else nodes[idx]
+
+        member this.Traverse(p:Vector3) =
+            traverse_retain p cached_node.Value
 
         member this.AssignFlags() =
             this.Iter (fun t ni ->
